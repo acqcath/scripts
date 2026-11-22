@@ -469,6 +469,22 @@ export const routes = [
     },
   },
   {
+    // Each device's latest People also ask status, printed by the installer (no tests needed on the phone)
+    method: "post",
+    path: "/report",
+    async handler(req) {
+      try {
+        const j = await req.json();
+        const f = `${DIR}/reports.json`;
+        let all = {};
+        try { all = JSON.parse(fs.readFileSync(f, "utf8")); } catch {}
+        all[String(j.device || "?").slice(0, 20)] = `${new Date().toISOString().slice(0, 16)} ${String(j.text || "").slice(0, 600)}`;
+        fs.writeFileSync(f, JSON.stringify(all, null, 1));
+      } catch {}
+      return new Response(null, { status: 204 });
+    },
+  },
+  {
     method: "post",
     path: "/learn",
     async handler(req) {
@@ -566,9 +582,11 @@ const bridge = (route, params = {}, body) => {
   });
 };
 // Same search even if degoog tidied the address (e.g. dropped a #) meanwhile
-const sameSearch = (k) => location.href.split("#")[0] === String(k).split("#")[0];
+// Which search a page address is, ignoring what endless scroll adds while you scroll (&loaded=2) and any #
+const searchId = (h) => { try { const u = new URL(h); u.hash = ""; u.searchParams.delete("loaded"); return u.toString(); } catch { return String(h).split("#")[0]; } };
+const sameSearch = (k) => searchId(location.href) === searchId(k);
 // Status line (first, so it also catches startup errors), only with #ctdebug in the address: shows what People also ask did on this device
-const dbg = { code: "v34", qs: "not asked", err: "none" };
+const dbg = { code: "v35", qs: "not asked", err: "none" };
 let DBG = false;
 try { DBG = /ctdebug/.test(location.href) || sessionStorage.getItem("ct-dbg") === "1"; if (DBG) sessionStorage.setItem("ct-dbg", "1"); } catch { DBG = /ctdebug/.test(location.href); }
 addEventListener("error", (e) => { dbg.err = `page: ${e.message}`; dbgShow(); });
@@ -576,10 +594,13 @@ const dbgShow = () => {
   if (!DBG || !document.body) return;
   let el = document.getElementById("ct-dbg");
   if (!el) { el = document.createElement("div"); el.id = "ct-dbg"; el.style.cssText = "position:fixed;left:8px;right:8px;top:8px;z-index:99999;background:#000;color:#0f0;font:12px/1.4 monospace;padding:6px;border-radius:6px;white-space:pre-wrap"; document.body.append(el); }
+  const t = dbgText();
+  if (el.textContent !== t) el.textContent = t; // unchanged text = no page change, so no endless loop
+};
+const dbgText = () => {
   const b = document.getElementById("ct-qa");
   const st = b ? getComputedStyle(b) : null;
-  const t = `code ${dbg.code} | questions request: ${dbg.qs} | box in page: ${!!b} | box height: ${b ? b.offsetHeight : "-"} | display: ${st ? st.display : "-"} | visibility: ${st ? st.visibility : "-"} | results: ${document.querySelectorAll("#results-list .result-item").length} | error: ${dbg.err}`;
-  if (el.textContent !== t) el.textContent = t; // unchanged text = no page change, so no endless loop
+  return `q ${new URLSearchParams(location.search).get("q")} | code ${dbg.code} | questions request: ${dbg.qs} | box in page: ${!!b} | box height: ${b ? b.offsetHeight : "-"} | display: ${st ? st.display : "-"} | visibility: ${st ? st.visibility : "-"} | results: ${document.querySelectorAll("#results-list .result-item").length} | error: ${dbg.err}`;
 };
 // clean-titles: ONE pass per new result, run before the browser draws it (no timers, no re-scans).
 // Network work (HD thumbnails, missing video descriptions) only starts for results near the screen.
@@ -885,10 +906,10 @@ const nearWord = (a, b) => {
 const lower = (s) => String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
 let extrasFor = "";
 const extras = () => {
-  if (extrasFor === location.href) return;
+  if (extrasFor === searchId(location.href)) return;
   const list = document.getElementById("results-list");
   if (!list || !list.querySelector(".result-item, .image-card, .video-card")) return;
-  const key = (extrasFor = location.href);
+  const key = (extrasFor = searchId(location.href));
   document.querySelectorAll("#ct-fix, #ct-related").forEach((e) => e.remove());
   let q = "", from = "", keepIt = false, acc = false;
   try {
@@ -1032,14 +1053,14 @@ document.addEventListener("click", async (e) => {
 }, true);
 
 // People also ask, after the 3rd result: tap a question to see the best answer degoog finds for it
-let paaFor = "";
+let paaFor = "", paaLast = "";
 // 3rd visible result right now (degoog can redraw the list after People also ask was requested)
 const paaAnchor = () => [...(document.getElementById("results-list")?.querySelectorAll(".result-item") || [])].filter((x) => x.style.display !== "none")[2];
-let paaBox = null;
+let paaBox = null, paaTries = 0;
 
 const paa = () => {
   if (!webTab) return;
-  if (paaFor === location.href) {
+  if (paaFor === searchId(location.href)) {
     // list was redrawn and took the box with it: put it back
     if (paaBox && !paaBox.isConnected) paaAnchor()?.after(paaBox);
     return;
@@ -1048,7 +1069,8 @@ const paa = () => {
   if (!list) return;
   const rows = [...list.querySelectorAll(".result-item")].filter((x) => x.style.display !== "none");
   if (rows.length < 4) return;
-  const key = (paaFor = location.href);
+  const key = (paaFor = searchId(location.href));
+  if (key !== paaLast) { paaLast = key; paaTries = 0; }
   let q = "", page = 1;
   try { const u = new URL(key); q = (u.searchParams.get("q") || "").trim(); page = Number(u.searchParams.get("page") || 1); } catch {}
   const old = document.getElementById("ct-qa");
@@ -1056,10 +1078,19 @@ const paa = () => {
   paaBox = null;
   if (!q || page > 1 || q.startsWith("!")) return;
   dbg.qs = "sent"; dbgShow();
+  // 8 s later, tell the server how it went on this device (the installer prints it)
+  setTimeout(() => {
+    if (paaFor !== key) return;
+    const ua = navigator.userAgent, device = /iPhone|iPad/.test(ua) ? "iPhone" : /Mac/.test(ua) ? "Mac" : /Windows/.test(ua) ? "PC" : "other";
+    bridge("report", {}, JSON.stringify({ device, text: dbgText() })).catch(() => {});
+  }, 8000);
   bridge("qs", { q })
     .then((j) => {
       dbg.qs += j && Array.isArray(j.q) ? `, ${j.q.length} questions` : ", no data"; setTimeout(dbgShow, 300);
-      if (!j || !Array.isArray(j.q) || j.q.length < 2 || paaFor !== key || !paaAnchor()) return; // still the same search (degoog may tidy the address meanwhile)
+      if (paaFor !== key) return; // a different search by now
+      // No answer (slow moment): ask again on the next page change, up to 2 more times
+      if (!j || !Array.isArray(j.q)) { if (++paaTries <= 2) paaFor = ""; return; }
+      if (j.q.length < 2) return;
       const box = document.createElement("div");
       box.id = "ct-qa";
       const h = document.createElement("h3");
@@ -1104,9 +1135,9 @@ const paa = () => {
         box.append(d);
       }
       paaBox = box;
-      paaAnchor().after(box);
+      paaAnchor()?.after(box); // no 3rd result yet: goes in as soon as there is one
     })
-    .catch((e) => { dbg.qs = "failed: " + (e && e.message); dbgShow(); if (paaFor === key) paaFor = ""; });
+    .catch((e) => { dbg.qs = "failed: " + (e && e.message); dbgShow(); if (paaFor === key && ++paaTries <= 2) paaFor = ""; });
 };
 
 // Tools, like Google's advanced search: a small link beside the tabs opens the fields, filled from your search
@@ -1793,6 +1824,7 @@ try {
   const j = await r.json();
   console.log("People also ask through the iPhone-safe route (should list questions): " + String(j.html || j.error).replace(/&quot;/g, '"').slice(0, 300));
 } catch (e) { console.log(`iPhone-safe route: failed: ${e}`); }
+try { console.log("Last People also ask status per device:\n" + fs.readFileSync("/app/data/plugins/clean-titles/reports.json", "utf8")); } catch { console.log("Last People also ask status per device: none yet"); }
 '@)
 docker cp "$env:TEMP\ct-check.js" "${c}:/tmp/ct-check.js"; docker exec $c bun /tmp/ct-check.js; docker exec $c rm -f /tmp/ct-check.js; Remove-Item -Force "$env:TEMP\ct-check.js"
 } | Tee-Object -Variable o; $o | Out-String | Set-Clipboard
