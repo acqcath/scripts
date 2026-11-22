@@ -588,7 +588,7 @@ const bridge = (route, params = {}, body) => {
 const searchId = (h) => { try { const u = new URL(h); u.hash = ""; u.searchParams.delete("loaded"); return u.toString(); } catch { return String(h).split("#")[0]; } };
 const sameSearch = (k) => searchId(location.href) === searchId(k);
 // Status line (first, so it also catches startup errors), only with #ctdebug in the address: shows what People also ask did on this device
-const dbg = { code: "v37", qs: "not asked", err: "none" };
+const dbg = { code: "v38", qs: "not asked", err: "none" };
 let DBG = false;
 try { DBG = /ctdebug/.test(location.href) || sessionStorage.getItem("ct-dbg") === "1"; if (DBG) sessionStorage.setItem("ct-dbg", "1"); } catch { DBG = /ctdebug/.test(location.href); }
 addEventListener("error", (e) => { dbg.err = `page: ${e.message}`; dbgShow(); });
@@ -1098,7 +1098,20 @@ const paa = () => {
       const h = document.createElement("h3");
       h.textContent = "People also ask";
       box.append(h);
-      for (const text of j.q) {
+      // Words written the way your results write them ("putty" -> "PuTTY")
+      const cased = new Map();
+      for (const r of document.querySelectorAll("#results-list .result-item .result-title")) for (const w of r.textContent.match(/[\p{L}\p{N}][\p{L}\p{N}'+.#-]*/gu) || []) {
+        const k = w.toLowerCase(); if (w === k) continue;
+        const m = cased.get(k) || new Map(); m.set(w, (m.get(w) || 0) + 1); cased.set(k, m);
+      }
+      const fixCase = (t) => t.replace(/[\p{L}\p{N}][\p{L}\p{N}'+.#-]*/gu, (w, i) => {
+        const m = cased.get(w.toLowerCase());
+        if (!m || !q.toLowerCase().split(/\s+/).includes(w.toLowerCase())) return w;
+        const best = [...m].sort((a, b) => b[1] - a[1])[0][0];
+        return i === 0 ? best[0].toUpperCase() + best.slice(1) : best;
+      });
+      for (const raw of j.q) {
+        const text = fixCase(raw);
         const d = document.createElement("details");
         const s = document.createElement("summary");
         s.textContent = text;
@@ -1112,23 +1125,33 @@ const paa = () => {
           const more = document.createElement("a");
           more.className = "ct-qa-more";
           more.href = goTo(text);
-          more.textContent = "Search for this";
+          more.textContent = `Search for: ${text}`;
           fetch(`/api/search?q=${encodeURIComponent(text)}`)
             .then((r) => (r.ok ? r.json() : null))
             .then((sj) => {
               body.textContent = "";
               const top = sj && Array.isArray(sj.results) ? sj.results.find((x) => x && x.url && x.snippet) : null;
               if (top) {
+                // Same order and look as a result: answer, then site icon + name, then the page title
                 const p = document.createElement("p");
-                p.textContent = String(top.snippet).replace(/<[^>]+>/g, "");
-                const site = document.createElement("span");
-                site.className = "ct-qa-site";
-                try { site.textContent = new URL(top.url).hostname.replace(/^www\./, ""); } catch {}
+                p.className = "ct-qa-text";
+                let t = String(top.snippet).replace(/<[^>]+>/g, "").trim();
+                const dm = /^([A-Z][a-z]{2,8}\.? \d{1,2}, \d{4})\s*(?:\.\.\.|…|·|-|—)\s*/.exec(t);
+                if (dm) { t = t.slice(dm[0].length); const ds = document.createElement("span"); ds.className = "result-date"; ds.textContent = `${dm[1]} · `; p.append(ds); }
+                p.append(t);
+                const row = document.createElement("div");
+                row.className = "ct-qa-site";
+                let host = "";
+                try { host = new URL(top.url).hostname.replace(/^www\./, ""); } catch {}
+                if (top.favicon) { const ic = document.createElement("img"); ic.src = top.favicon; ic.alt = ""; ic.onerror = () => ic.remove(); row.append(ic); }
+                const cite = document.createElement("cite");
+                cite.textContent = host;
+                row.append(cite);
                 const a = document.createElement("a");
                 a.className = "ct-qa-src";
                 a.href = top.url;
                 a.textContent = cleanTitle(top.title || top.url, top.url);
-                body.append(p, site, a);
+                body.append(p, row, a);
               }
               body.append(more);
             })
@@ -1748,21 +1771,27 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .result-item.ct-moved { animation: ct-flash 1.2s ease; }
 @keyframes ct-flash { from { background: rgba(137, 180, 250, .12); } to { background: transparent; } }
 
-/* People also ask: Google's question list with thin lines between questions */
-#ct-qa { margin: 4px 0 24px; }
-#ct-qa h3 { font-size: 18px; line-height: 24px; font-weight: 500; margin: 0 0 6px; color: var(--text-primary); }
+/* People also ask: Google's layout, sized like your results (heading = title size, answer = description, source = link line + title) */
+#ct-qa { margin: 12px 0 12px; }
+#ct-qa h3 { font-size: 20px; line-height: 26px; font-weight: 400; margin: 0 0 10px; color: var(--text-primary); }
 #ct-qa details { border-top: 1px solid rgba(88, 91, 112, .45); }
 #ct-qa details:last-child { border-bottom: 1px solid rgba(88, 91, 112, .45); }
-#ct-qa summary { list-style: none; cursor: pointer; padding: 12px 28px 12px 0; position: relative; font-size: 15px; line-height: 22px; color: var(--text-primary); }
+#ct-qa summary { list-style: none; cursor: pointer; min-height: 48px; box-sizing: border-box; display: flex; align-items: center; padding: 12px 36px 12px 0; position: relative; font-size: 16px; line-height: 22px; color: var(--text-primary); }
 #ct-qa summary::-webkit-details-marker { display: none; }
-#ct-qa summary::after { content: "⌄"; position: absolute; right: 4px; top: 8px; font-size: 18px; color: var(--text-secondary); transition: transform .2s; }
-#ct-qa details[open] summary::after { transform: rotate(180deg); }
-.ct-qa-a { padding: 0 0 14px; font-size: 14px; line-height: 21px; color: var(--text-snippet); }
-.ct-qa-a p { margin: 0 0 8px; }
-.ct-qa-site { display: block; font-size: 12.5px; color: var(--text-cite); }
-.ct-qa-src { display: block; font-size: 16px; line-height: 22px; color: var(--text-link); text-decoration: none; margin-bottom: 6px; }
-.ct-qa-more { font-size: 13px; color: var(--text-link); }
-@media (max-width: 767px) { #ct-qa h3 { font-size: 16px; } #ct-qa summary { font-size: 14.5px; } }
+#ct-qa summary::after { content: ""; position: absolute; right: 8px; top: 50%; width: 8px; height: 8px; margin-top: -6px; border-right: 2px solid var(--text-secondary); border-bottom: 2px solid var(--text-secondary); transform: rotate(45deg); transition: transform .2s, margin-top .2s; }
+#ct-qa details[open] summary::after { transform: rotate(-135deg); margin-top: -1px; }
+.ct-qa-a { padding: 0 0 16px; }
+.ct-qa-text { margin: 0 0 12px; font-size: var(--ct-desc-pc); line-height: calc(var(--ct-desc-pc) * 1.47); color: var(--text-snippet); }
+.ct-qa-site { display: flex; align-items: center; gap: 8px; height: 18px; }
+.ct-qa-site img { width: 16px; height: 16px; border-radius: 4px; object-fit: contain; }
+.ct-qa-site cite { font-style: normal; font-size: 13px; line-height: 18px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ct-qa-src { display: block; margin: 4px 0 12px; font-size: 21px; line-height: 26px; color: var(--text-link); text-decoration: none; }
+.ct-qa-more { font-size: 14px; color: var(--text-link); text-decoration: none; }
+@media (max-width: 767px) {
+  #ct-qa h3 { font-size: 18px; line-height: 23px; }
+  .ct-qa-text { font-size: var(--ct-desc-phone); line-height: 19px; color: var(--text-secondary); }
+  .ct-qa-src { font-size: 18px; line-height: 23px; margin-top: 5px; }
+}
 
 /* Tools: a small link beside the tabs, opening Google-style advanced search fields */
 #ct-tools { background: none; border: 0; padding: 0 12px; font: inherit; font-size: 13.5px; color: var(--text-secondary); cursor: pointer; margin-left: auto; }
