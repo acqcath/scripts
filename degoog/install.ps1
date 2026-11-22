@@ -987,6 +987,16 @@ let paaFor = "";
 // 3rd visible result right now (degoog can redraw the list after People also ask was requested)
 const paaAnchor = () => [...(document.getElementById("results-list")?.querySelectorAll(".result-item") || [])].filter((x) => x.style.display !== "none")[2];
 let paaBox = null;
+// Status line, only with #ctdebug at the end of the address: shows what People also ask did on this device
+const dbg = { code: "v34", qs: "not asked" };
+const dbgShow = () => {
+  if (!location.hash.includes("ctdebug")) return;
+  let el = document.getElementById("ct-dbg");
+  if (!el) { el = document.createElement("div"); el.id = "ct-dbg"; el.style.cssText = "position:fixed;left:8px;right:8px;top:8px;z-index:99999;background:#000;color:#0f0;font:12px/1.4 monospace;padding:6px;border-radius:6px;white-space:pre-wrap"; document.body.append(el); }
+  const b = document.getElementById("ct-qa");
+  const st = b ? getComputedStyle(b) : null;
+  el.textContent = `code ${dbg.code} | questions request: ${dbg.qs} | box in page: ${!!b} | box height: ${b ? b.offsetHeight : "-"} | display: ${st ? st.display : "-"} | visibility: ${st ? st.visibility : "-"}`;
+};
 const paa = () => {
   if (!webTab) return;
   if (paaFor === location.href) {
@@ -1005,9 +1015,11 @@ const paa = () => {
   if (old) old.remove();
   paaBox = null;
   if (!q || page > 1 || q.startsWith("!")) return;
+  dbg.qs = "sent"; dbgShow();
   fetch(`/api/plugin/${__PLUGIN_ID__}/qs?q=${encodeURIComponent(q)}`)
-    .then((r) => (r.ok ? r.json() : null))
+    .then((r) => { dbg.qs = "HTTP " + r.status; return r.ok ? r.json() : null; })
     .then((j) => {
+      dbg.qs += j && Array.isArray(j.q) ? `, ${j.q.length} questions` : ", no data"; setTimeout(dbgShow, 300);
       if (!j || !Array.isArray(j.q) || j.q.length < 2 || location.href !== key || !paaAnchor()) return;
       const box = document.createElement("div");
       box.id = "ct-qa";
@@ -1055,7 +1067,7 @@ const paa = () => {
       paaBox = box;
       paaAnchor().after(box);
     })
-    .catch(() => { if (paaFor === key) paaFor = ""; });
+    .catch((e) => { dbg.qs = "blocked/failed: " + (e && e.message); dbgShow(); if (paaFor === key) paaFor = ""; });
 };
 
 // Tools, like Google's advanced search: a small link beside the tabs opens the fields, filled from your search
