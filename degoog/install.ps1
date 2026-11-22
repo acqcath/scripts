@@ -1097,9 +1097,43 @@ const noUsage = (root) => {
   }
 };
 
+// Weather card for any query naming a place ("boston weather", "weather in nyc tomorrow");
+// degoog only fires it when "weather" is the first word. No place named = no card.
+const WX = /\b(weather|wether|forecast|temperature|temp)\b/i;
+const WX_DROP = /\b(weather|wether|forecast|temperature|temp|today|tonight|tomorrow|tommorow|tmrw|now|current|currently|this|next|week|weekend|hourly|daily|10|day|radar|what'?s|whats|what|is|the|teh|how'?s|in|for|at|of|like|will|it|be)\b/gi;
+const wxCache = new Map();
+const wx = () => {
+  const g = document.getElementById("at-a-glance");
+  if (!g || !webTab) return;
+  let q = "";
+  try { q = (new URL(location.href).searchParams.get("q") || "").trim(); } catch {}
+  if (!WX.test(q) || q.startsWith("!")) return;
+  const place = q.replace(WX_DROP, " ").replace(/[?,.!]/g, " ").replace(/\s+/g, " ").trim();
+  if (!place) return;
+  const good = [...g.querySelectorAll(".command-result")].some((c) => c.style.display !== "none" && c.parentElement?.style.display !== "none" && !/^\s*Usage:/.test(c.textContent));
+  if (good) return;
+  const put = (html) => {
+    if (!html || g.querySelector(".ct-wx")) return;
+    g.style.display = "";
+    g.innerHTML = `<div class="command-result ct-wx">${html}</div>`;
+    g.querySelectorAll("script").forEach((o) => { const n = document.createElement("script"); n.textContent = o.textContent; g.appendChild(n); });
+  };
+  if (wxCache.has(place)) return put(wxCache.get(place));
+  wxCache.set(place, "");
+  fetch(`/api/command?q=${encodeURIComponent("!weather " + place)}`, { cache: "no-store" })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((d) => {
+      const html = d && d.html && !/Usage:|not found|could not|error/i.test(d.html.replace(/<[^>]+>/g, " ")) ? d.html : "";
+      wxCache.set(place, html);
+      put(html);
+    })
+    .catch(() => wxCache.delete(place));
+};
+
 const init = () => {
   readQuery();
   noUsage(document.body);
+  wx();
   scan(document.body);
   skel(document.body);
   extras(); paa(); tools();
@@ -1107,7 +1141,7 @@ const init = () => {
   new MutationObserver((muts) => {
     readQuery();
     for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { scan(n); skel(n); noUsage(n); }
-    extras(); paa(); tools();
+    extras(); paa(); tools(); wx();
   }).observe(document.body, { childList: true, subtree: true });
 };
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
