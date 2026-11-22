@@ -411,7 +411,9 @@ const check = async (q) => {
   const sl = (await suggestions(qn)).map(norm).filter(Boolean);
   let r = { fix: null, words: [] };
   if (!sl.some((s) => s.startsWith(qn))) {
-    const b = bingFix(qn, sl);
+    let b = bingFix(qn, sl);
+    // Second look: Bing's suggestions for the fixed search often finish the job ("the weather tommorow" -> "the weather tomorrow")
+    if (b && b.split(" ").some((x) => !/\d/.test(x) && !WORDS.has(x) && (learned.w[x] || 0) < 2)) { const b2 = bingFix(b, (await suggestions(b)).map(norm).filter(Boolean)); if (b2) b = b2; }
     if (b) r = { fix: b, words: [], via: "bing-suggest" };
     else { r = localFix(qn, new Set(sl.flatMap((s) => s.split(" ")))); r.via = "local"; }
   }
