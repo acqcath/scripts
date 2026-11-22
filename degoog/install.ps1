@@ -532,6 +532,19 @@ export default {
 };
 '@)
 [IO.File]::WriteAllText("$t\script.js", @'
+// Status line (first, so it also catches startup errors), only with #ctdebug in the address: shows what People also ask did on this device
+const dbg = { code: "v34", qs: "not asked", err: "none" };
+let DBG = false;
+try { DBG = /ctdebug/.test(location.href) || sessionStorage.getItem("ct-dbg") === "1"; if (DBG) sessionStorage.setItem("ct-dbg", "1"); } catch { DBG = /ctdebug/.test(location.href); }
+addEventListener("error", (e) => { dbg.err = `page: ${e.message}`; dbgShow(); });
+const dbgShow = () => {
+  if (!DBG || !document.body) return;
+  let el = document.getElementById("ct-dbg");
+  if (!el) { el = document.createElement("div"); el.id = "ct-dbg"; el.style.cssText = "position:fixed;left:8px;right:8px;top:8px;z-index:99999;background:#000;color:#0f0;font:12px/1.4 monospace;padding:6px;border-radius:6px;white-space:pre-wrap"; document.body.append(el); }
+  const b = document.getElementById("ct-qa");
+  const st = b ? getComputedStyle(b) : null;
+  el.textContent = `code ${dbg.code} | questions request: ${dbg.qs} | box in page: ${!!b} | box height: ${b ? b.offsetHeight : "-"} | display: ${st ? st.display : "-"} | visibility: ${st ? st.visibility : "-"} | results: ${document.querySelectorAll("#results-list .result-item").length} | error: ${dbg.err}`;
+};
 // clean-titles: ONE pass per new result, run before the browser draws it (no timers, no re-scans).
 // Network work (HD thumbnails, missing video descriptions) only starts for results near the screen.
 
@@ -987,16 +1000,7 @@ let paaFor = "";
 // 3rd visible result right now (degoog can redraw the list after People also ask was requested)
 const paaAnchor = () => [...(document.getElementById("results-list")?.querySelectorAll(".result-item") || [])].filter((x) => x.style.display !== "none")[2];
 let paaBox = null;
-// Status line, only with #ctdebug at the end of the address: shows what People also ask did on this device
-const dbg = { code: "v34", qs: "not asked" };
-const dbgShow = () => {
-  if (!location.hash.includes("ctdebug")) return;
-  let el = document.getElementById("ct-dbg");
-  if (!el) { el = document.createElement("div"); el.id = "ct-dbg"; el.style.cssText = "position:fixed;left:8px;right:8px;top:8px;z-index:99999;background:#000;color:#0f0;font:12px/1.4 monospace;padding:6px;border-radius:6px;white-space:pre-wrap"; document.body.append(el); }
-  const b = document.getElementById("ct-qa");
-  const st = b ? getComputedStyle(b) : null;
-  el.textContent = `code ${dbg.code} | questions request: ${dbg.qs} | box in page: ${!!b} | box height: ${b ? b.offsetHeight : "-"} | display: ${st ? st.display : "-"} | visibility: ${st ? st.visibility : "-"}`;
-};
+
 const paa = () => {
   if (!webTab) return;
   if (paaFor === location.href) {
@@ -1155,18 +1159,22 @@ const noUsage = (root) => {
   }
 };
 
+// Each step runs on its own: one error can't stop the others (errors show on the #ctdebug line)
+const safe = (name, fn) => { try { fn(); } catch (e) { dbg.err = `${name}: ${e && e.message}`; dbgShow(); } };
 const init = () => {
-  readQuery();
-  noUsage(document.body);
-  glance();
-  scan(document.body);
-  skel(document.body);
-  extras(); paa(); tools();
+  dbgShow();
+  safe("query", readQuery);
+  safe("usage", () => noUsage(document.body));
+  safe("card", glance);
+  safe("scan", () => scan(document.body));
+  safe("skeleton", () => skel(document.body));
+  safe("extras", extras); safe("ask", paa); safe("tools", tools);
   // Runs right after degoog inserts results and before the screen updates; only looks inside what was added
   new MutationObserver((muts) => {
-    readQuery();
-    for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { scan(n); skel(n); noUsage(n); }
-    extras(); paa(); tools(); glance();
+    safe("query", readQuery);
+    for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { safe("scan", () => scan(n)); safe("skeleton", () => skel(n)); safe("usage", () => noUsage(n)); }
+    safe("extras", extras); safe("ask", paa); safe("tools", tools); safe("card", glance);
+    dbgShow();
   }).observe(document.body, { childList: true, subtree: true });
 };
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
