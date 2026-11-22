@@ -528,12 +528,45 @@ export default {
     if (ctx && typeof ctx.fetch === "function") _fetch = ctx.fetch;
   },
 
-  execute() {
-    return { title: "Clean Titles & HD Thumbnails", html: INFO_HTML };
+  // Bridge: the page reaches the routes above through degoog's command address (/api/command),
+  // because iPhone content blockers reject /api/plugin/ addresses. "!cleantitles bridge <route> <query string>"
+  async execute(args) {
+    const m = /^bridge\s+(\w+)\s*([\s\S]*)$/.exec(String(args || ""));
+    if (!m) return { title: "Clean Titles & HD Thumbnails", html: INFO_HTML };
+    const r = routes.find((x) => x.path === "/" + m[1]);
+    if (!r) return { title: "", html: "" };
+    const params = new URLSearchParams(m[2].trim());
+    const body = params.get("__body");
+    params.delete("__body");
+    const req = new Request(`http://local/${m[1]}?${params}`, body != null ? { method: "POST", headers: { "Content-Type": "application/json" }, body } : {});
+    let out = "";
+    try {
+      const res = await r.handler(req);
+      out = res.status >= 300 && res.status < 400 ? JSON.stringify({ to: res.headers.get("Location") || "" })
+        : res.ok && res.status !== 204 ? await res.text() : JSON.stringify({ status: res.status });
+    } catch { out = JSON.stringify({ status: 500 }); }
+    return { title: "", html: out.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") };
   },
 };
 '@)
 [IO.File]::WriteAllText("$t\script.js", @'
+// Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
+const bridge = (route, params = {}, body) => {
+  const qs = new URLSearchParams(params);
+  if (body !== undefined) qs.set("__body", body);
+  const q = `!cleantitles bridge ${route} ${qs}`;
+  const req = body !== undefined
+    ? fetch("/api/command", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: q }), keepalive: true })
+    : fetch(`/api/command?q=${encodeURIComponent(q)}`, { cache: "no-store" });
+  return req.then((r) => (r.ok ? r.json() : null)).then((j) => {
+    if (!j || typeof j.html !== "string") return null;
+    const t = document.createElement("textarea");
+    t.innerHTML = j.html;
+    try { return JSON.parse(t.value); } catch { return null; }
+  });
+};
+// Same search even if degoog tidied the address (e.g. dropped a #) meanwhile
+const sameSearch = (k) => location.href.split("#")[0] === String(k).split("#")[0];
 // Status line (first, so it also catches startup errors), only with #ctdebug in the address: shows what People also ask did on this device
 const dbg = { code: "v34", qs: "not asked", err: "none" };
 let DBG = false;
@@ -661,7 +694,9 @@ const hdImg = (img) => {
     low(img, Math.max(nw, probe.naturalWidth), need);
   };
   probe.onerror = () => low(img, nw, need);
-  probe.src = `/api/plugin/${__PLUGIN_ID__}/hd?w=${Math.min(1280, Math.max(160, need))}&src=${encodeURIComponent(orig)}`;
+  bridge("hd", { w: Math.min(1280, Math.max(160, need)), src: orig })
+    .then((j) => { if (j && j.to) probe.src = j.to; else low(img, nw, need); })
+    .catch(() => low(img, nw, need));
 };
 
 // Missing YouTube description: fetched from the video page by the plugin, then faded in
@@ -675,8 +710,7 @@ const ytId = (u) => {
 // Your CSS hides video descriptions on phones (like Google mobile), so phones never fetch them
 const PHONE = matchMedia("(max-width: 767px)");
 const getDesc = (p, id) => {
-  fetch(`/api/plugin/${__PLUGIN_ID__}/ytdesc?v=${id}`, { priority: "low" })
-    .then((r) => (r.ok ? r.json() : null))
+  bridge("ytdesc", { v: id })
     .then((j) => {
       if (!j || !j.d || !p.isConnected) return;
       const s = document.createElement("span");
@@ -878,12 +912,11 @@ const extras = () => {
   const count = (w) => text.split(` ${w} `).length - 1;
   if (webTab && rows.length) {
     const t = rows.map((r) => (r.querySelector("a.result-title") || {}).textContent || "");
-    fetch(`/api/plugin/${__PLUGIN_ID__}/learn`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ t }), keepalive: true }).catch(() => {});
+    bridge("learn", {}, JSON.stringify({ t })).catch(() => {});
   }
-  fetch(`/api/plugin/${__PLUGIN_ID__}/fix?q=${encodeURIComponent(q)}${keepIt ? "&keep=1" : ""}${acc && from ? `&acc=${encodeURIComponent(from)}` : ""}`)
-    .then((r) => (r.ok ? r.json() : null))
+  bridge("fix", { q, ...(keepIt ? { keep: 1 } : {}), ...(acc && from ? { acc: from } : {}) })
     .then((j) => {
-      if (!j || location.href !== key || !list.isConnected) return;
+      if (!j || !sameSearch(key) || !list.isConnected) return;
       // Fixes that weren't sure before searching, like Google's "Did you mean": offered (never forced) only when
       // the results never use the typed word but clearly use one of its candidates (so names your results
       // know, like "Vitamix", stay as typed). Tap it once and that fix happens by itself from then on
@@ -1022,21 +1055,8 @@ const paa = () => {
   if (old) old.remove();
   paaBox = null;
   if (!q || page > 1 || q.startsWith("!")) return;
-  // Ask the questions route; if it fails or hangs 5s (some content blockers stall it), ask again through the typo-fix route
-  const t0 = Date.now();
-  const tick = setInterval(() => { if (/^sent|^retry/.test(dbg.qs)) { dbg.qs = dbg.qs.replace(/ \d+s$/, "") + ` ${Math.round((Date.now() - t0) / 1000)}s`; dbgShow(); } else clearInterval(tick); }, 1000);
-  const ask = (url, ms) => {
-    const ac = new AbortController();
-    const to = setTimeout(() => ac.abort(), ms);
-    return fetch(url, { signal: ac.signal, cache: "no-store" }).then((r) => { clearTimeout(to); if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
-  };
   dbg.qs = "sent"; dbgShow();
-  ask(`/api/plugin/${__PLUGIN_ID__}/qs?q=${encodeURIComponent(q)}`, 5000)
-    .then((j) => { dbg.qs = "route 1 OK"; return j; })
-    .catch((e) => {
-      dbg.qs = `retry (route 1: ${e && e.name === "AbortError" ? "hung 5s" : e && e.message})`; dbgShow();
-      return ask(`/api/plugin/${__PLUGIN_ID__}/fix?q=${encodeURIComponent(q)}&qs=1`, 15000).then((j) => { dbg.qs = dbg.qs.replace(/^retry/, "route 2 OK").replace(/ \d+s$/, ""); return j; });
-    })
+  bridge("qs", { q })
     .then((j) => {
       dbg.qs += j && Array.isArray(j.q) ? `, ${j.q.length} questions` : ", no data"; setTimeout(dbgShow, 300);
       if (!j || !Array.isArray(j.q) || j.q.length < 2 || paaFor !== key || !paaAnchor()) return; // still the same search (degoog may tidy the address meanwhile)
@@ -1086,7 +1106,7 @@ const paa = () => {
       paaBox = box;
       paaAnchor().after(box);
     })
-    .catch((e) => { clearInterval(tick); dbg.qs = "both routes failed: " + (e && e.name === "AbortError" ? "hung" : e && e.message); dbgShow(); if (paaFor === key) paaFor = ""; });
+    .catch((e) => { dbg.qs = "failed: " + (e && e.message); dbgShow(); if (paaFor === key) paaFor = ""; });
 };
 
 // Tools, like Google's advanced search: a small link beside the tabs opens the fields, filled from your search
@@ -1767,6 +1787,12 @@ for (const [name, path] of [["typo fix for 'teh wether tommorow'", "/fix?q=teh+w
   try { const r = await fetch(base + path, { signal: AbortSignal.timeout(10000) }); console.log(`${name}: ${(await r.text()).slice(0, 400)} (${Date.now() - s} ms)`); }
   catch (e) { console.log(`${name}: failed: ${e}`); }
 }
+// The route your iPhone uses (content blockers reject /api/plugin/ addresses)
+try {
+  const r = await fetch(base.replace(/\/api\/plugin\/.*$/, "") + "/api/command?q=" + encodeURIComponent("!cleantitles bridge qs q=pittsburgh+steelers"), { signal: AbortSignal.timeout(10000) });
+  const j = await r.json();
+  console.log("People also ask through the iPhone-safe route (should list questions): " + String(j.html || j.error).replace(/&quot;/g, '"').slice(0, 300));
+} catch (e) { console.log(`iPhone-safe route: failed: ${e}`); }
 '@)
 docker cp "$env:TEMP\ct-check.js" "${c}:/tmp/ct-check.js"; docker exec $c bun /tmp/ct-check.js; docker exec $c rm -f /tmp/ct-check.js; Remove-Item -Force "$env:TEMP\ct-check.js"
 } | Tee-Object -Variable o; $o | Out-String | Set-Clipboard
