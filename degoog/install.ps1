@@ -1088,15 +1088,25 @@ const skel = (root) => {
   for (let i = cols.length; i < want; i++) g.append(cols[i % cols.length].cloneNode(true));
 };
 
+// Weather card with no city ("Usage: !weather <city>") is noise: hide it (no default city on purpose)
+const noUsage = (root) => {
+  const list = root.matches?.(".command-result") ? [root] : [...(root.querySelectorAll?.(".command-result") || [])];
+  for (const c of list) if (/^\s*Usage: !weather\b/.test(c.textContent)) {
+    const box = c.parentElement?.children.length === 1 ? c.parentElement : c;
+    box.style.display = "none";
+  }
+};
+
 const init = () => {
   readQuery();
+  noUsage(document.body);
   scan(document.body);
   skel(document.body);
   extras(); paa(); tools();
   // Runs right after degoog inserts results and before the screen updates; only looks inside what was added
   new MutationObserver((muts) => {
     readQuery();
-    for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { scan(n); skel(n); }
+    for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { scan(n); skel(n); noUsage(n); }
     extras(); paa(); tools();
   }).observe(document.body, { childList: true, subtree: true });
 };
