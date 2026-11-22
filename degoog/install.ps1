@@ -124,14 +124,20 @@ const fit = (a, b) => { const c = PAIRS.get(`${a} ${b}`), x = WORDS.get(a), y = 
 const isFunc = (w) => TOTAL > 0 && (WORDS.get(w) || 0) / TOTAL >= 0.001;
 const funcOk = (w, c) => !isFunc(c) || (w.length === c.length && slip(w, c));
 // Names: words your results write with a capital mid-title ("AI", "PuTTY", "Asura") are never treated as typos
-const isName = (w) => (learned.cap && learned.cap[w] || 0) >= 2;
+// ...and names from Wikipedia's article titles ("openai", "asura", "ai"), so it knows them without learning anything
+const NAMES = new Set();
+const isName = (w) => NAMES.has(w) || (learned.cap && learned.cap[w] || 0) >= 2;
+// Settings > Clean Titles > "Learn from my search results" (off: nothing about your searches is stored or used)
+let LEARN = false;
+const EMPTY = () => ({ w: {}, b: {}, keep: {}, fix: {}, cap: {} });
+const readLearned = () => { try { learned = Object.assign(EMPTY(), JSON.parse(fs.readFileSync(`${DIR}/learned.json`, "utf8"))); } catch { learned = EMPTY(); } };
 const PAIRS = new Map();
 let learned = { w: {}, b: {}, keep: {}, fix: {} };
 let loaded = false, dirty = false;
 const norm = (s) => String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
 const toks = (s) => norm(s).replace(/[^\p{L}\p{N}' ]+/gu, " ").split(" ").filter((w) => w.length > 1 && w.length < 25);
 const save = () => {
-  if (!dirty) return;
+  if (!dirty || !LEARN) return;
   dirty = false;
   try {
     for (const k of ["w", "b"]) {
@@ -157,12 +163,14 @@ const load = () => {
       if (p.length === 3) { PAIRS.set(`${p[0]} ${p[1]}`, Number(p[2])); PTOTAL += Number(p[2]); }
     }
   } catch {}
-  try { learned = Object.assign({ w: {}, b: {}, keep: {}, fix: {}, cap: {} }, JSON.parse(fs.readFileSync(`${DIR}/learned.json`, "utf8"))); } catch {}
+  if (LEARN) readLearned();
+  try { for (const w of fs.readFileSync(`${DIR}/names.txt`, "utf8").split("\n")) if (w) NAMES.add(w); } catch {}
   const t = setInterval(save, 60000);
   if (t && t.unref) t.unref();
 };
 // Learn from a page of results: each word or word pair counts once per search
 const learn = (titles) => {
+  if (!LEARN) return;
   load();
   const ws = new Set(), bs = new Set(), caps = new Set();
   for (const t of titles.slice(0, 20)) {
@@ -177,9 +185,10 @@ const learn = (titles) => {
   for (const b of bs) learned.b[b] = (learned.b[b] || 0) + 1;
   dirty = true;
 };
-const keep = (q) => { load(); for (const w of toks(q)) { learned.keep[w] = 1; delete learned.fix[w]; } dirty = true; };
+const keep = (q) => { if (!LEARN) return; load(); for (const w of toks(q)) { learned.keep[w] = 1; delete learned.fix[w]; } dirty = true; };
 // You tapped "Did you mean": that fix is used straight away next time (per word, so it carries to other searches)
 const accept = (typed, fixed) => {
+  if (!LEARN) return;
   load();
   const a = norm(typed).split(" "), b = norm(fixed).split(" ");
   for (let i = 0, j = 0; i < a.length && j < b.length; i++, j++) {
@@ -290,7 +299,7 @@ const slip = (a, b) => {
 };
 const localFix = (qn, extra) => {
   load();
-  const known = (w) => WORDS.has(w) || (learned.w[w] || 0) >= 2 || !!learned.keep[w] || extra.has(w);
+  const known = (w) => WORDS.has(w) || NAMES.has(w) || (learned.w[w] || 0) >= 2 || !!learned.keep[w] || extra.has(w);
   const mine = (w) => (learned.w[w] || 0) >= 2 || extra.has(w);
   const pop = (w) => Math.log10((WORDS.get(w) || 0) + 10) + 4 * Math.log2((learned.w[w] || 0) + 1) + (extra.has(w) ? 4 : 0);
   // How well two words go together: common English pairs ("how to") and pairs from your results ("asura scans")
@@ -578,7 +587,16 @@ export default {
   description: "Google-style result titles, and sharper news and video thumbnails.",
   trigger: "cleantitles",
   aliases: ["ct"],
-  settingsSchema: [],
+  settingsSchema: [
+    { key: "learnFromResults", label: "Learn from my search results", type: "toggle", description: "Off: nothing about your searches is stored or used. On: the typo fixer remembers words and names from your result titles, plus the Did you mean fixes you tap or turn down (kept on this server only)." },
+  ],
+  configure(s) {
+    const on = !!s && (s.learnFromResults === true || s.learnFromResults === "true");
+    if (on === LEARN) return;
+    LEARN = on;
+    if (on) { if (loaded) readLearned(); } else { dirty = false; learned = EMPTY(); }
+    _fix.clear();
+  },
 
   init(ctx) {
     if (ctx && typeof ctx.signProxyUrl === "function") _sign = ctx.signProxyUrl;
@@ -645,7 +663,7 @@ window.fetch = async (input, init) => {
 const searchId = (h) => { try { const u = new URL(h); u.hash = ""; u.searchParams.delete("loaded"); return u.toString(); } catch { return String(h).split("#")[0]; } };
 const sameSearch = (k) => searchId(location.href) === searchId(k);
 // Status line (first, so it also catches startup errors), only with #ctdebug in the address: shows what People also ask did on this device
-const dbg = { code: "v40", qs: "not asked", err: "none" };
+const dbg = { code: "v41", qs: "not asked", err: "none" };
 let DBG = false;
 try { DBG = /ctdebug/.test(location.href) || sessionStorage.getItem("ct-dbg") === "1"; if (DBG) sessionStorage.setItem("ct-dbg", "1"); } catch { DBG = /ctdebug/.test(location.href); }
 addEventListener("error", (e) => { dbg.err = `page: ${e.message}`; dbgShow(); });
@@ -1346,6 +1364,52 @@ docker cp "$t\index.js" "${c}:/app/data/plugins/clean-titles/index.js"; docker e
 if (-not (docker exec $c sh -c 'test -s /app/data/plugins/clean-titles/words.txt && echo y')) { Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/wolfgarbe/SymSpell/master/SymSpell/frequency_dictionary_en_82_765.txt' -OutFile "$t\words.txt"; docker cp "$t\words.txt" "${c}:/app/data/plugins/clean-titles/words.txt" }
 # Common English word pairs for the typo fixer ("how to", "the weather"; downloaded once)
 if (-not (docker exec $c sh -c 'test -s /app/data/plugins/clean-titles/pairs.txt && echo y')) { Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/wolfgarbe/SymSpell/master/SymSpell/frequency_bigramdictionary_en_243_342.txt' -OutFile "$t\pairs.txt"; docker cp "$t\pairs.txt" "${c}:/app/data/plugins/clean-titles/pairs.txt" }
+# Names from Wikipedia's article titles for the typo fixer (made once: a big download, takes a few minutes)
+if (-not (docker exec $c sh -c 'test -s /app/data/plugins/clean-titles/names.txt && echo y')) {
+[IO.File]::WriteAllText("$t\names.js", @'
+// Names from Wikipedia's article titles: words that aren't in the English word list but appear in 3+ titles
+// ("Asura Scans", "OpenAI Five"), or are a one-word title written like a name (PuTTY, NASA, iPhone, R2-D2)
+const fs = require("fs"), zlib = require("zlib"), readline = require("readline");
+const DIR = "/app/data/plugins/clean-titles", GZ = "/tmp/ct-titles.gz";
+const SRC = process.env.CT_TITLES_URL || "https://dumps.wikimedia.org/enwiki/latest/enwiki-latest-all-titles-in-ns0.gz";
+const words = new Set();
+for (const l of fs.readFileSync(`${DIR}/words.txt`, "utf8").split("\n")) { const w = l.replace(/^﻿/, "").split(" ")[0]; if (w) words.add(w); }
+const r = await fetch(SRC);
+if (!r.ok) { console.log(`Wikipedia names: download failed (${r.status}), skipped; next update tries again`); process.exit(0); }
+await Bun.write(GZ, r);
+// Counting ~5 million different words in little memory: two 32 MB tables of counts, the smaller one wins
+const N = 1 << 25, A = new Uint8Array(N), B = new Uint8Array(N);
+const h = (s, seed) => { let x = seed; for (let i = 0; i < s.length; i++) { x ^= s.charCodeAt(i); x = Math.imul(x, 16777619); } return (x >>> 0) & (N - 1); };
+const each = async (fn) => {
+  const rl = readline.createInterface({ input: fs.createReadStream(GZ).pipe(zlib.createGunzip()), crlfDelay: Infinity });
+  for await (const line of rl) {
+    const title = line.replace(/_\([^)]*\)$/, "");
+    const parts = title.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+    if (!parts.length || line === "page_title") continue;
+    fn(title, parts);
+  }
+};
+// 2-letter words only when written in capitals ("AI", "TV"), so "de", "la", "jr" stay out
+const cand = (x) => x.length >= 2 && x.length <= 24 && !/^\d+$/.test(x) && !words.has(x);
+await each((title, parts) => {
+  if (parts.length < 2) return;
+  for (const x of new Set(parts.filter((p) => p.length > 2 || p === p.toUpperCase()).map((p) => p.toLowerCase()))) if (cand(x)) { const i = h(x, 2166136261), j = h(x, 374761393); if (A[i] < 255) A[i]++; if (B[j] < 255) B[j]++; }
+});
+const out = new Set();
+await each((title, parts) => {
+  if (parts.length === 1) {
+    const x = parts[0];
+    if (cand(x.toLowerCase()) && (/\p{Ll}\p{Lu}/u.test(x) || (x.length >= 2 && x === x.toUpperCase() && /\p{L}/u.test(x)) || (/\d/.test(x) && /\p{L}/u.test(x)))) out.add(x.toLowerCase());
+    return;
+  }
+  for (const p of parts) { const x = p.toLowerCase(); if ((p.length > 2 || p === p.toUpperCase()) && cand(x) && Math.min(A[h(x, 2166136261)], B[h(x, 374761393)]) >= 3) out.add(x); }
+});
+fs.writeFileSync(`${DIR}/names.txt`, [...out].join("\n"));
+fs.rmSync(GZ, { force: true });
+console.log(`Wikipedia names: ${out.size} saved`);
+'@)
+docker cp "$t\names.js" "${c}:/tmp/ct-names.js"; docker exec $c bun /tmp/ct-names.js; docker exec $c rm -f /tmp/ct-names.js /tmp/ct-titles.gz
+}
 
 # Plugin page code goes inside degoog's page itself: no separate file, so no content blocker can stop it
 [IO.File]::WriteAllText("$t\inline.js", @'
@@ -1896,6 +1960,7 @@ $ss = docker exec $c cat /app/data/server-settings.json | Out-String | ConvertFr
 "separate script file gone (should be True): " + (-not (docker exec $c sh -c 'ls /app/data/plugins/clean-titles/script.js 2>/dev/null'))
 "typo fixer word list (should be about 82800): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/words.txt')
 "typo fixer word pairs (should be about 243000): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/pairs.txt')
+"names from Wikipedia (should be well over 100000): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/names.txt 2>/dev/null')
 "old backup copies left in degoog: " + (docker exec $c sh -c 'ls /app/data/backups 2>/dev/null | wc -l')
 "result menu with Rank higher / Rank lower / Block (should be True): $($ss.settings.domainScoreUiEnabled -and $ss.settings.domainBlockUiEnabled)"
 "endless scroll on (should be True): $($ss.settings.infiniteScrollEnabled)"
