@@ -458,7 +458,7 @@ export const routes = [
   },
   {
     method: "get",
-    path: "/paa",
+    path: "/qs",
     async handler(req) {
       const q = (new URL(req.url).searchParams.get("q") || "").slice(0, 200);
       let qs = [];
@@ -756,57 +756,69 @@ const scan = (n) => {
   if (n.firstElementChild) n.querySelectorAll(SEL).forEach(handle);
 };
 
-// Command word at the END works like at the start: "word def" -> "word !define", "boston weather" -> "boston !weather",
-// for every command with natural language on in degoog (search box and address bar); skips coding words like "python def"
+// Command word at the END works like at the start ("ephemeral def", "boston weather", "tokyo time"), for every
+// command with natural language on; the search stays as typed, the command's card goes on top, results below (like Google)
 const CODE_TAIL = /\b(python|py|ruby|scala|elixir|groovy|kotlin|swift|lisp|clojure|julia|crystal|nim|js|javascript|ts|typescript|java|go|golang|rust|php|bash|sql|c\+\+|c#|csharp)$/i;
 let tails = [["def", "define"], ["define", "define"], ["definition", "define"], ["meaning", "define"]];
-const loadTails = fetch("/api/commands", { cache: "no-store" })
+fetch("/api/commands", { cache: "no-store" })
   .then((r) => (r.ok ? r.json() : null))
   .then((j) => {
-    const list = (j && j.commands) || [];
     const add = [];
-    for (const c of list) {
+    for (const c of (j && j.commands) || []) {
       if (!c.naturalLanguage || !c.trigger) continue;
       for (const w of [c.trigger, ...(c.aliases || []), ...(c.naturalLanguagePhrases || [])]) if (w) add.push([String(w).toLowerCase(), c.trigger]);
     }
     tails = [...tails, ...add].sort((x, y) => y[0].length - x[0].length);
+    glance();
   })
   .catch(() => {});
-const fixQuery = (q) => {
+// Weather words anywhere ("weather in nyc tomorrow"): the leftover words are the place; no place = no card
+const WX = /\b(weather|wether|forecast|temperature|temp)\b/i;
+const WX_DROP = /\b(weather|wether|forecast|temperature|temp|today|tonight|tomorrow|tommorow|tmrw|now|current|currently|this|next|week|weekend|hourly|daily|10|day|radar|what'?s|whats|what|is|the|teh|how'?s|in|for|at|of|like|will|it|be)\b/gi;
+const bangFor = (q) => {
   const t = String(q || "").trim();
-  if (t.startsWith("!") || /(^|\s)!\S+/.test(t)) return null;
+  if (!t || /(^|\s)!\S+/.test(t)) return null;
   const low = t.toLowerCase();
   for (const [w, trig] of tails) {
     if (!low.endsWith(" " + w)) continue;
     const rest = t.slice(0, t.length - w.length).trim();
     if (!rest || CODE_TAIL.test(rest)) return null;
-    // "what time" / "what is my ip" carry no argument: just run the command
     if (/^((what'?s|whats|what|is|the|my|current|local|right|now)\s*)+$/i.test(rest)) return `!${trig}`;
-    return `${rest} !${trig}`;
+    return `!${trig} ${rest}`;
+  }
+  if (WX.test(t)) {
+    const place = t.replace(WX_DROP, " ").replace(/[?,.!]/g, " ").replace(/\s+/g, " ").trim();
+    if (place) return `!weather ${place}`;
   }
   return null;
 };
-const rewriteInput = (input) => {
-  if (!input || input.tagName !== "INPUT") return;
-  const out = fixQuery(input.value);
-  if (out) input.value = out;
+const cardCache = new Map();
+const glance = () => {
+  const g = document.getElementById("at-a-glance");
+  if (!g || !webTab) return;
+  let q = "";
+  try { q = (new URL(location.href).searchParams.get("q") || "").trim(); } catch {}
+  const bang = bangFor(q);
+  if (!bang) return;
+  const good = [...g.querySelectorAll(".command-result")].some((c) => c.style.display !== "none" && c.parentElement?.style.display !== "none" && !/^\s*Usage:/.test(c.textContent));
+  if (good) return;
+  const put = (html) => {
+    if (!html || g.querySelector(".ct-card")) return;
+    g.style.display = "";
+    g.innerHTML = `<div class="command-result ct-card">${html}</div>`;
+    g.querySelectorAll("script").forEach((o) => { const n = document.createElement("script"); n.textContent = o.textContent; g.appendChild(n); });
+  };
+  if (cardCache.has(bang)) return put(cardCache.get(bang));
+  cardCache.set(bang, "");
+  fetch(`/api/command?q=${encodeURIComponent(bang)}`, { cache: "no-store" })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((d) => {
+      const html = d && d.html && !/Usage:|not found|could not|no results|error/i.test(d.html.replace(/<[^>]+>/g, " ")) ? d.html : "";
+      cardCache.set(bang, html);
+      put(html);
+    })
+    .catch(() => cardCache.delete(bang));
 };
-document.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) rewriteInput(e.target); }, true);
-document.addEventListener("submit", (e) => {
-  rewriteInput(e.target.querySelector && e.target.querySelector("input[type=search], input[type=text], input:not([type])"));
-}, true);
-document.addEventListener("click", (e) => {
-  if (e.target.closest && e.target.closest("#results-search-btn")) rewriteInput(document.getElementById("results-search-input"));
-}, true);
-const fixUrl = () => {
-  try {
-    const url = new URL(location.href);
-    const out = fixQuery(url.searchParams.get("q"));
-    if (out) { url.searchParams.set("q", out); location.replace(url.toString()); }
-  } catch {}
-};
-fixUrl();
-loadTails.then(fixUrl);
 
 // Typo fix line above the results, related searches below them (Web tab), and learning from your results
 const nearWord = (a, b) => {
@@ -993,7 +1005,7 @@ const paa = () => {
   if (old) old.remove();
   paaBox = null;
   if (!q || page > 1 || q.startsWith("!")) return;
-  fetch(`/api/plugin/${__PLUGIN_ID__}/paa?q=${encodeURIComponent(q)}`)
+  fetch(`/api/plugin/${__PLUGIN_ID__}/qs?q=${encodeURIComponent(q)}`)
     .then((r) => (r.ok ? r.json() : null))
     .then((j) => {
       if (!j || !Array.isArray(j.q) || j.q.length < 2 || location.href !== key || !paaAnchor()) return;
@@ -1131,43 +1143,10 @@ const noUsage = (root) => {
   }
 };
 
-// Weather card for any query naming a place ("boston weather", "weather in nyc tomorrow");
-// degoog only fires it when "weather" is the first word. No place named = no card.
-const WX = /\b(weather|wether|forecast|temperature|temp)\b/i;
-const WX_DROP = /\b(weather|wether|forecast|temperature|temp|today|tonight|tomorrow|tommorow|tmrw|now|current|currently|this|next|week|weekend|hourly|daily|10|day|radar|what'?s|whats|what|is|the|teh|how'?s|in|for|at|of|like|will|it|be)\b/gi;
-const wxCache = new Map();
-const wx = () => {
-  const g = document.getElementById("at-a-glance");
-  if (!g || !webTab) return;
-  let q = "";
-  try { q = (new URL(location.href).searchParams.get("q") || "").trim(); } catch {}
-  if (!WX.test(q) || q.startsWith("!")) return;
-  const place = q.replace(WX_DROP, " ").replace(/[?,.!]/g, " ").replace(/\s+/g, " ").trim();
-  if (!place) return;
-  const good = [...g.querySelectorAll(".command-result")].some((c) => c.style.display !== "none" && c.parentElement?.style.display !== "none" && !/^\s*Usage:/.test(c.textContent));
-  if (good) return;
-  const put = (html) => {
-    if (!html || g.querySelector(".ct-wx")) return;
-    g.style.display = "";
-    g.innerHTML = `<div class="command-result ct-wx">${html}</div>`;
-    g.querySelectorAll("script").forEach((o) => { const n = document.createElement("script"); n.textContent = o.textContent; g.appendChild(n); });
-  };
-  if (wxCache.has(place)) return put(wxCache.get(place));
-  wxCache.set(place, "");
-  fetch(`/api/command?q=${encodeURIComponent("!weather " + place)}`, { cache: "no-store" })
-    .then((r) => (r.ok ? r.json() : null))
-    .then((d) => {
-      const html = d && d.html && !/Usage:|not found|could not|error/i.test(d.html.replace(/<[^>]+>/g, " ")) ? d.html : "";
-      wxCache.set(place, html);
-      put(html);
-    })
-    .catch(() => wxCache.delete(place));
-};
-
 const init = () => {
   readQuery();
   noUsage(document.body);
-  wx();
+  glance();
   scan(document.body);
   skel(document.body);
   extras(); paa(); tools();
@@ -1175,7 +1154,7 @@ const init = () => {
   new MutationObserver((muts) => {
     readQuery();
     for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { scan(n); skel(n); noUsage(n); }
-    extras(); paa(); tools(); wx();
+    extras(); paa(); tools(); glance();
   }).observe(document.body, { childList: true, subtree: true });
 };
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
@@ -1748,7 +1727,7 @@ const m = /<script type="module" id="ct-inline">([\s\S]*?)\n<\/script>/.exec(fs.
 test("page code check (should be OK)", m && m[1]);
 test("server code check (should be OK)", fs.readFileSync("/app/data/plugins/clean-titles/index.js", "utf8"));
 const base = `http://127.0.0.1:${process.env.DEGOOG_PORT || 4444}/api/plugin/clean-titles`;
-for (const [name, path] of [["typo fix for 'teh wether tommorow'", "/fix?q=teh+wether+tommorow"], ["People also ask for 'pittsburgh steelers'", "/paa?q=pittsburgh+steelers"]]) {
+for (const [name, path] of [["typo fix for 'teh wether tommorow'", "/fix?q=teh+wether+tommorow"], ["People also ask for 'pittsburgh steelers'", "/qs?q=pittsburgh+steelers"]]) {
   const s = Date.now();
   try { const r = await fetch(base + path, { signal: AbortSignal.timeout(10000) }); console.log(`${name}: ${(await r.text()).slice(0, 400)} (${Date.now() - s} ms)`); }
   catch (e) { console.log(`${name}: failed: ${e}`); }
