@@ -972,8 +972,16 @@ document.addEventListener("click", async (e) => {
 
 // People also ask, after the 3rd result: tap a question to see the best answer degoog finds for it
 let paaFor = "";
+// 3rd visible result right now (degoog can redraw the list after People also ask was requested)
+const paaAnchor = () => [...(document.getElementById("results-list")?.querySelectorAll(".result-item") || [])].filter((x) => x.style.display !== "none")[2];
+let paaBox = null;
 const paa = () => {
-  if (paaFor === location.href || !webTab) return;
+  if (!webTab) return;
+  if (paaFor === location.href) {
+    // list was redrawn and took the box with it: put it back
+    if (paaBox && !paaBox.isConnected) paaAnchor()?.after(paaBox);
+    return;
+  }
   const list = document.getElementById("results-list");
   if (!list) return;
   const rows = [...list.querySelectorAll(".result-item")].filter((x) => x.style.display !== "none");
@@ -983,11 +991,12 @@ const paa = () => {
   try { const u = new URL(key); q = (u.searchParams.get("q") || "").trim(); page = Number(u.searchParams.get("page") || 1); } catch {}
   const old = document.getElementById("ct-paa");
   if (old) old.remove();
+  paaBox = null;
   if (!q || page > 1 || q.startsWith("!")) return;
   fetch(`/api/plugin/${__PLUGIN_ID__}/paa?q=${encodeURIComponent(q)}`)
     .then((r) => (r.ok ? r.json() : null))
     .then((j) => {
-      if (!j || !Array.isArray(j.q) || j.q.length < 2 || location.href !== key || !rows[2].isConnected) return;
+      if (!j || !Array.isArray(j.q) || j.q.length < 2 || location.href !== key || !paaAnchor()) return;
       const box = document.createElement("div");
       box.id = "ct-paa";
       const h = document.createElement("h3");
@@ -1031,9 +1040,10 @@ const paa = () => {
         });
         box.append(d);
       }
-      rows[2].after(box);
+      paaBox = box;
+      paaAnchor().after(box);
     })
-    .catch(() => {});
+    .catch(() => { if (paaFor === key) paaFor = ""; });
 };
 
 // Tools, like Google's advanced search: a small link beside the tabs opens the fields, filled from your search
