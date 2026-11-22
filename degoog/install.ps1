@@ -115,6 +115,16 @@ const ytDesc = async (id) => {
 // searches. Words you keep with "Search instead" are never changed again.
 let DIR = "/app/data/plugins/clean-titles";
 const WORDS = new Map();
+let TOTAL = 0, PTOTAL = 0; // all word / word-pair counts added up: how common one is = its count / total
+// How well two words go together compared with chance (above 0: English puts them side by side, like "open a";
+// below 0: it avoids that, like "a sell", an article before a verb); null when there's no data on the pair
+const fit = (a, b) => { const c = PAIRS.get(`${a} ${b}`), x = WORDS.get(a), y = WORDS.get(b); return c && x && y ? Math.log2((c / PTOTAL) / ((x / TOTAL) * (y / TOTAL))) : null; };
+// Small grammar words ("a", "to", "of", "the"): searches often leave them out on purpose ("does openai sell data"),
+// so a word only becomes one when it's that word with two letters swapped or one key off ("ot" -> "to"), never a dropped letter
+const isFunc = (w) => TOTAL > 0 && (WORDS.get(w) || 0) / TOTAL >= 0.001;
+const funcOk = (w, c) => !isFunc(c) || (w.length === c.length && slip(w, c));
+// Names: words your results write with a capital mid-title ("AI", "PuTTY", "Asura") are never treated as typos
+const isName = (w) => (learned.cap && learned.cap[w] || 0) >= 2;
 const PAIRS = new Map();
 let learned = { w: {}, b: {}, keep: {}, fix: {} };
 let loaded = false, dirty = false;
@@ -138,27 +148,31 @@ const load = () => {
   try {
     for (const line of fs.readFileSync(`${DIR}/words.txt`, "utf8").split("\n")) {
       const [w, n] = line.replace(/^﻿/, "").trim().split(" ");
-      if (w && n) WORDS.set(w, Number(n));
+      if (w && n) { WORDS.set(w, Number(n)); TOTAL += Number(n); }
     }
   } catch {}
   try {
     for (const line of fs.readFileSync(`${DIR}/pairs.txt`, "utf8").split("\n")) {
       const p = line.replace(/^﻿/, "").trim().split(" ");
-      if (p.length === 3) PAIRS.set(`${p[0]} ${p[1]}`, Number(p[2]));
+      if (p.length === 3) { PAIRS.set(`${p[0]} ${p[1]}`, Number(p[2])); PTOTAL += Number(p[2]); }
     }
   } catch {}
-  try { learned = Object.assign({ w: {}, b: {}, keep: {}, fix: {} }, JSON.parse(fs.readFileSync(`${DIR}/learned.json`, "utf8"))); } catch {}
+  try { learned = Object.assign({ w: {}, b: {}, keep: {}, fix: {}, cap: {} }, JSON.parse(fs.readFileSync(`${DIR}/learned.json`, "utf8"))); } catch {}
   const t = setInterval(save, 60000);
   if (t && t.unref) t.unref();
 };
 // Learn from a page of results: each word or word pair counts once per search
 const learn = (titles) => {
   load();
-  const ws = new Set(), bs = new Set();
+  const ws = new Set(), bs = new Set(), caps = new Set();
   for (const t of titles.slice(0, 20)) {
     const k = toks(t);
     k.forEach((w, i) => { ws.add(w); if (i) bs.add(`${k[i - 1]} ${w}`); });
+    // Capitalised after the first word (or all capitals, like "AI"): a name
+    String(t).split(/[^\p{L}\p{N}'+.#-]+/u).filter(Boolean).forEach((x, i) => { if ((i > 0 && /^\p{Lu}/u.test(x)) || (x.length >= 2 && x === x.toUpperCase() && /\p{L}/u.test(x))) caps.add(x.toLowerCase()); });
   }
+  if (!learned.cap) learned.cap = {};
+  for (const w of caps) learned.cap[w] = (learned.cap[w] || 0) + 1;
   for (const w of ws) learned.w[w] = (learned.w[w] || 0) + 1;
   for (const b of bs) learned.b[b] = (learned.b[b] || 0) + 1;
   dirty = true;
@@ -295,13 +309,16 @@ const localFix = (qn, extra) => {
     const prev = i ? out[i - 1] : "", next = words[i + 1] || "";
     if (/\d/.test(w) || /^\W+$/.test(w)) return w;
     if (learned.fix[w]) return learned.fix[w];
+    if (isName(w)) return w;
     if (w.length < 3 || known(w)) {
       // Real word in the wrong place ("how ot make", "the wether tomorrow"): a word 1 letter away that fits
       // its neighbours 300x better goes to the page check (never changed before searching)
       if ((WORDS.has(w) || w.length < 3) && (prev || next)) {
         const ctx = (x) => (prev ? Math.log10((PAIRS.get(`${prev} ${x}`) || 0) + 1) : 0) + (next ? Math.log10((PAIRS.get(`${x} ${next}`) || 0) + 1) : 0);
         let bc = null, bs = ctx(w) + 2.5;
-        for (const c of edits(w)) if ((WORDS.get(c) || 0) >= (WORDS.get(w) || 0)) { const v = ctx(c); if (v > bs) { bs = v; bc = c; } }
+        // ...and it must read as English on BOTH sides: no neighbour English avoids putting next to it ("open a sell")
+        const fits = (c) => [prev && fit(prev, c), next && fit(c, next)].every((f) => f === null || f === "" || f >= 0);
+        for (const c of edits(w)) if ((WORDS.get(c) || 0) >= (WORDS.get(w) || 0) && funcOk(w, c) && fits(c)) { const v = ctx(c); if (v > bs) { bs = v; bc = c; } }
         if (bc) unknown.push({ w, c: [bc] });
         // Real word that is one slip from a far more common one ("bets blender" -> "best blender"): the page
         // switches only if the results never use the typed word but keep using the common one
@@ -313,7 +330,7 @@ const localFix = (qn, extra) => {
       }
       // Short unknown word ("pro mx" -> "pro max"): the page picks whichever close word the results use
       if (w.length < 3 && !WORDS.has(w) && !unknown.some((u) => u.w === w)) {
-        const c = [...edits(w)].filter((x) => WORDS.has(x)).sort((x, y) => WORDS.get(y) - WORDS.get(x)).slice(0, 8);
+        const c = [...edits(w)].filter((x) => WORDS.has(x) && funcOk(w, x)).sort((x, y) => WORDS.get(y) - WORDS.get(x)).slice(0, 8);
         if (c.length) unknown.push({ w, c });
       }
       return w;
@@ -363,7 +380,10 @@ const localFix = (qn, extra) => {
   // Sure words are fixed before searching. Unsure ones go to the page, which checks the results first and
   // only switches if they clearly use one of the candidates
   const fix = out.join(" ");
-  return { fix: fix !== qn ? fix : null, words: unknown };
+  // How common each candidate is in everyday English, so the page can tell "the results keep using it" from
+  // "every text uses it" ("a", "the" are in any page, so seeing them proves nothing)
+  const share = (x) => (TOTAL ? Math.min(...x.split(" ").map((y) => (WORDS.get(y) || 0) / TOTAL)) : 0);
+  return { fix: fix !== qn ? fix : null, words: unknown.map((u) => ({ ...u, p: Object.fromEntries(u.c.map((x) => [x, share(x)])) })) };
 };
 
 // Sound-alike spellings ("chimminy" -> "chimney"): same consonant sounds, close in letters. Only offered
@@ -625,7 +645,7 @@ window.fetch = async (input, init) => {
 const searchId = (h) => { try { const u = new URL(h); u.hash = ""; u.searchParams.delete("loaded"); return u.toString(); } catch { return String(h).split("#")[0]; } };
 const sameSearch = (k) => searchId(location.href) === searchId(k);
 // Status line (first, so it also catches startup errors), only with #ctdebug in the address: shows what People also ask did on this device
-const dbg = { code: "v39", qs: "not asked", err: "none" };
+const dbg = { code: "v40", qs: "not asked", err: "none" };
 let DBG = false;
 try { DBG = /ctdebug/.test(location.href) || sessionStorage.getItem("ct-dbg") === "1"; if (DBG) sessionStorage.setItem("ct-dbg", "1"); } catch { DBG = /ctdebug/.test(location.href); }
 addEventListener("error", (e) => { dbg.err = `page: ${e.message}`; dbgShow(); });
@@ -984,10 +1004,12 @@ const extras = () => {
       if (!from && webTab && j.words && j.words.length) {
         const out = lower(j.fix || q).split(" ");
         let changed = false;
-        for (const { w, c } of j.words) {
+        const tokens = text.trim().split(" ").length;
+        for (const { w, c, p } of j.words) {
           if (count(w)) continue;
           let best = null, bn = 1;
-          for (const x of c) { const n = count(x); if (n > bn) { bn = n; best = x; } }
+          // A candidate only counts when the results use it well beyond chance: 4x more than everyday English would
+          for (const x of c) { const n = count(x); if (n > bn && n > 4 * tokens * ((p && p[x]) || 0)) { bn = n; best = x; } }
           // ...or the word or word pair the results use most that is a couple of letters away (new names:
           // "asurascxns" -> "asura scans" when the results keep saying "Asura Scans")
           if (w.length >= 4) {
@@ -1000,12 +1022,11 @@ const extras = () => {
         if (changed) dym = out.join(" ");
       }
       if (!dym && !from && webTab && j.dym) dym = lower(j.dym);
-      // Keep words that aren't typos: 1-2 letter words ("ai", "tv") and words the results write joined to a
-      // neighbour ("open ai" when they say "OpenAI")
+      // Keep words the results do use, written joined to a neighbour ("open ai" when they say "OpenAI")
       if (dym) {
         const qw = lower(j.fix || q).split(" "), dw = dym.split(" ");
         if (qw.length === dw.length) {
-          for (let k = 0; k < qw.length; k++) if (dw[k] !== qw[k] && (qw[k].length <= 2 || (k > 0 && count(qw[k - 1] + qw[k])) || (k + 1 < qw.length && count(qw[k] + qw[k + 1])))) dw[k] = qw[k];
+          for (let k = 0; k < qw.length; k++) if (dw[k] !== qw[k] && ((k > 0 && count(qw[k - 1] + qw[k])) || (k + 1 < qw.length && count(qw[k] + qw[k + 1])))) dw[k] = qw[k];
           dym = dw.join(" ") === qw.join(" ") ? null : dw.join(" ");
         }
       }
