@@ -164,7 +164,11 @@ const load = () => {
     }
   } catch {}
   if (LEARN) readLearned();
-  try { for (const w of fs.readFileSync(`${DIR}/names.txt`, "utf8").split("\n")) if (w) NAMES.add(w); } catch {}
+  // Wikipedia also has titles that are common misspellings ("Teh ...", "Tommorow ..."): a name that is a common word
+  // with two letters swapped or a letter doubled/undoubled is treated as the typo it looks like, not a name
+  const dbl = (w) => w.replace(/(.)\1+/g, "$1"), swaps = new Set(), dbls = new Set();
+  for (const [w, n] of WORDS) if (n >= 1000000) { dbls.add(dbl(w)); for (let i = 0; i + 1 < w.length; i++) if (w[i] !== w[i + 1]) swaps.add(w.slice(0, i) + w[i + 1] + w[i] + w.slice(i + 2)); }
+  try { for (const w of fs.readFileSync(`${DIR}/names.txt`, "utf8").split("\n")) if (w && !swaps.has(w) && !dbls.has(dbl(w))) NAMES.add(w); } catch {}
   const t = setInterval(save, 60000);
   if (t && t.unref) t.unref();
 };
@@ -220,17 +224,18 @@ const suggestions = async (q) => {
   const hit = _sug.get(key);
   if (hit && Date.now() - hit.t < 86400000) return hit.s;
   let s = [];
-  const url = `https://api.bing.com/osjson.aspx?query=${encodeURIComponent(key)}`;
+  // Bing first; DuckDuckGo's suggestions (same answer format) when Bing gives nothing
+  const urls = [`https://api.bing.com/osjson.aspx?query=${encodeURIComponent(key)}`, `https://duckduckgo.com/ac/?q=${encodeURIComponent(key)}&type=list`];
   // degoog's own outgoing fetch first, then a plain one (the plain one is what reached Bing in testing)
   // Bing answers some browser names with an empty page, so a Chrome one goes first (it worked in testing)
   const UAS = ["Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0"];
-  got: for (const ua of UAS) for (const f of _fetch ? [_fetch, fetch] : [fetch]) {
+  got: for (const url of urls) for (const ua of UAS) for (const f of _fetch ? [_fetch, fetch] : [fetch]) {
     try {
       const r = await f(url, {
         headers: { "User-Agent": ua, "Accept-Language": "en-US,en;q=0.9", Accept: "application/json, text/javascript, */*" },
         signal: AbortSignal.timeout(1500),
       });
-      if (r.ok) { const j = JSON.parse(await r.text()); if (Array.isArray(j) && Array.isArray(j[1])) { s = j[1].filter((x) => typeof x === "string"); break got; } }
+      if (r.ok) { const j = JSON.parse(await r.text()); if (Array.isArray(j) && Array.isArray(j[1])) { s = j[1].filter((x) => typeof x === "string"); if (s.length) break got; } }
     } catch {}
   }
   if (s.length) { if (_sug.size > 2000) _sug.clear(); _sug.set(key, { s, t: Date.now() }); }
@@ -663,7 +668,7 @@ window.fetch = async (input, init) => {
 const searchId = (h) => { try { const u = new URL(h); u.hash = ""; u.searchParams.delete("loaded"); return u.toString(); } catch { return String(h).split("#")[0]; } };
 const sameSearch = (k) => searchId(location.href) === searchId(k);
 // Status line (first, so it also catches startup errors), only with #ctdebug in the address: shows what People also ask did on this device
-const dbg = { code: "v41", qs: "not asked", err: "none" };
+const dbg = { code: "v42", qs: "not asked", err: "none" };
 let DBG = false;
 try { DBG = /ctdebug/.test(location.href) || sessionStorage.getItem("ct-dbg") === "1"; if (DBG) sessionStorage.setItem("ct-dbg", "1"); } catch { DBG = /ctdebug/.test(location.href); }
 addEventListener("error", (e) => { dbg.err = `page: ${e.message}`; dbgShow(); });
@@ -1987,6 +1992,11 @@ try {
   const j = await r.json();
   console.log("People also ask through the iPhone-safe route (should list questions): " + String(j.html || j.error).replace(/&quot;/g, '"').slice(0, 300));
 } catch (e) { console.log(`iPhone-safe route: failed: ${e}`); }
+// Where search suggestions come from right now (typo fixing, related searches and People also ask all need them)
+for (const [name, u] of [["Bing", "https://api.bing.com/osjson.aspx?query=pittsburgh"], ["DuckDuckGo", "https://duckduckgo.com/ac/?q=pittsburgh&type=list"]]) {
+  try { const r = await fetch(u, { headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36" }, signal: AbortSignal.timeout(5000) }); const t = await r.text(); console.log(`${name} suggestions (should list some): ${r.status} ${t.slice(0, 120)}`); }
+  catch (e) { console.log(`${name} suggestions: failed: ${e}`); }
+}
 try { console.log("Last People also ask status per device:\n" + fs.readFileSync("/app/data/plugins/clean-titles/reports.json", "utf8")); } catch { console.log("Last People also ask status per device: none yet"); }
 '@)
 docker cp "$env:TEMP\ct-check.js" "${c}:/tmp/ct-check.js"; docker exec $c bun /tmp/ct-check.js; docker exec $c rm -f /tmp/ct-check.js; Remove-Item -Force "$env:TEMP\ct-check.js"
