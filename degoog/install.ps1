@@ -1077,14 +1077,26 @@ const tools = () => {
   });
 };
 
+// Image loading skeleton: degoog always draws 4 columns; match the real grid's 3/4/5/6 by width
+const skel = (root) => {
+  const g = root.matches?.(".skeleton-image-grid") ? root : root.querySelector?.(".skeleton-image-grid");
+  if (!g) return;
+  const w = g.clientWidth || innerWidth;
+  const want = w <= 800 ? 3 : w <= 1100 ? 4 : w <= 1400 ? 5 : 6;
+  const cols = [...g.children];
+  cols.slice(want).forEach((c) => c.remove());
+  for (let i = cols.length; i < want; i++) g.append(cols[i % cols.length].cloneNode(true));
+};
+
 const init = () => {
   readQuery();
   scan(document.body);
+  skel(document.body);
   extras(); paa(); tools();
   // Runs right after degoog inserts results and before the screen updates; only looks inside what was added
   new MutationObserver((muts) => {
     readQuery();
-    for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) scan(n);
+    for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { scan(n); skel(n); }
     extras(); paa(); tools();
   }).observe(document.body, { childList: true, subtree: true });
 };
