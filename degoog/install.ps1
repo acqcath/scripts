@@ -129,6 +129,8 @@ const NAMES = new Set();
 const isName = (w) => NAMES.has(w) || (learned.cap && learned.cap[w] || 0) >= 2;
 // Settings > Clean Titles > "Learn from my search results" (off: nothing about your searches is stored or used)
 let LEARN = false;
+// Settings > Clean Titles: which of Sitelinks / Discussions / Videos / Top stories to show (all on unless turned off)
+let SHOW = { sl: true, forum: true, video: true, news: true };
 const EMPTY = () => ({ w: {}, b: {}, keep: {}, fix: {}, cap: {} });
 const readLearned = () => { try { learned = Object.assign(EMPTY(), JSON.parse(fs.readFileSync(`${DIR}/learned.json`, "utf8"))); } catch { learned = EMPTY(); } };
 const PAIRS = new Map();
@@ -536,6 +538,11 @@ export const routes = [
     },
   },
   {
+    method: "get",
+    path: "/prefs",
+    handler: () => new Response(JSON.stringify(SHOW), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } }),
+  },
+  {
     method: "post",
     path: "/learn",
     async handler(req) {
@@ -589,9 +596,15 @@ export default {
   trigger: "cleantitles",
   aliases: ["ct"],
   settingsSchema: [
+    { key: "showSitelinks", label: "Sitelinks", type: "toggle", default: true, description: "The top result's other pages as links under it." },
+    { key: "showDiscussions", label: "Discussions and forums", type: "toggle", default: true, description: "Reddit, Stack Overflow and forum threads from your results in one box." },
+    { key: "showVideos", label: "Videos", type: "toggle", default: true, description: "Video results as a row of cards." },
+    { key: "showTopStories", label: "Top stories", type: "toggle", default: true, description: "Fresh news cards when your results look like news (one extra News search)." },
     { key: "learnFromResults", label: "Learn from my search results", type: "toggle", description: "Off: nothing about your searches is stored or used. On: the typo fixer remembers words and names from your result titles, plus the Did you mean fixes you tap or turn down (kept on this server only)." },
   ],
   configure(s) {
+    const off = (k) => !!s && (s[k] === false || s[k] === "false");
+    SHOW = { sl: !off("showSitelinks"), forum: !off("showDiscussions"), video: !off("showVideos"), news: !off("showTopStories") };
     const on = !!s && (s.learnFromResults === true || s.learnFromResults === "true");
     if (on === LEARN) return;
     LEARN = on;
@@ -663,7 +676,7 @@ window.fetch = async (input, init) => {
 // Which search a page address is, ignoring what endless scroll adds while you scroll (&loaded=2) and any #
 const searchId = (h) => { try { const u = new URL(h); u.hash = ""; u.searchParams.delete("loaded"); return u.toString(); } catch { return String(h).split("#")[0]; } };
 const sameSearch = (k) => searchId(location.href) === searchId(k);
-// clean-titles v46
+// clean-titles v47
 
 // clean-titles: ONE pass per new result, run before the browser draws it (no timers, no re-scans).
 // Network work (HD thumbnails, missing video descriptions) only starts for results near the screen.
@@ -1443,10 +1456,15 @@ const storyCard = (r) => {
 };
 
 let G = { key: "" };
+// Your Settings switches for these boxes, asked once per page load; nothing is built until the answer arrives,
+// so a switched-off box never flashes
+let SHOW = null;
+bridge("prefs", {}).then((j) => { SHOW = j && typeof j === "object" ? j : { sl: true, forum: true, video: true, news: true }; safe("groups", groups); })
+  .catch(() => { SHOW = { sl: true, forum: true, video: true, news: true }; safe("groups", groups); });
 const used = (el) => el.classList.contains("ct-grouped");
 const shown = (el) => el.style.display !== "none" && !used(el);
 const groups = () => {
-  if (!webTab) return;
+  if (!webTab || !SHOW) return;
   const list = document.getElementById("results-list");
   if (!list) return;
   const key = searchId(location.href);
@@ -1462,7 +1480,7 @@ const groups = () => {
 
   // Sitelinks: the top result's other pages from your results, under it (they leave the list, so no repeats)
   if (G.slTop !== top.el) { G.sl?.remove(); G.sl = null; G.slTop = top.el; }
-  if (!top.video && !top.forum) {
+  if (SHOW.sl && !top.video && !top.forum) {
     const base = top.href.split("#")[0];
     const same = rows.filter((r) => r !== top && r.h === top.h && !used(r.el) && !r.video && !r.forum && r.href.split("#")[0] !== base);
     const have = G.sl ? G.sl.children.length : 0;
@@ -1495,12 +1513,12 @@ const groups = () => {
     for (const r of c.slice(0, Math.max(0, max - n))) { s.row.append(build(r)); r.el.classList.add("ct-grouped"); }
     s.wrap?.upd();
   };
-  box("forum", (r) => !!r.forum, 4, forumRow, "Discussions and forums", "forums", "More discussions", false);
-  box("video", (r) => r.video, 8, videoCard, "Videos", "videos", "More videos", true);
+  if (SHOW.forum) box("forum", (r) => !!r.forum, 4, forumRow, "Discussions and forums", "forums", "More discussions", false);
+  if (SHOW.video) box("video", (r) => r.video, 8, videoCard, "Videos", "videos", "More videos", true);
 
   // Top stories: only when 2+ results from different sites are from the last few days. One News-tab search (degoog
   // keeps engine answers, so opening the News tab after reuses it); fresh stories only, one per outlet, none already shown
-  if (!G.news) {
+  if (SHOW.news && !G.news) {
     const recent = new Set(rows.filter((r) => fresh(r.w)).map((r) => r.h));
     if (recent.size < 2) return;
     G.news = true;
@@ -2216,7 +2234,7 @@ docker restart $c | Out-Null
 $null = docker exec $c sh -c 'for i in $(seq 1 40); do curl -fs -o /dev/null http://127.0.0.1:${DEGOOG_PORT:-4444}/readyz && exit 0; sleep 1; done'
 
 $ss = docker exec $c cat /app/data/server-settings.json | Out-String | ConvertFrom-Json
-"plugin code inside the page (should be v46): " + (docker exec $c grep -o 'clean-titles v[0-9]*' /app/src/public/themes/degoog-theme/layout.html)
+"plugin code inside the page (should be v47): " + (docker exec $c grep -o 'clean-titles v[0-9]*' /app/src/public/themes/degoog-theme/layout.html)
 "typo fixer word list (should be about 82800): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/words.txt')
 "typo fixer word pairs (should be about 243000): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/pairs.txt')
 "names from Wikipedia (should be well over 100000): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/names.txt 2>/dev/null')
