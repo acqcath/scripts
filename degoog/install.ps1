@@ -472,6 +472,24 @@ export const routes = [
     },
   },
   {
+    // Another plugin's request the iPhone couldn't send (AI Summary...): made here inside degoog, answer sent back whole
+    method: "post",
+    path: "/relay",
+    async handler(req) {
+      let j = {};
+      try { j = await req.json(); } catch {}
+      const path = String(j.path || "");
+      if (!/^\/api\/plugin\/[\w.-]+\/[\w./-]*$/.test(path.split("?")[0])) return new Response("bad path", { status: 400 });
+      const post = j.method === "POST";
+      try {
+        const r = await fetch(`http://127.0.0.1:${Number(process.env.DEGOOG_PORT) || 4444}${path}`, { method: post ? "POST" : "GET", headers: j.type ? { "Content-Type": String(j.type) } : {}, body: post ? String(j.body ?? "") : undefined, signal: AbortSignal.timeout(90000) });
+        return new Response(JSON.stringify({ status: r.status, type: r.headers.get("content-type") || "", text: await r.text() }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+      } catch (e) {
+        return new Response(JSON.stringify({ status: 502, type: "text/plain", text: String(e) }), { headers: { "Content-Type": "application/json" } });
+      }
+    },
+  },
+  {
     // Each device's latest People also ask status, printed by the installer (no tests needed on the phone)
     method: "post",
     path: "/report",
@@ -575,7 +593,7 @@ const bridge = (route, params = {}, body) => {
   if (body !== undefined) qs.set("__body", body);
   const q = `!cleantitles bridge ${route} ${qs}`;
   // Always POST: on iPhone the GET form failed ("Load failed") while POST got through
-  const req = fetch("/api/command", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: q }), cache: "no-store", ...(body !== undefined ? { keepalive: true } : {}) });
+  const req = fetch("/api/command", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: q }), cache: "no-store", ...(body !== undefined && body.length < 50000 ? { keepalive: true } : {}) });
   return req.then((r) => (r.ok ? r.json() : null)).then((j) => {
     if (!j || typeof j.html !== "string") return null;
     const t = document.createElement("textarea");
@@ -583,12 +601,31 @@ const bridge = (route, params = {}, body) => {
     try { return JSON.parse(t.value); } catch { return null; }
   });
 };
+// Other plugins' requests (AI Summary...) that the iPhone's content blocker stops are sent again through the bridge
+const _fetch0 = window.fetch.bind(window);
+window.fetch = async (input, init) => {
+  let path = "";
+  try {
+    const u = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.href);
+    if (u.origin === location.origin && u.pathname.startsWith("/api/plugin/")) path = u.pathname + u.search;
+  } catch {}
+  if (!path) return _fetch0(input, init);
+  try { return await _fetch0(input, init); }
+  catch (e) {
+    const o = init || {}, method = String(o.method || (input && input.method) || "GET").toUpperCase();
+    if (o.body != null && typeof o.body !== "string") throw e;
+    const h = o.headers || {}, type = (typeof h.get === "function" ? h.get("Content-Type") : h["Content-Type"] || h["content-type"]) || "";
+    const j = await bridge("relay", {}, JSON.stringify({ path, method, body: o.body, type })).catch(() => null);
+    if (!j || typeof j.text !== "string") throw e;
+    return new Response(j.text, { status: j.status || 200, headers: { "Content-Type": j.type || "text/plain" } });
+  }
+};
 // Same search even if degoog tidied the address (e.g. dropped a #) meanwhile
 // Which search a page address is, ignoring what endless scroll adds while you scroll (&loaded=2) and any #
 const searchId = (h) => { try { const u = new URL(h); u.hash = ""; u.searchParams.delete("loaded"); return u.toString(); } catch { return String(h).split("#")[0]; } };
 const sameSearch = (k) => searchId(location.href) === searchId(k);
 // Status line (first, so it also catches startup errors), only with #ctdebug in the address: shows what People also ask did on this device
-const dbg = { code: "v38", qs: "not asked", err: "none" };
+const dbg = { code: "v39", qs: "not asked", err: "none" };
 let DBG = false;
 try { DBG = /ctdebug/.test(location.href) || sessionStorage.getItem("ct-dbg") === "1"; if (DBG) sessionStorage.setItem("ct-dbg", "1"); } catch { DBG = /ctdebug/.test(location.href); }
 addEventListener("error", (e) => { dbg.err = `page: ${e.message}`; dbgShow(); });
@@ -963,6 +1000,15 @@ const extras = () => {
         if (changed) dym = out.join(" ");
       }
       if (!dym && !from && webTab && j.dym) dym = lower(j.dym);
+      // Keep words that aren't typos: 1-2 letter words ("ai", "tv") and words the results write joined to a
+      // neighbour ("open ai" when they say "OpenAI")
+      if (dym) {
+        const qw = lower(j.fix || q).split(" "), dw = dym.split(" ");
+        if (qw.length === dw.length) {
+          for (let k = 0; k < qw.length; k++) if (dw[k] !== qw[k] && (qw[k].length <= 2 || (k > 0 && count(qw[k - 1] + qw[k])) || (k + 1 < qw.length && count(qw[k] + qw[k + 1])))) dw[k] = qw[k];
+          dym = dw.join(" ") === qw.join(" ") ? null : dw.join(" ");
+        }
+      }
       const link = (s, href) => { const a = document.createElement("a"); a.href = href; a.textContent = s; return a; };
       // Like Google: the fixed words in bold italics, the rest plain
       const marked = (s, href) => {
