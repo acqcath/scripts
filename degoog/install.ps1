@@ -490,9 +490,7 @@ export const routes = [
       const { fix, words, dym, via } = await check(q);
       const seen = new Set([norm(q), norm(fix || q)]);
       const related = (await suggestions(fix || q)).map(norm).filter((s) => s && !seen.has(s) && seen.add(s)).slice(0, 8);
-      let qs;
-      if (u.searchParams.get("qs")) { qs = []; try { if (!skip(norm(q))) qs = await questions(q); } catch {} }
-      return new Response(JSON.stringify({ fix, words, dym, via, related, q: qs }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+      return new Response(JSON.stringify({ fix, words, dym, via, related }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
     },
   },
   {
@@ -521,22 +519,6 @@ export const routes = [
       } catch (e) {
         return new Response(JSON.stringify({ status: 502, type: "text/plain", text: String(e) }), { headers: { "Content-Type": "application/json" } });
       }
-    },
-  },
-  {
-    // Each device's latest People also ask status, printed by the installer (no tests needed on the phone)
-    method: "post",
-    path: "/report",
-    async handler(req) {
-      try {
-        const j = await req.json();
-        const f = `${DIR}/reports.json`;
-        let all = {};
-        try { all = JSON.parse(fs.readFileSync(f, "utf8")); } catch {}
-        all[String(j.device || "?").slice(0, 20)] = `${new Date().toISOString().slice(0, 16)} ${String(j.text || "").slice(0, 600)}`;
-        fs.writeFileSync(f, JSON.stringify(all, null, 1));
-      } catch {}
-      return new Response(null, { status: 204 });
     },
   },
   {
@@ -667,23 +649,8 @@ window.fetch = async (input, init) => {
 // Which search a page address is, ignoring what endless scroll adds while you scroll (&loaded=2) and any #
 const searchId = (h) => { try { const u = new URL(h); u.hash = ""; u.searchParams.delete("loaded"); return u.toString(); } catch { return String(h).split("#")[0]; } };
 const sameSearch = (k) => searchId(location.href) === searchId(k);
-// Status line (first, so it also catches startup errors), only with #ctdebug in the address: shows what People also ask did on this device
-const dbg = { code: "v43", qs: "not asked", err: "none" };
-let DBG = false;
-try { DBG = /ctdebug/.test(location.href) || sessionStorage.getItem("ct-dbg") === "1"; if (DBG) sessionStorage.setItem("ct-dbg", "1"); } catch { DBG = /ctdebug/.test(location.href); }
-addEventListener("error", (e) => { dbg.err = `page: ${e.message}`; dbgShow(); });
-const dbgShow = () => {
-  if (!DBG || !document.body) return;
-  let el = document.getElementById("ct-dbg");
-  if (!el) { el = document.createElement("div"); el.id = "ct-dbg"; el.style.cssText = "position:fixed;left:8px;right:8px;top:8px;z-index:99999;background:#000;color:#0f0;font:12px/1.4 monospace;padding:6px;border-radius:6px;white-space:pre-wrap"; document.body.append(el); }
-  const t = dbgText();
-  if (el.textContent !== t) el.textContent = t; // unchanged text = no page change, so no endless loop
-};
-const dbgText = () => {
-  const b = document.getElementById("ct-qa");
-  const st = b ? getComputedStyle(b) : null;
-  return `code ${dbg.code} | questions request: ${dbg.qs} | box in page: ${!!b} | box height: ${b ? b.offsetHeight : "-"} | display: ${st ? st.display : "-"} | visibility: ${st ? st.visibility : "-"} | results: ${document.querySelectorAll("#results-list .result-item").length} | error: ${dbg.err}`;
-};
+// clean-titles v44
+
 // clean-titles: ONE pass per new result, run before the browser draws it (no timers, no re-scans).
 // Network work (HD thumbnails, missing video descriptions) only starts for results near the screen.
 
@@ -1169,16 +1136,8 @@ const paa = () => {
   if (old) old.remove();
   paaBox = null;
   if (!q || page > 1 || q.startsWith("!")) return;
-  dbg.qs = "sent"; dbgShow();
-  // 8 s later, tell the server how it went on this device (the installer prints it)
-  setTimeout(() => {
-    if (paaFor !== key) return;
-    const ua = navigator.userAgent, device = /iPhone|iPad/.test(ua) ? "iPhone" : /Mac/.test(ua) ? "Mac" : /Windows/.test(ua) ? "PC" : "other";
-    bridge("report", {}, JSON.stringify({ device, text: dbgText() })).catch(() => {});
-  }, 8000);
   bridge("qs", { q })
     .then((j) => {
-      dbg.qs += j && Array.isArray(j.q) ? `, ${j.q.length} questions` : ", no data"; setTimeout(dbgShow, 300);
       if (paaFor !== key) return; // a different search by now
       // No answer (slow moment): ask again on the next page change, up to 2 more times
       if (!j || !Array.isArray(j.q)) { if (++paaTries <= 2) paaFor = ""; return; }
@@ -1252,7 +1211,7 @@ const paa = () => {
       paaBox = box;
       paaAnchor()?.after(box); // no 3rd result yet: goes in as soon as there is one
     })
-    .catch((e) => { dbg.qs = "failed: " + (e && e.message); dbgShow(); if (paaFor === key && ++paaTries <= 2) paaFor = ""; });
+    .catch(() => { if (paaFor === key && ++paaTries <= 2) paaFor = ""; });
 };
 
 // Tools, like Google's advanced search: a small link beside the tabs opens the fields, filled from your search
@@ -1340,10 +1299,9 @@ const noUsage = (root) => {
   }
 };
 
-// Each step runs on its own: one error can't stop the others (errors show on the #ctdebug line)
-const safe = (name, fn) => { try { fn(); } catch (e) { dbg.err = `${name}: ${e && e.message}`; dbgShow(); } };
+// Each step runs on its own: one error can't stop the others (errors go to the browser console)
+const safe = (name, fn) => { try { fn(); } catch (e) { console.error(`clean-titles ${name}:`, e); } };
 const init = () => {
-  dbgShow();
   safe("query", readQuery);
   safe("usage", () => noUsage(document.body));
   safe("card", glance);
@@ -1355,16 +1313,13 @@ const init = () => {
     safe("query", readQuery);
     for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { safe("scan", () => scan(n)); safe("skeleton", () => skel(n)); safe("usage", () => noUsage(n)); }
     safe("extras", extras); safe("ask", paa); safe("tools", tools); safe("card", glance);
-    dbgShow();
   }).observe(document.body, { childList: true, subtree: true });
 };
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
 else init();
 '@)
-Get-ChildItem $t | ForEach-Object { "  $($_.Name) $($_.Length) bytes" }
 $c = docker ps -q | Where-Object { (docker inspect $_ --format '{{range .Mounts}}{{.Destination}} {{end}}') -match '/app/data' }
-docker exec $c sh -c 'rm -rf /app/data/backups/clean-titles /app/data/backups/*.before-* /app/data/backups/server-settings.before-css.json; rmdir /app/data/backups 2>/dev/null; true'
-docker cp "$t\index.js" "${c}:/app/data/plugins/clean-titles/index.js"; docker exec -u 0 $c rm -f /app/data/plugins/clean-titles/script.js
+docker cp "$t\index.js" "${c}:/app/data/plugins/clean-titles/index.js"; docker exec $c rm -f /app/data/plugins/clean-titles/reports.json
 # English word list for the typo fixer (82,765 words with how common each is; downloaded once)
 if (-not (docker exec $c sh -c 'test -s /app/data/plugins/clean-titles/words.txt && echo y')) { Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/wolfgarbe/SymSpell/master/SymSpell/frequency_dictionary_en_82_765.txt' -OutFile "$t\words.txt"; docker cp "$t\words.txt" "${c}:/app/data/plugins/clean-titles/words.txt" }
 # Common English word pairs for the typo fixer ("how to", "the weather"; downloaded once)
@@ -1956,17 +1911,14 @@ console.log("custom CSS saved into degoog: " + s.settings.customCss.length + " c
 docker cp "$t\custom.css" "${c}:/tmp/custom.css"; docker cp "$t\setcss.js" "${c}:/tmp/setcss.js"
 docker exec $c bun /tmp/setcss.js; docker exec $c rm -f /tmp/custom.css /tmp/setcss.js
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $t
-docker restart $c; "done, leftovers removed"
+docker restart $c | Out-Null
 $null = docker exec $c sh -c 'for i in $(seq 1 40); do curl -fs -o /dev/null http://127.0.0.1:${DEGOOG_PORT:-4444}/readyz && exit 0; sleep 1; done'
 
 $ss = docker exec $c cat /app/data/server-settings.json | Out-String | ConvertFrom-Json
-"custom CSS in degoog: $("$($ss.settings.customCss)".Length) chars"
-"plugin code inside the page (should be 1): " + (docker exec $c grep -c ct-inline /app/src/public/themes/degoog-theme/layout.html)
-"separate script file gone (should be True): " + (-not (docker exec $c sh -c 'ls /app/data/plugins/clean-titles/script.js 2>/dev/null'))
+"plugin code inside the page (should be v44): " + (docker exec $c grep -o 'clean-titles v[0-9]*' /app/src/public/themes/degoog-theme/layout.html)
 "typo fixer word list (should be about 82800): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/words.txt')
 "typo fixer word pairs (should be about 243000): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/pairs.txt')
 "names from Wikipedia (should be well over 100000): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/names.txt 2>/dev/null')
-"old backup copies left in degoog: " + (docker exec $c sh -c 'ls /app/data/backups 2>/dev/null | wc -l')
 "result menu with Rank higher / Rank lower / Block (should be True): $($ss.settings.domainScoreUiEnabled -and $ss.settings.domainBlockUiEnabled)"
 "endless scroll on (should be True): $($ss.settings.infiniteScrollEnabled)"
 # Checks both code files for mistakes and tries the typo fixer and People also ask, from inside degoog
@@ -1980,24 +1932,17 @@ const test = (name, code) => {
 const m = /<script type="module" id="ct-inline">([\s\S]*?)\n<\/script>/.exec(fs.readFileSync("/app/src/public/themes/degoog-theme/layout.html", "utf8"));
 test("page code check (should be OK)", m && m[1]);
 test("server code check (should be OK)", fs.readFileSync("/app/data/plugins/clean-titles/index.js", "utf8"));
-const base = `http://127.0.0.1:${process.env.DEGOOG_PORT || 4444}/api/plugin/clean-titles`;
-for (const [name, path] of [["typo fix for 'teh wether tommorow'", "/fix?q=teh+wether+tommorow"], ["People also ask for 'pittsburgh steelers'", "/qs?q=pittsburgh+steelers"]]) {
-  const s = Date.now();
-  try { const r = await fetch(base + path, { signal: AbortSignal.timeout(10000) }); console.log(`${name}: ${(await r.text()).slice(0, 400)} (${Date.now() - s} ms)`); }
-  catch (e) { console.log(`${name}: failed: ${e}`); }
-}
-// The route your iPhone uses (content blockers reject /api/plugin/ addresses)
-try {
-  const r = await fetch(base.replace(/\/api\/plugin\/.*$/, "") + "/api/command?q=" + encodeURIComponent("!cleantitles bridge qs q=pittsburgh+steelers"), { signal: AbortSignal.timeout(10000) });
-  const j = await r.json();
-  console.log("People also ask through the iPhone-safe route (should list questions): " + String(j.html || j.error).replace(/&quot;/g, '"').slice(0, 300));
-} catch (e) { console.log(`iPhone-safe route: failed: ${e}`); }
-// Where search suggestions come from right now (typo fixing, related searches and People also ask all need them)
-for (const [name, u] of [["Bing", "https://api.bing.com/osjson.aspx?query=pittsburgh"], ["DuckDuckGo", "https://duckduckgo.com/ac/?q=pittsburgh&type=list"]]) {
-  try { const r = await fetch(u, { headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36" }, signal: AbortSignal.timeout(5000) }); const t = await r.text(); console.log(`${name} suggestions (should list some): ${r.status} ${t.slice(0, 120)}`); }
-  catch (e) { console.log(`${name} suggestions: failed: ${e}`); }
-}
-try { console.log("Last People also ask status per device:\n" + fs.readFileSync("/app/data/plugins/clean-titles/reports.json", "utf8")); } catch { console.log("Last People also ask status per device: none yet"); }
+// Tries the typo fixer and People also ask the way your iPhone reaches them (through /api/command)
+const ask = async (name, cmd) => {
+  const t0 = Date.now();
+  try {
+    const r = await fetch(`http://127.0.0.1:${process.env.DEGOOG_PORT || 4444}/api/command`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: `!cleantitles bridge ${cmd}` }), signal: AbortSignal.timeout(10000) });
+    const j = await r.json();
+    console.log(`${name}: ${String(j.html || j.error).replace(/&quot;/g, '"').replace(/&amp;/g, "&").slice(0, 300)} (${Date.now() - t0} ms)`);
+  } catch (e) { console.log(`${name}: failed: ${e}`); }
+};
+await ask("typo fix for 'teh wether tommorow' (should be the weather tomorrow)", "fix q=teh+wether+tommorow");
+await ask("People also ask for 'pittsburgh steelers' (should list questions)", "qs q=pittsburgh+steelers");
 '@)
 docker cp "$env:TEMP\ct-check.js" "${c}:/tmp/ct-check.js"; docker exec $c bun /tmp/ct-check.js; docker exec $c rm -f /tmp/ct-check.js; Remove-Item -Force "$env:TEMP\ct-check.js"
 } | Tee-Object -Variable o; $o | Out-String | Set-Clipboard
