@@ -543,7 +543,8 @@ const dbgShow = () => {
   if (!el) { el = document.createElement("div"); el.id = "ct-dbg"; el.style.cssText = "position:fixed;left:8px;right:8px;top:8px;z-index:99999;background:#000;color:#0f0;font:12px/1.4 monospace;padding:6px;border-radius:6px;white-space:pre-wrap"; document.body.append(el); }
   const b = document.getElementById("ct-qa");
   const st = b ? getComputedStyle(b) : null;
-  el.textContent = `code ${dbg.code} | questions request: ${dbg.qs} | box in page: ${!!b} | box height: ${b ? b.offsetHeight : "-"} | display: ${st ? st.display : "-"} | visibility: ${st ? st.visibility : "-"} | results: ${document.querySelectorAll("#results-list .result-item").length} | error: ${dbg.err}`;
+  const t = `code ${dbg.code} | questions request: ${dbg.qs} | box in page: ${!!b} | box height: ${b ? b.offsetHeight : "-"} | display: ${st ? st.display : "-"} | visibility: ${st ? st.visibility : "-"} | results: ${document.querySelectorAll("#results-list .result-item").length} | error: ${dbg.err}`;
+  if (el.textContent !== t) el.textContent = t; // unchanged text = no page change, so no endless loop
 };
 // clean-titles: ONE pass per new result, run before the browser draws it (no timers, no re-scans).
 // Network work (HD thumbnails, missing video descriptions) only starts for results near the screen.
