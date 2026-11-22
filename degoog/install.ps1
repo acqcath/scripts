@@ -1001,7 +1001,7 @@ const paa = () => {
   const key = (paaFor = location.href);
   let q = "", page = 1;
   try { const u = new URL(key); q = (u.searchParams.get("q") || "").trim(); page = Number(u.searchParams.get("page") || 1); } catch {}
-  const old = document.getElementById("ct-paa");
+  const old = document.getElementById("ct-qa");
   if (old) old.remove();
   paaBox = null;
   if (!q || page > 1 || q.startsWith("!")) return;
@@ -1010,7 +1010,7 @@ const paa = () => {
     .then((j) => {
       if (!j || !Array.isArray(j.q) || j.q.length < 2 || location.href !== key || !paaAnchor()) return;
       const box = document.createElement("div");
-      box.id = "ct-paa";
+      box.id = "ct-qa";
       const h = document.createElement("h3");
       h.textContent = "People also ask";
       box.append(h);
@@ -1019,14 +1019,14 @@ const paa = () => {
         const s = document.createElement("summary");
         s.textContent = text;
         const body = document.createElement("div");
-        body.className = "ct-paa-a";
+        body.className = "ct-qa-a";
         d.append(s, body);
         d.addEventListener("toggle", () => {
           if (!d.open || body.dataset.done) return;
           body.dataset.done = "1";
           body.textContent = "Loading…";
           const more = document.createElement("a");
-          more.className = "ct-paa-more";
+          more.className = "ct-qa-more";
           more.href = goTo(text);
           more.textContent = "Search for this";
           fetch(`/api/search?q=${encodeURIComponent(text)}`)
@@ -1038,10 +1038,10 @@ const paa = () => {
                 const p = document.createElement("p");
                 p.textContent = String(top.snippet).replace(/<[^>]+>/g, "");
                 const site = document.createElement("span");
-                site.className = "ct-paa-site";
+                site.className = "ct-qa-site";
                 try { site.textContent = new URL(top.url).hostname.replace(/^www\./, ""); } catch {}
                 const a = document.createElement("a");
-                a.className = "ct-paa-src";
+                a.className = "ct-qa-src";
                 a.href = top.url;
                 a.textContent = cleanTitle(top.title || top.url, top.url);
                 body.append(p, site, a);
@@ -1661,20 +1661,20 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 @keyframes ct-flash { from { background: rgba(137, 180, 250, .12); } to { background: transparent; } }
 
 /* People also ask: Google's question list with thin lines between questions */
-#ct-paa { margin: 4px 0 24px; }
-#ct-paa h3 { font-size: 18px; line-height: 24px; font-weight: 500; margin: 0 0 6px; color: var(--text-primary); }
-#ct-paa details { border-top: 1px solid rgba(88, 91, 112, .45); }
-#ct-paa details:last-child { border-bottom: 1px solid rgba(88, 91, 112, .45); }
-#ct-paa summary { list-style: none; cursor: pointer; padding: 12px 28px 12px 0; position: relative; font-size: 15px; line-height: 22px; color: var(--text-primary); }
-#ct-paa summary::-webkit-details-marker { display: none; }
-#ct-paa summary::after { content: "⌄"; position: absolute; right: 4px; top: 8px; font-size: 18px; color: var(--text-secondary); transition: transform .2s; }
-#ct-paa details[open] summary::after { transform: rotate(180deg); }
-.ct-paa-a { padding: 0 0 14px; font-size: 14px; line-height: 21px; color: var(--text-snippet); }
-.ct-paa-a p { margin: 0 0 8px; }
-.ct-paa-site { display: block; font-size: 12.5px; color: var(--text-cite); }
-.ct-paa-src { display: block; font-size: 16px; line-height: 22px; color: var(--text-link); text-decoration: none; margin-bottom: 6px; }
-.ct-paa-more { font-size: 13px; color: var(--text-link); }
-@media (max-width: 767px) { #ct-paa h3 { font-size: 16px; } #ct-paa summary { font-size: 14.5px; } }
+#ct-qa { margin: 4px 0 24px; }
+#ct-qa h3 { font-size: 18px; line-height: 24px; font-weight: 500; margin: 0 0 6px; color: var(--text-primary); }
+#ct-qa details { border-top: 1px solid rgba(88, 91, 112, .45); }
+#ct-qa details:last-child { border-bottom: 1px solid rgba(88, 91, 112, .45); }
+#ct-qa summary { list-style: none; cursor: pointer; padding: 12px 28px 12px 0; position: relative; font-size: 15px; line-height: 22px; color: var(--text-primary); }
+#ct-qa summary::-webkit-details-marker { display: none; }
+#ct-qa summary::after { content: "⌄"; position: absolute; right: 4px; top: 8px; font-size: 18px; color: var(--text-secondary); transition: transform .2s; }
+#ct-qa details[open] summary::after { transform: rotate(180deg); }
+.ct-qa-a { padding: 0 0 14px; font-size: 14px; line-height: 21px; color: var(--text-snippet); }
+.ct-qa-a p { margin: 0 0 8px; }
+.ct-qa-site { display: block; font-size: 12.5px; color: var(--text-cite); }
+.ct-qa-src { display: block; font-size: 16px; line-height: 22px; color: var(--text-link); text-decoration: none; margin-bottom: 6px; }
+.ct-qa-more { font-size: 13px; color: var(--text-link); }
+@media (max-width: 767px) { #ct-qa h3 { font-size: 16px; } #ct-qa summary { font-size: 14.5px; } }
 
 /* Tools: a small link beside the tabs, opening Google-style advanced search fields */
 #ct-tools { background: none; border: 0; padding: 0 12px; font: inherit; font-size: 13.5px; color: var(--text-secondary); cursor: pointer; margin-left: auto; }
