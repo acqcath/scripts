@@ -386,10 +386,10 @@ const QW = /^(what|how|why|is|are|can|does|do|did|when|where|who|which|should|wi
 const questions = async (q) => {
   const qn = norm(q);
   const want = toks(qn).filter((w) => w.length >= 3);
-  const lists = await Promise.all(["", "what ", "how ", "why ", "is ", "can "].map((p) => suggestions(p + qn)));
+  const lists = await Promise.all(["", "what ", "what is ", "what does ", "how ", "how to ", "how do ", "why ", "who is ", "when ", "is ", "can "].map((p) => suggestions(p + qn)));
   const out = [], seen = new Set();
   for (const s of lists.flat().map(norm)) {
-    if (!QW.test(s) || seen.has(s) || s.split(" ").length < 4) continue;
+    if (!QW.test(s) || seen.has(s) || s.split(" ").length < 3 || s === qn) continue;
     if (want.length && !want.some((w) => s.includes(w))) continue;
     // Same question in other words ("why are the steelers called that" / "why are they called steelers"): keep one
     const sw = new Set(s.split(" "));
