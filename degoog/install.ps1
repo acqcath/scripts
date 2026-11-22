@@ -218,6 +218,8 @@ const dist = (a, b) => {
 
 // Bing's suggestions for a search (cached a day)
 const _sug = new Map();
+// Bing answering with nothing at all (204, blocked, error) means it's down for this server: skip it for an hour
+let bingDownUntil = 0;
 const suggestions = async (q) => {
   const key = norm(q);
   if (!key) return [];
@@ -229,14 +231,20 @@ const suggestions = async (q) => {
   // degoog's own outgoing fetch first, then a plain one (the plain one is what reached Bing in testing)
   // Bing answers some browser names with an empty page, so a Chrome one goes first (it worked in testing)
   const UAS = ["Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0"];
+  let bingBad = 0, bingTries = 0;
   got: for (const url of urls) for (const ua of UAS) for (const f of _fetch ? [_fetch, fetch] : [fetch]) {
+    const isBing = url === urls[0];
+    if (isBing && Date.now() < bingDownUntil) continue;
+    if (isBing) bingTries++;
     try {
       const r = await f(url, {
         headers: { "User-Agent": ua, "Accept-Language": "en-US,en;q=0.9", Accept: "application/json, text/javascript, */*" },
         signal: AbortSignal.timeout(1500),
       });
-      if (r.ok) { const j = JSON.parse(await r.text()); if (Array.isArray(j) && Array.isArray(j[1])) { s = j[1].filter((x) => typeof x === "string"); if (s.length) break got; } }
-    } catch {}
+      if (isBing && (!r.ok || r.status === 204)) bingBad++;
+      if (r.ok && r.status !== 204) { const j = JSON.parse(await r.text()); if (Array.isArray(j) && Array.isArray(j[1])) { s = j[1].filter((x) => typeof x === "string"); if (s.length) break got; } }
+    } catch { if (isBing) bingBad++; }
+    if (isBing && bingTries && bingBad === bingTries && bingTries >= 2) bingDownUntil = Date.now() + 3600000;
   }
   if (s.length) { if (_sug.size > 2000) _sug.clear(); _sug.set(key, { s, t: Date.now() }); }
   return s;
@@ -489,7 +497,13 @@ export const routes = [
       if (u.searchParams.get("acc")) { accept(u.searchParams.get("acc").slice(0, 200), q); _fix.clear(); }
       const { fix, words, dym, via } = await check(q);
       const seen = new Set([norm(q), norm(fix || q)]);
-      const related = (await suggestions(fix || q)).map(norm).filter((s) => s && !seen.has(s) && seen.add(s)).slice(0, 8);
+      // Several suggestions that are the same search plus a different place ("... in hull", "... in surin") are a
+      // list of other people's towns, not related searches: that whole group goes ("near me" stays)
+      const all = (await suggestions(fix || q)).map(norm).filter((x) => x && !seen.has(x) && seen.add(x));
+      const placeKey = (x) => { const m = /^(.+?) (in|at|near|from) (\S+(?: \S+){0,2})$/.exec(x); return m && m[3] !== "me" ? `${m[1]} ${m[2]}` : null; };
+      const groups = new Map();
+      for (const x of all) { const k = placeKey(x); if (k) groups.set(k, (groups.get(k) || 0) + 1); }
+      const related = all.filter((x) => { const k = placeKey(x); return !k || groups.get(k) < 2; }).slice(0, 8);
       return new Response(JSON.stringify({ fix, words, dym, via, related }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
     },
   },
@@ -649,7 +663,7 @@ window.fetch = async (input, init) => {
 // Which search a page address is, ignoring what endless scroll adds while you scroll (&loaded=2) and any #
 const searchId = (h) => { try { const u = new URL(h); u.hash = ""; u.searchParams.delete("loaded"); return u.toString(); } catch { return String(h).split("#")[0]; } };
 const sameSearch = (k) => searchId(location.href) === searchId(k);
-// clean-titles v44
+// clean-titles v45
 
 // clean-titles: ONE pass per new result, run before the browser draws it (no timers, no re-scans).
 // Network work (HD thumbnails, missing video descriptions) only starts for results near the screen.
@@ -1915,7 +1929,7 @@ docker restart $c | Out-Null
 $null = docker exec $c sh -c 'for i in $(seq 1 40); do curl -fs -o /dev/null http://127.0.0.1:${DEGOOG_PORT:-4444}/readyz && exit 0; sleep 1; done'
 
 $ss = docker exec $c cat /app/data/server-settings.json | Out-String | ConvertFrom-Json
-"plugin code inside the page (should be v44): " + (docker exec $c grep -o 'clean-titles v[0-9]*' /app/src/public/themes/degoog-theme/layout.html)
+"plugin code inside the page (should be v45): " + (docker exec $c grep -o 'clean-titles v[0-9]*' /app/src/public/themes/degoog-theme/layout.html)
 "typo fixer word list (should be about 82800): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/words.txt')
 "typo fixer word pairs (should be about 243000): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/pairs.txt')
 "names from Wikipedia (should be well over 100000): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/names.txt 2>/dev/null')
