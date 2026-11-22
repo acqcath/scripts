@@ -383,6 +383,9 @@ const soundAlike = (w) => {
 };
 // People also ask: question-style Bing suggestions for the search ("how ...", "what ...", "is ...")
 const QW = /^(what|how|why|is|are|can|does|do|did|when|where|who|which|should|will|was)\b/;
+// Search-box phrasing that isn't a real question ("what putty is used for", "how putty works"): skipped
+const WH2 = /^(what|how|why|when|where|who|which) (?!(is|are|was|were|do|does|did|can|could|should|would|will|to|much|many|long|old|far|often|big|tall|fast|kind|type|types|size|happens|happened|causes|caused|makes|made|time|year|day|age|percent|color|colour|country|state|city|language|team|songs?|movies?|episode|season|i|you|we|they|he|she|it|my|your|a|an)\b)/;
+const broken = (s) => WH2.test(s);
 const questions = async (q) => {
   const qn = norm(q);
   const want = toks(qn).filter((w) => w.length >= 3);
@@ -392,7 +395,7 @@ const questions = async (q) => {
   const mixed = [];
   for (let i = 0; i < 8; i++) for (const l of lists) if (l[i]) mixed.push(l[i]);
   for (const s of mixed.map(norm)) {
-    if (!QW.test(s) || seen.has(s) || s.split(" ").length < 3 || s === qn) continue;
+    if (!QW.test(s) || seen.has(s) || s.split(" ").length < 3 || s === qn || broken(s)) continue;
     if (want.length && !want.some((w) => s.includes(w))) continue;
     // Same question in other words ("why are the steelers called that" / "why are they called steelers"): keep one
     const sw = new Set(s.split(" "));
@@ -585,7 +588,7 @@ const bridge = (route, params = {}, body) => {
 const searchId = (h) => { try { const u = new URL(h); u.hash = ""; u.searchParams.delete("loaded"); return u.toString(); } catch { return String(h).split("#")[0]; } };
 const sameSearch = (k) => searchId(location.href) === searchId(k);
 // Status line (first, so it also catches startup errors), only with #ctdebug in the address: shows what People also ask did on this device
-const dbg = { code: "v36", qs: "not asked", err: "none" };
+const dbg = { code: "v37", qs: "not asked", err: "none" };
 let DBG = false;
 try { DBG = /ctdebug/.test(location.href) || sessionStorage.getItem("ct-dbg") === "1"; if (DBG) sessionStorage.setItem("ct-dbg", "1"); } catch { DBG = /ctdebug/.test(location.href); }
 addEventListener("error", (e) => { dbg.err = `page: ${e.message}`; dbgShow(); });
