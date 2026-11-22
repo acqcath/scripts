@@ -388,7 +388,10 @@ const questions = async (q) => {
   const want = toks(qn).filter((w) => w.length >= 3);
   const lists = await Promise.all(["", "what ", "what is ", "what does ", "how ", "how to ", "how do ", "why ", "who is ", "when ", "is ", "can "].map((p) => suggestions(p + qn)));
   const out = [], seen = new Set();
-  for (const s of lists.flat().map(norm)) {
+  // Take turns between question forms (what, how, why, who, is...) so the list is varied like Google's
+  const mixed = [];
+  for (let i = 0; i < 8; i++) for (const l of lists) if (l[i]) mixed.push(l[i]);
+  for (const s of mixed.map(norm)) {
     if (!QW.test(s) || seen.has(s) || s.split(" ").length < 3 || s === qn) continue;
     if (want.length && !want.some((w) => s.includes(w))) continue;
     // Same question in other words ("why are the steelers called that" / "why are they called steelers"): keep one
