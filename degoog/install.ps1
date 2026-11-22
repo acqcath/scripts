@@ -1459,7 +1459,7 @@ let G = { key: "" };
 // Your Settings switches for these boxes, asked once per page load; nothing is built until the answer arrives,
 // so a switched-off box never flashes
 let SHOW = null;
-bridge("prefs", {}).then((j) => { SHOW = j && typeof j === "object" ? j : { sl: true, forum: true, video: true, news: true }; safe("groups", groups); })
+bridge("prefs", {}).then((j) => { SHOW = { sl: true, forum: true, video: true, news: true, ...(j && typeof j === "object" ? j : {}) }; safe("groups", groups); })
   .catch(() => { SHOW = { sl: true, forum: true, video: true, news: true }; safe("groups", groups); });
 const used = (el) => el.classList.contains("ct-grouped");
 const shown = (el) => el.style.display !== "none" && !used(el);
