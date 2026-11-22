@@ -453,7 +453,9 @@ export const routes = [
       const { fix, words, dym, via } = await check(q);
       const seen = new Set([norm(q), norm(fix || q)]);
       const related = (await suggestions(fix || q)).map(norm).filter((s) => s && !seen.has(s) && seen.add(s)).slice(0, 8);
-      return new Response(JSON.stringify({ fix, words, dym, via, related }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+      let qs;
+      if (u.searchParams.get("qs")) { qs = []; try { if (!skip(norm(q))) qs = await questions(q); } catch {} }
+      return new Response(JSON.stringify({ fix, words, dym, via, related, q: qs }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
     },
   },
   {
@@ -1020,12 +1022,24 @@ const paa = () => {
   if (old) old.remove();
   paaBox = null;
   if (!q || page > 1 || q.startsWith("!")) return;
+  // Ask the questions route; if it fails or hangs 5s (some content blockers stall it), ask again through the typo-fix route
+  const t0 = Date.now();
+  const tick = setInterval(() => { if (/^sent|^retry/.test(dbg.qs)) { dbg.qs = dbg.qs.replace(/ \d+s$/, "") + ` ${Math.round((Date.now() - t0) / 1000)}s`; dbgShow(); } else clearInterval(tick); }, 1000);
+  const ask = (url, ms) => {
+    const ac = new AbortController();
+    const to = setTimeout(() => ac.abort(), ms);
+    return fetch(url, { signal: ac.signal, cache: "no-store" }).then((r) => { clearTimeout(to); if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
+  };
   dbg.qs = "sent"; dbgShow();
-  fetch(`/api/plugin/${__PLUGIN_ID__}/qs?q=${encodeURIComponent(q)}`)
-    .then((r) => { dbg.qs = "HTTP " + r.status; return r.ok ? r.json() : null; })
+  ask(`/api/plugin/${__PLUGIN_ID__}/qs?q=${encodeURIComponent(q)}`, 5000)
+    .then((j) => { dbg.qs = "route 1 OK"; return j; })
+    .catch((e) => {
+      dbg.qs = `retry (route 1: ${e && e.name === "AbortError" ? "hung 5s" : e && e.message})`; dbgShow();
+      return ask(`/api/plugin/${__PLUGIN_ID__}/fix?q=${encodeURIComponent(q)}&qs=1`, 15000).then((j) => { dbg.qs = dbg.qs.replace(/^retry/, "route 2 OK").replace(/ \d+s$/, ""); return j; });
+    })
     .then((j) => {
       dbg.qs += j && Array.isArray(j.q) ? `, ${j.q.length} questions` : ", no data"; setTimeout(dbgShow, 300);
-      if (!j || !Array.isArray(j.q) || j.q.length < 2 || location.href !== key || !paaAnchor()) return;
+      if (!j || !Array.isArray(j.q) || j.q.length < 2 || paaFor !== key || !paaAnchor()) return; // still the same search (degoog may tidy the address meanwhile)
       const box = document.createElement("div");
       box.id = "ct-qa";
       const h = document.createElement("h3");
@@ -1072,7 +1086,7 @@ const paa = () => {
       paaBox = box;
       paaAnchor().after(box);
     })
-    .catch((e) => { dbg.qs = "blocked/failed: " + (e && e.message); dbgShow(); if (paaFor === key) paaFor = ""; });
+    .catch((e) => { clearInterval(tick); dbg.qs = "both routes failed: " + (e && e.name === "AbortError" ? "hung" : e && e.message); dbgShow(); if (paaFor === key) paaFor = ""; });
 };
 
 // Tools, like Google's advanced search: a small link beside the tabs opens the fields, filled from your search
