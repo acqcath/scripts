@@ -571,9 +571,8 @@ const bridge = (route, params = {}, body) => {
   const qs = new URLSearchParams(params);
   if (body !== undefined) qs.set("__body", body);
   const q = `!cleantitles bridge ${route} ${qs}`;
-  const req = body !== undefined
-    ? fetch("/api/command", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: q }), keepalive: true })
-    : fetch(`/api/command?q=${encodeURIComponent(q)}`, { cache: "no-store" });
+  // Always POST: on iPhone the GET form failed ("Load failed") while POST got through
+  const req = fetch("/api/command", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: q }), cache: "no-store", ...(body !== undefined ? { keepalive: true } : {}) });
   return req.then((r) => (r.ok ? r.json() : null)).then((j) => {
     if (!j || typeof j.html !== "string") return null;
     const t = document.createElement("textarea");
@@ -586,7 +585,7 @@ const bridge = (route, params = {}, body) => {
 const searchId = (h) => { try { const u = new URL(h); u.hash = ""; u.searchParams.delete("loaded"); return u.toString(); } catch { return String(h).split("#")[0]; } };
 const sameSearch = (k) => searchId(location.href) === searchId(k);
 // Status line (first, so it also catches startup errors), only with #ctdebug in the address: shows what People also ask did on this device
-const dbg = { code: "v35", qs: "not asked", err: "none" };
+const dbg = { code: "v36", qs: "not asked", err: "none" };
 let DBG = false;
 try { DBG = /ctdebug/.test(location.href) || sessionStorage.getItem("ct-dbg") === "1"; if (DBG) sessionStorage.setItem("ct-dbg", "1"); } catch { DBG = /ctdebug/.test(location.href); }
 addEventListener("error", (e) => { dbg.err = `page: ${e.message}`; dbgShow(); });
@@ -881,7 +880,7 @@ const glance = () => {
   };
   if (cardCache.has(bang)) return put(cardCache.get(bang));
   cardCache.set(bang, "");
-  fetch(`/api/command?q=${encodeURIComponent(bang)}`, { cache: "no-store" })
+  fetch("/api/command", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: bang }), cache: "no-store" })
     .then((r) => (r.ok ? r.json() : null))
     .then((d) => {
       const html = d && d.html && !/Usage:|not found|could not|no results|error/i.test(d.html.replace(/<[^>]+>/g, " ")) ? d.html : "";
