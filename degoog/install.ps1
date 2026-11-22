@@ -463,7 +463,7 @@ export const routes = [
       const q = (new URL(req.url).searchParams.get("q") || "").slice(0, 200);
       let qs = [];
       try { if (!skip(norm(q))) qs = await questions(q); } catch {}
-      return new Response(JSON.stringify({ q: qs }), { headers: { "Content-Type": "application/json", "Cache-Control": "private, max-age=3600" } });
+      return new Response(JSON.stringify({ q: qs }), { headers: { "Content-Type": "application/json", "Cache-Control": qs.length ? "private, max-age=3600" : "no-store" } });
     },
   },
   {
