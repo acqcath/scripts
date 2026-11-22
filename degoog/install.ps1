@@ -668,7 +668,7 @@ window.fetch = async (input, init) => {
 const searchId = (h) => { try { const u = new URL(h); u.hash = ""; u.searchParams.delete("loaded"); return u.toString(); } catch { return String(h).split("#")[0]; } };
 const sameSearch = (k) => searchId(location.href) === searchId(k);
 // Status line (first, so it also catches startup errors), only with #ctdebug in the address: shows what People also ask did on this device
-const dbg = { code: "v42", qs: "not asked", err: "none" };
+const dbg = { code: "v43", qs: "not asked", err: "none" };
 let DBG = false;
 try { DBG = /ctdebug/.test(location.href) || sessionStorage.getItem("ct-dbg") === "1"; if (DBG) sessionStorage.setItem("ct-dbg", "1"); } catch { DBG = /ctdebug/.test(location.href); }
 addEventListener("error", (e) => { dbg.err = `page: ${e.message}`; dbgShow(); });
@@ -682,7 +682,7 @@ const dbgShow = () => {
 const dbgText = () => {
   const b = document.getElementById("ct-qa");
   const st = b ? getComputedStyle(b) : null;
-  return `q ${new URLSearchParams(location.search).get("q")} | code ${dbg.code} | questions request: ${dbg.qs} | box in page: ${!!b} | box height: ${b ? b.offsetHeight : "-"} | display: ${st ? st.display : "-"} | visibility: ${st ? st.visibility : "-"} | results: ${document.querySelectorAll("#results-list .result-item").length} | error: ${dbg.err}`;
+  return `code ${dbg.code} | questions request: ${dbg.qs} | box in page: ${!!b} | box height: ${b ? b.offsetHeight : "-"} | display: ${st ? st.display : "-"} | visibility: ${st ? st.visibility : "-"} | results: ${document.querySelectorAll("#results-list .result-item").length} | error: ${dbg.err}`;
 };
 // clean-titles: ONE pass per new result, run before the browser draws it (no timers, no re-scans).
 // Network work (HD thumbnails, missing video descriptions) only starts for results near the screen.
