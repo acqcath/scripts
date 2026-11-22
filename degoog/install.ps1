@@ -467,6 +467,14 @@ const check = async (q) => {
     if (b) r = { fix: b, words: [], via: "bing-suggest" };
     else { r = localFix(qn, new Set(sl.flatMap((s) => s.split(" ")))); r.via = "local"; }
   }
+  // Sure enough to change the search only for clear slips. A short word changed by an added or missing letter
+  // ("mx" -> "max") or a key-mash ("dfsdf") could be meant, so it's searched as typed with "Did you mean" instead
+  if (r.fix && r.fix !== qn) {
+    const qw = qn.split(" "), bw = r.fix.split(" ");
+    const mash = (x) => x.length >= 4 && !/[aeiouy]/.test(x) && !WORDS.has(x) && !isName(x);
+    const unsure = qw.length === bw.length && qw.some((x, i) => x !== bw[i] && !/\d/.test(x) && (mash(x) || (x.length <= 5 && (x.length !== bw[i].length || !slip(x, bw[i])))));
+    if (unsure) r = { fix: null, words: r.words || [], dym: r.fix, via: r.via };
+  }
   if (r.fix === qn) r.fix = null;
   // Only kept when Bing answered, so a slow moment never sticks
   if (sl.length) { if (_fix.size > 2000) _fix.clear(); _fix.set(qn, r); }
@@ -672,11 +680,23 @@ window.fetch = async (input, init) => {
     return new Response(j.text, { status: j.status || 200, headers: { "Content-Type": j.type || "text/plain" } });
   }
 };
+// One look for everything the plugin adds: it enters with degoog's own result fade (once, not again when
+// re-attached after a redraw), and lines that sit above results start exactly where the results' text starts
+const fadeIn = (e) => { e.classList.add("ct-in"); e.addEventListener("animationend", () => e.classList.remove("ct-in"), { once: true }); return e; };
+const lineUp = () => {
+  // Lined up with the content under it on every tab and screen size: a result's text, or the edge of the picture grid
+  const main = document.getElementById("results-main");
+  const c = main && [...main.querySelectorAll("#results-list .result-item .result-title, #results-list .image-card, #results-list .video-card")].find((e) => e.offsetParent);
+  if (!c) return;
+  const x = Math.round(c.getBoundingClientRect().left - main.getBoundingClientRect().left);
+  if (Number.isFinite(x) && x >= 0 && x < 80) main.style.setProperty("--ct-x", `${x}px`);
+};
+addEventListener("resize", () => requestAnimationFrame(lineUp), { passive: true });
 // Same search even if degoog tidied the address (e.g. dropped a #) meanwhile
 // Which search a page address is, ignoring what endless scroll adds while you scroll (&loaded=2) and any #
 const searchId = (h) => { try { const u = new URL(h); u.hash = ""; u.searchParams.delete("loaded"); return u.toString(); } catch { return String(h).split("#")[0]; } };
 const sameSearch = (k) => searchId(location.href) === searchId(k);
-// clean-titles v47
+// clean-titles v49
 
 // clean-titles: ONE pass per new result, run before the browser draws it (no timers, no re-scans).
 // Network work (HD thumbnails, missing video descriptions) only starts for results near the screen.
@@ -849,6 +869,16 @@ const row = (el) => {
   const cite = el.querySelector(".result-cite");
   let site = "";
   try { site = new URL(el.dataset.resultUrl || a.href).hostname.replace(/^www\./, ""); } catch {}
+  // Forum threads (any tab): the community is the source ("r/Jersey", "Stack Overflow"), not repeated in the title,
+  // and Reddit's "Archived post. New comments cannot be posted..." filler is dropped from the description
+  const fn = u ? forumName(u, site) : "";
+  if (fn) {
+    site = fn;
+    const t2 = a.textContent.replace(/\s*[:|\-–—]\s*r\/[\w-]+\s*$/i, "").trim();
+    if (t2 && t2 !== a.textContent.trim()) { a.title = a.title || a.textContent.trim(); a.textContent = t2; }
+    const sp = el.querySelector(".result-snippet");
+    if (sp) for (const n of sp.childNodes) if (n.nodeType === 3) n.data = n.data.replace(/\s*Archived post\.\s*New comments (cannot be posted|\.\.\.)[^.]*\.?(\s*and votes cannot be cast\.?)?/gi, " ").replace(/\s{2,}/g, " ");
+  }
   if (cite && site && cite.textContent.trim() !== site) { cite.title = cite.textContent.trim(); cite.textContent = site; }
   // Date at the start of a description ("Feb 1, 2022 ... text"): dimmed, with a tidy dot instead of the dots/dash
   const p0 = el.querySelector(".result-snippet");
@@ -1038,7 +1068,7 @@ const extras = () => {
         }
         if (changed) dym = out.join(" ");
       }
-      if (!dym && !from && webTab && j.dym) dym = lower(j.dym);
+      if (!dym && !from && j.dym) dym = lower(j.dym);
       // Keep words the results do use, written joined to a neighbour ("open ai" when they say "OpenAI")
       if (dym) {
         const qw = lower(j.fix || q).split(" "), dw = dym.split(" ");
@@ -1074,7 +1104,8 @@ const extras = () => {
           l1.append("Did you mean: ", marked(dym, go(dym, { ct_from: q, ct_acc: "1" })));
           box.append(l1);
         }
-        list.before(box);
+        (document.getElementById("results-main") || list.parentElement).prepend(fadeIn(box));
+        lineUp();
       }
       if (webTab && j.related && j.related.length) {
         const box = document.createElement("div");
@@ -1085,7 +1116,7 @@ const extras = () => {
         g.className = "ct-rel-grid";
         for (const r of j.related) g.append(link(r, go(r)));
         box.append(h, g);
-        list.after(box);
+        list.after(fadeIn(box));
       }
     })
     .catch(() => {});
@@ -1235,7 +1266,7 @@ const paa = () => {
         });
         box.append(d);
       }
-      paaBox = box;
+      paaBox = fadeIn(box);
       paaAnchor()?.after(box); // no 3rd result yet: goes in as soon as there is one
     })
     .catch(() => { if (paaFor === key && ++paaTries <= 2) paaFor = ""; });
@@ -1418,7 +1449,7 @@ const scroller = () => {
   wrap.upd = () => requestAnimationFrame(upd);
   return [wrap, row];
 };
-const section = (cls, title) => { const s = mk("section", `ct-grp ${cls}`); s.append(mk("h3", "ct-gh", title)); return s; };
+const section = (cls, title) => { const s = fadeIn(mk("section", `ct-grp ${cls}`)); s.append(mk("h3", "ct-gh", title)); return s; };
 
 const COUNT = /(\d[\d,.]*\s*[kK]?)\+?\s+(comments?|answers?|replies|reply|posts?|votes?)\b/i;
 const forumRow = (r) => {
@@ -1485,7 +1516,7 @@ const groups = () => {
     const same = rows.filter((r) => r !== top && r.h === top.h && !used(r.el) && !r.video && !r.forum && r.href.split("#")[0] !== base);
     const have = G.sl ? G.sl.children.length : 0;
     if (same.length && (G.sl || same.length >= 2) && have < 4) {
-      if (!G.sl) { G.sl = mk("div", "ct-sl"); top.el.querySelector(".result-body")?.append(G.sl); }
+      if (!G.sl) { G.sl = fadeIn(mk("div", "ct-sl")); top.el.querySelector(".result-body")?.append(G.sl); }
       const brand = top.title.split(/\s[-|·:–—]\s/).pop();
       for (const r of same.slice(0, 4 - have)) {
         const a = mk("a", "ct-sl-i"); a.href = r.href;
@@ -1666,8 +1697,11 @@ html:root { --ct-desc-pc: 15px; --ct-desc-phone: 13.5px; }
 /* Dates at the start of a description: dimmer, so they read as a label */
 .result-snippet .ct-date { color: var(--text-cite) !important; }
 /* Typo fix line above results (Google's "Showing results for") */
-#ct-fix { margin: 6px 0 10px; font-size: 14px; line-height: 21px; color: var(--text-secondary); }
-#ct-fix a { color: var(--text-link) !important; font-weight: 400; }
+#ct-fix { margin: 0 0 16px; padding-left: var(--ct-x, 0px); font-size: 14px; line-height: 21px; color: var(--text-secondary); }
+/* Everything the plugin adds enters with degoog's own result fade-in */
+.ct-in { animation: resultFadeIn .3s ease-out both; }
+@media (prefers-reduced-motion: reduce) { .ct-in { animation: none; } }
+#ct-fix a, #ct-fix a :is(b, i) { color: var(--text-link) !important; font-weight: 400; }
 #ct-fix a b { font-weight: 600; }
 #ct-fix .ct-fix-alt { font-size: 13px; color: var(--text-cite); }
 #ct-fix .ct-fix-alt a { font-weight: 400; }
@@ -1905,7 +1939,7 @@ html:root { --ct-desc-pc: 15px; --ct-desc-phone: 13.5px; }
   & .results-tab[data-type="tab:engine:news"] { color: var(--text-primary) !important; border-bottom-color: var(--text-primary) !important; }
   /* Cards: every picture is the same 16:9 frame; stories without a picture become full-width
      text cards, and pictured cards pack in pairs (dense), so no half-empty rows */
-  & :has(> .result-item) { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; grid-auto-flow: row dense !important; gap: 16px !important; margin: 0 0 0 -16px !important; max-width: calc(44rem + 16px) !important; padding-top: 0 !important; }
+  & :has(> .result-item) { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; grid-auto-flow: row dense !important; gap: 0 16px !important; margin: 0 0 0 -16px !important; max-width: calc(44rem + 16px) !important; padding-top: 0 !important; }
   & :has(> .result-item) > :not(.result-item) { grid-column: 1 / -1 !important; }
   & .result-item { padding: 0 !important; border: 0 !important; border-radius: 12px !important; background: rgba(49, 50, 68, .45) !important; overflow: hidden !important; }
   & .result-item::before { inset: 0; border-radius: 12px; }
@@ -1924,6 +1958,11 @@ html:root { --ct-desc-pc: 15px; --ct-desc-phone: 13.5px; }
   /* No picture (or one that failed to load: degoog then hides its frame with an inline
      display:none but leaves the img inside): full-width text card */
   & .result-item:not(:has(.result-thumbnail-wrap:not([style*="none"]) img)) { grid-column: 1 / -1 !important; }
+  /* Stories with a picture are tiles; stories without one are a compact list split by thin lines (same as
+     Discussions and People also ask), not a stack of mostly-empty tiles */
+  & .result-item:has(.result-thumbnail-wrap:not([style*="none"]) img) { margin: 8px 0 !important; }
+  & .result-item:not(:has(.result-thumbnail-wrap:not([style*="none"]) img)) { background: transparent !important; border-radius: 0 !important; border-bottom: 1px solid rgba(88, 91, 112, .45) !important; }
+  & .result-item:not(:has(.result-thumbnail-wrap:not([style*="none"]) img)) .result-body { padding: 12px 16px !important; }
   & .result-item:not(:has(.result-thumbnail-wrap:not([style*="none"]) img)) .result-thumbnail-wrap { display: none !important; }
   & .result-item:not(:has(.result-thumbnail-wrap:not([style*="none"]) img)) .result-title { -webkit-line-clamp: 2 !important; }
   /* Pictures too small for a banner (the plugin marks them ct-lowres after trying for a sharper copy):
@@ -1942,7 +1981,8 @@ html:root { --ct-desc-pc: 15px; --ct-desc-phone: 13.5px; }
   /* Phones: one card per row, Google News mobile style: every picture is a sharp 92px thumbnail beside
      the headline (news sources rarely have a sharp full-width copy, so big banners came out blurry) */
   @media (max-width: 767px) {
-    & :has(> .result-item) { grid-template-columns: minmax(0, 1fr) !important; gap: 12px !important; margin: 0 !important; max-width: none !important; }
+    & :has(> .result-item) { grid-template-columns: minmax(0, 1fr) !important; gap: 0 !important; margin: 0 !important; max-width: none !important; }
+    & .result-item:has(.result-thumbnail-wrap:not([style*="none"]) img) { margin: 6px 0 !important; }
     & .result-title { font-size: 18px !important; line-height: 24px !important; }
     & .result-snippet { font-size: var(--ct-desc-phone) !important; line-height: calc(var(--ct-desc-phone) * 1.44) !important; }
     & .result-item-inner { flex-direction: row-reverse !important; align-items: flex-start !important; }
@@ -1950,6 +1990,7 @@ html:root { --ct-desc-pc: 15px; --ct-desc-phone: 13.5px; }
     /* Like Google News on phones: source, headline beside the picture, date; no description, so every
        card is the same height, text never wraps into the empty space under the picture, and 16px padding all round */
     & .result-body { padding: 16px !important; }
+    & .result-item:not(:has(.result-thumbnail-wrap:not([style*="none"]) img)) .result-body { padding: 12px 16px !important; }
     & .result-snippet { font-size: 0 !important; line-height: 0 !important; margin-top: 6px !important; }
     & .result-snippet:not(:has(.result-date)) { display: none !important; }
     & .result-snippet .result-date { display: inline-block !important; font-size: 12.5px !important; line-height: 18px !important; }
@@ -2234,7 +2275,7 @@ docker restart $c | Out-Null
 $null = docker exec $c sh -c 'for i in $(seq 1 40); do curl -fs -o /dev/null http://127.0.0.1:${DEGOOG_PORT:-4444}/readyz && exit 0; sleep 1; done'
 
 $ss = docker exec $c cat /app/data/server-settings.json | Out-String | ConvertFrom-Json
-"plugin code inside the page (should be v47): " + (docker exec $c grep -o 'clean-titles v[0-9]*' /app/src/public/themes/degoog-theme/layout.html)
+"plugin code inside the page (should be v49): " + (docker exec $c grep -o 'clean-titles v[0-9]*' /app/src/public/themes/degoog-theme/layout.html)
 "typo fixer word list (should be about 82800): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/words.txt')
 "typo fixer word pairs (should be about 243000): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/pairs.txt')
 "names from Wikipedia (should be well over 100000): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/names.txt 2>/dev/null')
