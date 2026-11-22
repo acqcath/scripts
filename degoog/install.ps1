@@ -756,15 +756,35 @@ const scan = (n) => {
   if (n.firstElementChild) n.querySelectorAll(SEL).forEach(handle);
 };
 
-// "word def/define/meaning" -> "word !define" (search box and address bar); skips coding "def"
-const TAIL = /^(.+?)\s+(def|define|definition|meaning)$/i;
+// Command word at the END works like at the start: "word def" -> "word !define", "boston weather" -> "boston !weather",
+// for every command with natural language on in degoog (search box and address bar); skips coding words like "python def"
+const CODE_TAIL = /\b(python|py|ruby|scala|elixir|groovy|kotlin|swift|lisp|clojure|julia|crystal|nim|js|javascript|ts|typescript|java|go|golang|rust|php|bash|sql|c\+\+|c#|csharp)$/i;
+let tails = [["def", "define"], ["define", "define"], ["definition", "define"], ["meaning", "define"]];
+const loadTails = fetch("/api/commands", { cache: "no-store" })
+  .then((r) => (r.ok ? r.json() : null))
+  .then((j) => {
+    const list = (j && j.commands) || [];
+    const add = [];
+    for (const c of list) {
+      if (!c.naturalLanguage || !c.trigger) continue;
+      for (const w of [c.trigger, ...(c.aliases || []), ...(c.naturalLanguagePhrases || [])]) if (w) add.push([String(w).toLowerCase(), c.trigger]);
+    }
+    tails = [...tails, ...add].sort((x, y) => y[0].length - x[0].length);
+  })
+  .catch(() => {});
 const fixQuery = (q) => {
   const t = String(q || "").trim();
-  if (t.startsWith("!") || /\s!\S+$/.test(t)) return null;
-  const m = TAIL.exec(t);
-  if (!m || !m[1].trim()) return null;
-  if (/^def$/i.test(m[2]) && /\b(python|py|ruby|scala|elixir|groovy|kotlin|swift|lisp|clojure|julia|crystal|nim)$/i.test(m[1].trim())) return null;
-  return `${m[1].trim()} !define`;
+  if (t.startsWith("!") || /(^|\s)!\S+/.test(t)) return null;
+  const low = t.toLowerCase();
+  for (const [w, trig] of tails) {
+    if (!low.endsWith(" " + w)) continue;
+    const rest = t.slice(0, t.length - w.length).trim();
+    if (!rest || CODE_TAIL.test(rest)) return null;
+    // "what time" / "what is my ip" carry no argument: just run the command
+    if (/^((what'?s|whats|what|is|the|my|current|local|right|now)\s*)+$/i.test(rest)) return `!${trig}`;
+    return `${rest} !${trig}`;
+  }
+  return null;
 };
 const rewriteInput = (input) => {
   if (!input || input.tagName !== "INPUT") return;
@@ -778,11 +798,15 @@ document.addEventListener("submit", (e) => {
 document.addEventListener("click", (e) => {
   if (e.target.closest && e.target.closest("#results-search-btn")) rewriteInput(document.getElementById("results-search-input"));
 }, true);
-try {
-  const url = new URL(location.href);
-  const out = fixQuery(url.searchParams.get("q"));
-  if (out) { url.searchParams.set("q", out); location.replace(url.toString()); }
-} catch {}
+const fixUrl = () => {
+  try {
+    const url = new URL(location.href);
+    const out = fixQuery(url.searchParams.get("q"));
+    if (out) { url.searchParams.set("q", out); location.replace(url.toString()); }
+  } catch {}
+};
+fixUrl();
+loadTails.then(fixUrl);
 
 // Typo fix line above the results, related searches below them (Web tab), and learning from your results
 const nearWord = (a, b) => {
