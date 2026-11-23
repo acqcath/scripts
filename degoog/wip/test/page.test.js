@@ -29,7 +29,13 @@ const run = async (q, opts = {}) => {
   if (opts.sites) win.CT_DATA = { sites: opts.sites };
   // The server: every bridge call fails, unless the test answers a route (opts.bridge[route] = {data, delay ms})
   win.fetch = async (url, init) => {
-    const m = /^!cleantitles bridge (\w+)/.exec(init && init.body ? JSON.parse(init.body).query : "");
+    const query = init && init.body ? JSON.parse(init.body).query : "";
+    const m = /^!cleantitles bridge (\w+)/.exec(query);
+    // Another command (a card the page asks for, like "!weather pittsburgh"): opts.command = {html, delay}
+    if (!m && opts.command && query.startsWith("!")) {
+      await new Promise((r) => setTimeout(r, opts.command.delay || 0));
+      return new win.Response(JSON.stringify({ html: opts.command.html }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
     const a = m && opts.bridge && opts.bridge[m[1]];
     if (!a) return new win.Response("{}", { status: 404 });
     await new Promise((r) => setTimeout(r, a.delay || 0));
@@ -158,4 +164,17 @@ test("page: the same answers arriving after the results are dropped (nothing ins
   expect(document.getElementById("ct-qa")).toBeNull();
   expect(document.getElementById("ct-fix")).toBeNull();
   win.close();
+});
+test("page: a command card (weather at the end of the search) goes in only before the results are drawn", async () => {
+  const card = { html: '<div class="wx">Pittsburgh 41°F</div>' };
+  const a = await run("weather pittsburgh", { engines: 40, command: { ...card, delay: 5 } });
+  expect(a.document.querySelector("#at-a-glance .ct-card")).not.toBeNull();
+  a.win.close();
+  const b = await run("weather pittsburgh", { engines: 0, command: { ...card, delay: 60 } });
+  await new Promise((r) => setTimeout(r, 120));
+  const d = b.document.createElement("div");
+  b.document.getElementById("results-list").append(d);
+  b.fire([d]);
+  expect(b.document.querySelector("#at-a-glance .ct-card")).toBeNull();
+  b.win.close();
 });

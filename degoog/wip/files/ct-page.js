@@ -654,6 +654,10 @@ const bangFor = (q) => {
   return null;
 };
 const cardCache = new Map();
+// Search whose results are already on screen (set at the end of each pass). From then on nothing goes in above them:
+// a card that comes after that is kept for next time but not shown on this page
+let drawnFor = "";
+const markDrawn = () => { if (document.querySelector("#results-list .result-item, #results-list .image-card, #results-list .video-card")) drawnFor = searchId(location.href); };
 const glance = () => {
   const g = document.getElementById("at-a-glance");
   if (!g || !webTab) return;
@@ -669,14 +673,15 @@ const glance = () => {
     g.innerHTML = `<div class="command-result ct-card">${html}</div>`;
     g.querySelectorAll("script").forEach((o) => { const n = document.createElement("script"); n.textContent = o.textContent; g.appendChild(n); });
   };
-  if (cardCache.has(bang)) return put(cardCache.get(bang));
+  const key = searchId(location.href);
+  if (cardCache.has(bang)) { if (drawnFor !== key) put(cardCache.get(bang)); return; }
   cardCache.set(bang, "");
   fetch("/api/command", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: bang }), cache: "no-store" })
     .then((r) => (r.ok ? r.json() : null))
     .then((d) => {
       const html = d && d.html && !/Usage:|not found|could not|no results|error/i.test(d.html.replace(/<[^>]+>/g, " ")) ? d.html : "";
       cardCache.set(bang, html);
-      put(html);
+      if (drawnFor !== key && sameSearch(key)) put(html); // results not drawn yet: nothing below it moves
     })
     .catch(() => cardCache.delete(bang));
 };
@@ -1298,6 +1303,7 @@ const init = () => {
   safe("scan", () => scan(document.body));
   safe("skeleton", () => skel(document.body));
   safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools);
+  safe("drawn", markDrawn);
   // Runs right after degoog inserts results and before the screen updates; only looks inside what was added
   new MutationObserver((muts) => {
     safe("query", readQuery);
@@ -1305,6 +1311,7 @@ const init = () => {
     safe("list", listPass);
     for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { safe("scan", () => scan(n)); safe("skeleton", () => skel(n)); safe("usage", () => noUsage(n)); }
     safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("card", glance);
+    safe("drawn", markDrawn);
   }).observe(document.body, { childList: true, subtree: true });
 };
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
