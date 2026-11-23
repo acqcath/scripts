@@ -52,16 +52,47 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
     ["Facts (Wikidata) population", () => bridge("wd", { f: "population", s: "pittsburgh" }), (j) => j && j.d && Array.isArray(j.d.v) && j.d.v.length > 0],
     ["Facts (Wikidata) height", () => bridge("wd", { f: "height", s: "eiffel tower" }), (j) => j && j.d && Array.isArray(j.d.v) && j.d.v.length > 0],
     ["CMU course card (CMU Courses API)", () => bridge("cmu", { id: "15-213" }), (j) => j && j.c && j.c.course && j.c.course.name && j.c.fces.length > 0 && j.c.fces.some((r) => Number(r.hrsPerWeek) > 0 && Number(r.rating[7]) > 0 && Number(r.rating[8]) > 0)],
-    ["Sports scores (ESPN) + logos via image proxy", () => bridge("sports", { q: "steelers" }), (j) => j && j.g && j.g.away && j.g.home && j.g.away.abbr && j.g.home.abbr && (j.g.away.logo || j.g.home.logo) && [j.g.away.logo, j.g.home.logo].every((l) => !l || /^\/api\/proxy\/image\?/.test(l))],
-    ["Knowledge panel (Wikidata + Wikipedia)", () => bridge("kp", { q: "golden gate bridge" }), (j) => j && j.kp && j.kp.title && j.kp.facts.length > 0 && /^\/api\/proxy\/image\?/.test(j.kp.photo) && j.kp.extract],
+    ["Sports scores (ESPN) + logos via image proxy", () => bridge("sports", { q: "steelers" }), (j) => j && j.g && j.g.away && j.g.home && j.g.away.abbr && j.g.home.abbr && (j.g.away.logo || j.g.home.logo) && [j.g.away.logo, j.g.home.logo].every((l) => !l || /\/api\/proxy\/image\?/.test(l))],
+    ["Knowledge panel (Wikidata + Wikipedia)", () => bridge("kp", { q: "golden gate bridge" }), (j) => j && j.kp && j.kp.title && j.kp.facts.length > 0 && /\/api\/proxy\/image\?/.test(j.kp.photo) && j.kp.extract],
     ["Other meanings (Wikidata)", () => bridge("kp", { q: "python" }), (j) => j && j.kp && Array.isArray(j.kp.alts) && j.kp.alts.length >= 2],
     ["Archived copy (archive.today / Wayback / Ghostarchive)", () => bridge("arch", { u: "http://example.com/" }), (j) => j && j.a && j.a.src && j.a.src !== "save"],
     ["Quick view (recipe JSON-LD)", async () => { const a = await bridge("qv", { u: "https://sallysbakingaddiction.com/chewy-chocolate-chip-cookies" }); return a.j && a.j.v && a.j.v.kind === "recipe" ? a : bridge("qv", { u: "https://www.allrecipes.com/recipe/10813/best-chocolate-chip-cookies" }); }, (j) => j && j.v && j.v.kind === "recipe" && j.v.lists.some((l) => l.label === "ingredients" && l.items.length > 3)],
     ["Typo fix (Bing / DuckDuckGo suggestions)", () => bridge("fix", { q: "teh wether tommorow" }), (j) => j && JSON.stringify(j).includes("weather")],
     ["People also ask (suggestions)", () => bridge("qs", { q: "pittsburgh steelers" }), (j) => j && Array.isArray(j.q) && j.q.length >= 2],
   ];
-  const got = await Promise.all(checks.map(([, f]) => f()));
-  checks.forEach(([name, , ok], i) => { let v = false; try { v = !!ok(got[i].j); } catch {} row(name, v, ms(got[i])); });
+  // One at a time (Wikidata asks for no parallel bursts), and a FAIL says why (the server's reason for that kind)
+  const KIND = { wd: "wd", kp: "kp", sports: "sports", qv: "qv" };
+  for (const [name, f, ok] of checks) {
+    const g = await f();
+    let v = false; try { v = !!ok(g.j); } catch {}
+    let note = ms(g);
+    const k = (/bridge\("(\w+)"/.exec(String(f)) || [])[1];
+    if (!v && !g.j) note += " · no answer from the plugin";
+    else if (!v && KIND[k]) { const w = await bridge("why"); const r = w.j && w.j.why && w.j.why[KIND[k]]; if (r) note += ` · ${r}`; }
+    row(name, v, note);
+  }
+
+  // Touchy searches still get real results (user's rule: no one else's filter). Counts only, never the results.
+  const touchy = ["how to tie a noose", "why does no one love me", "how many ways are there to skin a cat"];
+  const counts = [];
+  let blocked = "";
+  for (const q of touchy) {
+    try {
+      const r = await fetch(`http://127.0.0.1:${PORT}/api/search?q=${encodeURIComponent(q)}`, { signal: AbortSignal.timeout(20000) });
+      if (r.status === 401) { blocked = "search API needs a key (Settings), not checked"; break; }
+      const j = await r.json();
+      const res = Array.isArray(j.results) ? j.results : [];
+      counts.push(`${res.length} results/${new Set(res.map((x) => { try { return new URL(x.url).hostname.replace(/^www\./, ""); } catch { return ""; } }).filter(Boolean)).size} sites`);
+    } catch { counts.push("no answer"); }
+  }
+  row("Touchy searches get full results", blocked ? "SKIP" : counts.every((c) => { const m = /^(\d+) results\/(\d+) sites$/.exec(c); return m && +m[1] >= 8 && +m[2] >= 5; }), blocked || counts.join(" · "));
+  // Safe Search off on every engine that has it (set by the installer just before the restart)
+  let safe = [];
+  try {
+    const st = JSON.parse(fs.readFileSync(process.env.DEGOOG_PLUGIN_SETTINGS_FILE || "/app/data/plugin-settings.json", "utf8"));
+    safe = Object.entries(st).filter(([k, v]) => /-engine$/.test(k) && v && typeof v.safeSearch === "string" && v.safeSearch !== "off").map(([k]) => k.replace(/^degoog-org-official-extensions-/, "").replace(/-engine$/, ""));
+  } catch {}
+  row("Safe Search off on all engines", safe.length === 0, safe.length ? `still on: ${safe.join(", ")}` : "");
 
   // AI-image list for the Images tab: first download ~60 s after start
   let n = 0;

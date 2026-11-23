@@ -317,13 +317,18 @@ export const eolFor = async (slug) => {
 // ===== Wikidata facts for the answer card =====
 // The page sends the fact asked (one of WD) and the subject's name, never the whole search. Subject -> top item
 // (wbsearchentities), then only that property (wbgetclaims). RAM cache under a hashed key for TTL_MS.
+// Why a lookup came back empty (last time per feature), for the installer self-check only: no search words kept
+export const WHY = {};
+const why = (k, r) => { WHY[k] = r; return null; };
 const WD = { height: "P2048", population: "P1082", born: "P569", age: "P569", died: "P570", founded: "P571", ceo: "P169", released: "P577", distance: "P625" };
 const WD_API = "https://www.wikidata.org/w/api.php";
 const WD_UA = { "User-Agent": "degoog-clean-titles/50 (self-hosted search; one lookup per search)" };
 const wdGet = async (params) => {
-  const r = await net(`${WD_API}?${new URLSearchParams({ ...params, format: "json" })}`, { timeout: 3000, max: 2_000_000, accept: "application/json", headers: WD_UA });
-  if (r.status !== 200) return null;
-  try { return JSON.parse(r.text); } catch { return null; }
+  const u = `${WD_API}?${new URLSearchParams({ ...params, format: "json" })}`;
+  let r = await net(u, { timeout: 3000, max: 4_000_000, accept: "application/json", headers: WD_UA });
+  if (r.status === 429 || r.status === 0) { await new Promise((ok) => setTimeout(ok, 400)); r = await net(u, { timeout: 3000, max: 4_000_000, accept: "application/json", headers: WD_UA }); }
+  if (r.status !== 200) { wdGet.last = `wikidata ${params.action} ${r.status ? `http ${r.status}` : "no answer"}`; return null; }
+  try { return JSON.parse(r.text); } catch { wdGet.last = `wikidata ${params.action} not JSON`; return null; }
 };
 const rankOrder = { preferred: 0, normal: 1 };
 // Claims -> best ones first: preferred rank, still current (no end time), newest "point in time"
@@ -334,7 +339,7 @@ export const wdBest = (claims) => (Array.isArray(claims) ? claims : [])
   .map((x) => x.c);
 const wdValue = (c) => {
   const v = c.mainsnak.datavalue.value;
-  if (v && typeof v === "object" && "amount" in v) return { amount: v.amount, unit: String(v.unit || "").split("/").pop(), asOf: c.qualifiers && c.qualifiers.P585 ? c.qualifiers.P585[0].datavalue.value.time : undefined };
+  if (v && typeof v === "object" && "amount" in v) return { amount: v.amount, unit: String(v.unit || "").split("/").pop(), asOf: (c.qualifiers && c.qualifiers.P585 && c.qualifiers.P585[0] && c.qualifiers.P585[0].datavalue && c.qualifiers.P585[0].datavalue.value && c.qualifiers.P585[0].datavalue.value.time) || undefined };
   if (v && typeof v === "object" && "time" in v) return { time: v.time, prec: v.precision };
   if (v && typeof v === "object" && "latitude" in v) return { lat: v.latitude, lon: v.longitude };
   if (v && typeof v === "object" && v["entity-type"] === "item") return { id: v.id };
@@ -342,13 +347,20 @@ const wdValue = (c) => {
   return null;
 };
 const wdOne = async (name, prop) => {
-  const s = await wdGet({ action: "wbsearchentities", search: name, language: "en", uselang: "en", type: "item", limit: "1" });
-  const hit = s && Array.isArray(s.search) && s.search[0];
-  if (!hit || !hit.id) return null;
+  const s = await wdGet({ action: "wbsearchentities", search: name, language: "en", uselang: "en", type: "item", limit: "3" });
+  if (!s) return why("wd", wdGet.last);
+  const hits = (Array.isArray(s.search) ? s.search : []).filter((x) => x && x.id);
+  if (!hits.length) return why("wd", "no Wikidata item");
+  // The top item first; the next two only if it has no such value (e.g. a disambiguation page came first)
   const props = prop === "P569" ? ["P569", "P570"] : [prop];
-  const got = await Promise.all(props.map((p) => wdGet({ action: "wbgetclaims", entity: hit.id, property: p })));
-  const vals = wdBest(got[0] && got[0].claims && got[0].claims[prop]).map(wdValue).filter(Boolean).slice(0, 1);
-  if (!vals.length) return null;
+  let hit = null, got = null, vals = [];
+  for (const h of hits) {
+    got = await Promise.all(props.map((p) => wdGet({ action: "wbgetclaims", entity: h.id, property: p })));
+    if (!got[0]) return why("wd", wdGet.last);
+    vals = wdBest(got[0].claims && got[0].claims[prop]).map(wdValue).filter(Boolean).slice(0, 1);
+    if (vals.length) { hit = h; break; }
+  }
+  if (!vals.length) return why("wd", "item has no value for it");
   const out = { label: hit.label || name, desc: hit.description || "", v: vals };
   if (props[1]) { const d = wdBest(got[1] && got[1].claims && got[1].claims.P570).map(wdValue).filter(Boolean)[0]; if (d && d.time) out.died = d.time; }
   // CEO is another item: its name
@@ -368,8 +380,11 @@ export const wdFor = async (fact, s, s2) => {
   const key = createHash("sha256").update(`${fact}\n${s}\n${s2}`).digest("hex").slice(0, 24);
   const hit = _wd.get(key);
   if (hit && Date.now() - hit.t < TTL) return hit.v;
-  let v = await wdOne(s, prop);
-  if (v && fact === "distance") { const b = await wdOne(s2, prop); v = b ? { ...v, b } : null; }
+  let v = null;
+  try {
+    v = await wdOne(s, prop);
+    if (v && fact === "distance") { const b = await wdOne(s2, prop); v = b ? { ...v, b } : null; }
+  } catch (e) { v = why("wd", `error: ${String(e && e.message || e).slice(0, 80)}`); }
   if (_wd.size > 1000) _wd.clear();
   _wd.set(key, { t: v ? Date.now() : Date.now() - TTL + 600000, v });
   return v;
@@ -414,10 +429,12 @@ const KP_TYPES = [
   ["animal", ["Q16521"], [["Conservation status", "P141"]]],
 ];
 // entity JSON (wbgetentities) -> {type, rows: [{k, prop, vals: [wdValue...], max}], image, title}
-export const kpPlan = (ent) => {
+// up: {P31 value: its own "subclass of" (P279) values}, asked only when no P31 value is a known type
+// (Golden Gate Bridge is a "suspension bridge", which is a subclass of "bridge")
+export const kpPlan = (ent, up = {}) => {
   const cl = (ent && ent.claims) || {};
   const p31 = wdBest(cl.P31).map(wdValue).filter((v) => v && v.id).map((v) => v.id);
-  const t = KP_TYPES.find(([, ids]) => p31.some((x) => ids.includes(x)));
+  const t = KP_TYPES.find(([, ids]) => p31.some((x) => ids.includes(x))) || KP_TYPES.find(([, ids]) => p31.some((x) => (up[x] || []).some((y) => ids.includes(y))));
   const rows = [];
   for (const [k, prop, max = 1] of t ? t[2] : []) {
     const vals = wdBest(cl[prop]).map(wdValue).filter(Boolean).slice(0, max);
@@ -425,7 +442,7 @@ export const kpPlan = (ent) => {
   }
   const img = wdBest(cl.P18).map((c) => c.mainsnak.datavalue.value).find((x) => typeof x === "string");
   const title = ent && ent.sitelinks && ent.sitelinks.enwiki && ent.sitelinks.enwiki.title;
-  return { type: t ? t[0] : "", rows, image: img || "", title: title || "" };
+  return { type: t ? t[0] : "", rows, image: img || "", title: title || "", p31 };
 };
 const UNIT_NAME = { Q11573: ["m", 1], Q712226: ["km²", 1], Q25343: ["m²", 1e-6], Q7727: ["min", 1], Q174728: ["cm", 1] };
 // One fact's text (labels: {Qid: name}); dates as written, "as of" for population, imperial next to metric
@@ -460,8 +477,16 @@ export const kpFor = async (q) => {
     const alts = (s && Array.isArray(s.search) ? s.search : []).filter((x) => x && x.label && x.description && !/disambiguation|wikimedia|family name|given name|surname|scholarly article|list of/i.test(x.description)).slice(0, 7).map((x) => ({ label: String(x.label).slice(0, 80), desc: String(x.description).slice(0, 120) }));
     const e = h && h.id && await wdGet({ action: "wbgetentities", ids: h.id, props: "claims|sitelinks", sitefilter: "enwiki" });
     const ent = e && e.entities && e.entities[h.id];
+    if (!s) why("kp", wdGet.last); else if (!h) why("kp", "no Wikidata item"); else if (!ent) why("kp", wdGet.last || "item not returned");
     if (ent) {
-      const plan = kpPlan(ent);
+      let plan = kpPlan(ent);
+      if (!plan.type && plan.title && plan.p31.length) {
+        const ps = await Promise.all(plan.p31.slice(0, 3).map((id) => wdGet({ action: "wbgetclaims", entity: id, property: "P279" })));
+        const up = {};
+        plan.p31.slice(0, 3).forEach((id, i) => { up[id] = wdBest(ps[i] && ps[i].claims && ps[i].claims.P279).map(wdValue).filter((x) => x && x.id).map((x) => x.id); });
+        plan = kpPlan(ent, up);
+      }
+      if (!plan.title) why("kp", "no English Wikipedia article");
       if (plan.title) {
         const ids = [...new Set(plan.rows.flatMap((r) => r.vals.filter((x) => x.id).map((x) => x.id)))].slice(0, 20);
         const [lab, sum] = await Promise.all([
@@ -474,11 +499,12 @@ export const kpFor = async (q) => {
         try { sj = sum.status === 200 ? JSON.parse(sum.text) : null; } catch {}
         const facts = plan.rows.map((r) => ({ k: r.k, v: kpText(r, labels) })).filter((f) => f.v);
         const photo = plan.image ? `https://commons.wikimedia.org/w/index.php?title=Special:FilePath/${encodeURIComponent(plan.image)}&width=330` : sj && sj.thumbnail && sj.thumbnail.source || "";
+        why("kp", [!plan.type && "type not known", !facts.length && "no facts", !(sj && sj.extract) && `Wikipedia summary ${sum.status ? `http ${sum.status}` : "no answer"}`, !photo && "no photo", photo && !_sign && "no image signer"].filter(Boolean).join(", ") || "ok");
         v = { qid: h.id, title: plan.title, name: h.label || plan.title, type: plan.type, desc: h.description || (sj && sj.description) || "", extract: sj && typeof sj.extract === "string" ? sj.extract : "", facts, photo: photo && _sign ? _sign(photo) : "" };
       }
     }
     if (alts.length >= 2) v = { ...(v || {}), alts };
-  } catch { v = null; }
+  } catch (e) { v = why("kp", `error: ${String(e && e.message || e).slice(0, 80)}`); }
   if (_kp.size > 1000) _kp.clear();
   _kp.set(key, { t: v ? Date.now() : Date.now() - TTL + 600000, v });
   return v;
@@ -659,10 +685,11 @@ export const qvFor = async (u, check = publicUrl) => {
   if (hit && Date.now() - hit.t < TTL) return hit.v;
   let v = null, at = u;
   for (let hop = 0; hop < 4; hop++) {
-    if (!(await check(at))) { at = ""; break; }
+    if (!(await check(at))) { why("qv", "address not public (DNS)"); at = ""; break; }
     const r = await net(at, { timeout: 5000, max: 3_000_000, accept: "text/html,application/xhtml+xml", headers: QV_UA, redirect: "manual" });
     if (r.status >= 300 && r.status < 400 && r.location) { try { at = new URL(r.location, at).toString(); } catch { at = ""; break; } continue; }
-    if (r.status === 200 && r.text) v = qvFrom(r.text, at);
+    if (r.status === 200 && r.text) { v = qvFrom(r.text, at); why("qv", v ? `ok (${v.kind})` : "page has nothing to show"); }
+    else why("qv", r.status >= 300 && r.status < 400 ? "redirect without address" : r.status ? `page http ${r.status}` : "no answer");
     break;
   }
   if (_qv.size > 300) _qv.clear();
@@ -717,7 +744,7 @@ export const espnTeams = (j, league, tag) => {
 };
 const teamsList = async () => {
   if (_teams.list.length && Date.now() - _teams.t < 86400000) return _teams.list;
-  const all = await Promise.all(LEAGUES.map(async ([l, tag]) => { const r = await net(`${ESPN}/${l}/teams`, { timeout: 4000, max: 3_000_000, accept: "application/json" }); try { return r.status === 200 ? espnTeams(JSON.parse(r.text), l, tag) : []; } catch { return []; } }));
+  const all = await Promise.all(LEAGUES.map(async ([l, tag]) => { const r = await net(`${ESPN}/${l}/teams`, { timeout: 4000, max: 3_000_000, accept: "application/json" }); if (r.status !== 200) teamsList.last = r.status ? `http ${r.status}` : "no answer"; try { return r.status === 200 ? espnTeams(JSON.parse(r.text), l, tag) : []; } catch { teamsList.last = "not JSON"; return []; } }));
   const list = all.flat();
   _teams = { t: list.length ? Date.now() : Date.now() - 86400000 + 600000, list: list.length ? list : _teams.list };
   return _teams.list;
@@ -756,13 +783,20 @@ export const sportsFor = async (q, now = Date.now()) => {
   const words = normT(q);
   if (!words || words.split(" ").length > 6) return null;
   const list = await teamsList();
+  if (!list.length) return why("sports", `ESPN team lists ${teamsList.last || "empty"}`);
   const t = teamFor(words, list);
-  if (!t) return null;
+  if (!t) return why("sports", "no single team matched");
   const hit = _games.get(t.id + t.league);
   if (hit && now - hit.t < (hit.v && hit.v.state === "in" ? 60000 : 600000)) return hit.v;
   const r = await net(`${ESPN}/${t.league}/teams/${t.id}/schedule`, { timeout: 4000, max: 5_000_000, accept: "application/json" });
   let v = null;
-  try { const ev = r.status === 200 ? pickGame(JSON.parse(r.text).events, now) : null; const g = ev && espnGame(ev, _sign); if (g) v = { ...g, league: t.tag, team: t.abbr }; } catch {}
+  try {
+    const evs = r.status === 200 ? JSON.parse(r.text).events : null;
+    const ev = evs ? pickGame(evs, now) : null;
+    const g = ev && espnGame(ev, _sign);
+    if (g) v = { ...g, league: t.tag, team: t.abbr };
+    why("sports", r.status !== 200 ? `ESPN schedule ${r.status ? `http ${r.status}` : "no answer"}` : !Array.isArray(evs) ? "schedule has no events list" : !ev ? `no game among ${evs.length} events` : !g ? "game has no two teams" : !(g.away.logo || g.home.logo) ? (_sign ? "no team logos" : "no image signer") : "ok");
+  } catch (e) { why("sports", `error: ${String(e && e.message || e).slice(0, 80)}`); }
   _games.set(t.id + t.league, { t: now, v });
   return v;
 };
@@ -1312,6 +1346,12 @@ export const routes = [
       mirrorTo(sites);
       return new Response(JSON.stringify({ sites, auto: autoList().filter((d) => sites[d] === "lower"), seo: SEO_ON, ai: aiStatus(data), fx: readFx().rates ? { date: FX.date, rates: FX.rates } : null }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
     },
+  },
+  {
+    // Self-check only: why the last lookup of each kind came back empty (feature reasons, never search words)
+    method: "get",
+    path: "/why",
+    handler: () => new Response(JSON.stringify({ why: WHY }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } }),
   },
   {
     method: "get",

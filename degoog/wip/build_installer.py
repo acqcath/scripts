@@ -36,6 +36,11 @@ old = 'Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $t\ndocker rest
 assert out.count(old) == 1, 'restart step changed on main'
 out = out.replace(old, '[IO.File]::WriteAllText("$t\\aittl.js", @\'\n' + aittl + "\n'@)\n"
                   'docker cp "$t\\aittl.js" "${c}:/tmp/aittl.js"; docker exec $c bun /tmp/aittl.js; docker exec $c rm -f /tmp/aittl.js\n' + old)
+# Safe Search off on every engine that has the setting (user's standing choice), also before the restart
+safeoff = open('files/safeoff.js', encoding='utf-8').read()
+assert "\n'@" not in safeoff
+out = out.replace(old, '[IO.File]::WriteAllText("$t\\safeoff.js", @\'\n' + safeoff + "\n'@)\n"
+                  'docker cp "$t\\safeoff.js" "${c}:/tmp/safeoff.js"; docker exec $c bun /tmp/safeoff.js; docker exec $c rm -f /tmp/safeoff.js\n' + old)
 # No one-time setup in the installer (spec): the typo fixer's word lists and Wikipedia names are fetched by the
 # plugin itself when missing (index.js ensureData); names.js just ships next to index.js as a plugin file
 names = open('files/names.js', encoding='utf-8').read()
