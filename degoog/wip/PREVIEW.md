@@ -95,16 +95,8 @@ Featured snippet for fact/how-to searches (needs about 10 real "what is / how to
 - **Sports, Quick view (http 403):** ESPN and recipe sites turn away plain server requests. On a 403 the plugin now asks once more through degoog's built-in curl-impersonate (looks like a normal browser).
 - **Safe Search:** SearXNG engines (your youtube_noapi) are now switched off too.
 
-## Featured snippet (from your 10 recorded searches)
-For fact and how-to wording (what / who / where / when / how many / how long / how to…), a whole sentence from one of the first results, drawn with the results (nothing pops in), with the page's title as its link. Never for "why…" (that's the AI spot), never for jokes it can't answer, never for how-tos whose steps differ per model (`how to reset airpods`). No topic is filtered. On your searches:
-- how to tie a noose → animatedknots.com: "Form a loop in the end of the rope. Tuck a bight of the standing end through the loop. Make the bight larger and pass it around the object."
-- where is the capital of assyria → britishmuseum.org: "Nineveh was the capital of the powerful ancient Assyrian empire, located in modern-day northern Iraq."
-- how much wood can a woodchuck chuck → reddit.com: "The actual answer is 700 pounds."
-- how many pages is the entire harry potter series → dexerto.com: "In total, there are 3,407 pages in all of the Harry Potter books together."
-- how long is a footlong sandwich → reddit.com: "Subway "Foot-Long" sandwiches are actually only 11 inches in length."
-- how long to microwave shin ramen red → etfoodvoyage.com: "…Shin Ramen takes about 5 minutes in the microwave when using hot water."
-- how many ways are there to skin a cat → english.stackexchange.com: "So there are actually only two ways to skin a cat: while it's alive, or while it's dead."
-- none: when is dad coming home with the milk · why does no one love me (AI spot instead) · who are you who do you work for
+## Featured snippet
+For fact and how-to wording, a whole sentence from one of the first results, drawn with the results. Never for "why…" (AI spot) or per-model how-tos.
 
 ## Look and layout (your screenshots, 2026-11-23)
 - **Stray spaces gone** on every tab: `"No Shit "` → `"No Shit"`, `slang ?` → `slang?`, `Shit ,` → `Shit,`, `It 's` → `It's`, `( crazy )` → `(crazy)`. Inch marks (`2" pipe`) and times are left alone.
