@@ -1458,6 +1458,18 @@ export const routes = [
     },
   },
   {
+    // A YouTube video's own still (every video has hqdefault), signed for degoog's image proxy; the page asks only
+    // for video cards whose result came without a working picture. Only an 11-character video id is accepted.
+    method: "get",
+    path: "/yt",
+    handler(req) {
+      const id = new URL(req.url).searchParams.get("id") || "";
+      if (!/^[\w-]{11}$/.test(id)) return new Response("bad id", { status: 400 });
+      if (!_sign) return new Response("not ready", { status: 503 });
+      return new Response(null, { status: 302, headers: { Location: _sign(`https://i.ytimg.com/vi/${id}/hqdefault.jpg`), "Cache-Control": "public, max-age=86400" } });
+    },
+  },
+  {
     method: "get",
     path: "/hd",
     handler(req) {

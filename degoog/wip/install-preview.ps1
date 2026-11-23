@@ -1461,6 +1461,18 @@ export const routes = [
     },
   },
   {
+    // A YouTube video's own still (every video has hqdefault), signed for degoog's image proxy; the page asks only
+    // for video cards whose result came without a working picture. Only an 11-character video id is accepted.
+    method: "get",
+    path: "/yt",
+    handler(req) {
+      const id = new URL(req.url).searchParams.get("id") || "";
+      if (!/^[\w-]{11}$/.test(id)) return new Response("bad id", { status: 400 });
+      if (!_sign) return new Response("not ready", { status: 503 });
+      return new Response(null, { status: 302, headers: { Location: _sign(`https://i.ytimg.com/vi/${id}/hqdefault.jpg`), "Cache-Control": "public, max-age=86400" } });
+    },
+  },
+  {
     method: "get",
     path: "/hd",
     handler(req) {
@@ -3613,6 +3625,14 @@ const noUsage = (root) => {
 // Built from the results already on the page (endless-scroll pages too), so they cost nothing: nothing is shown twice,
 // nothing is lost (the per-site limit hides extra pages; these put them back to use), and each box sits where its
 // best result ranked. Only Top stories asks for more, and only when the results themselves look like news.
+// A YouTube link's video id (watch?v=, youtu.be/, shorts/, live/, embed/), else ""
+const ytId = (u) => {
+  try {
+    const h = u.hostname.replace(/^(www|m|music)\./, "");
+    const id = h === "youtu.be" ? u.pathname.slice(1) : h === "youtube.com" ? (u.searchParams.get("v") || (/^\/(?:shorts|live|embed)\/([^/?#]+)/.exec(u.pathname) || [])[1] || "") : "";
+    return /^[\w-]{11}$/.test(id) ? id : "";
+  } catch { return ""; }
+};
 const VIDEO_URL = (u, h) => (/(^|\.)youtube\.com$/.test(h) && /^\/(watch|shorts\/|live\/)/.test(u.pathname)) || h === "youtu.be" ||
   (/(^|\.)vimeo\.com$/.test(h) && /^\/\d+/.test(u.pathname)) || (/(^|\.)dailymotion\.com$/.test(h) && u.pathname.startsWith("/video/")) ||
   (/(^|\.)twitch\.tv$/.test(h) && /\/(videos|clip)\//.test(u.pathname)) || (/(^|\.)tiktok\.com$/.test(h) && /\/video\//.test(u.pathname));
@@ -3746,7 +3766,18 @@ const siteName = (h) => (/youtu/.test(h) ? "YouTube" : h.replace(/\.(com|tv|net|
 const videoCard = (r) => {
   const a = mk("a", "ct-card ct-vc"); a.href = r.href;
   const pic = mk("span", "ct-pic");
-  if (r.thumb) { const i = mk("img"); i.src = r.thumb; i.alt = ""; i.loading = "lazy"; i.onerror = () => i.remove(); pic.append(i); }
+  // YouTube results often come without a picture (or one that fails): your server signs the video's own still
+  // (i.ytimg.com hqdefault, which every video has) so it loads through degoog's image proxy. It fades into the
+  // box that is already there, so nothing moves.
+  const yid = ytId(r.u);
+  if (r.thumb || yid) {
+    const i = mk("img"); i.alt = ""; i.loading = "lazy";
+    let late = !r.thumb;
+    const fill = () => { i.classList.add("ct-late"); i.onload = () => i.classList.add("ct-in"); bridge("yt", { id: yid }).then((j) => { if (j && j.to && i.isConnected) i.src = j.to; else i.remove(); }).catch(() => i.remove()); };
+    i.onerror = () => { if (!late && yid) { late = true; fill(); } else i.remove(); };
+    if (r.thumb) i.src = r.thumb; else fill();
+    pic.append(i);
+  }
   pic.append(mk("span", "ct-play"));
   if (r.dur) pic.append(mk("span", "ct-dur", r.dur));
   const meta = mk("span", "ct-meta"); meta.append(favImg(r.fav), mk("span", "ct-src", siteName(r.h)));
@@ -4975,6 +5006,8 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .ct-card > :not(.ct-pic) { margin: 0 12px; }
 .ct-pic { position: relative; display: block; aspect-ratio: 16 / 9; background: var(--bg-light); overflow: hidden; }
 .ct-pic img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.ct-pic img.ct-late { opacity: 0; transition: opacity .3s; }
+.ct-pic img.ct-late.ct-in { opacity: 1; }
 .ct-play { position: absolute; left: 50%; top: 50%; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; background: rgba(17, 17, 27, .6); }
 .ct-play::after { content: ""; position: absolute; left: 16px; top: 12px; border-style: solid; border-width: 8px 0 8px 12px; border-color: transparent transparent transparent #fff; }
 .ct-dur { position: absolute; right: 6px; bottom: 6px; padding: 1px 5px; border-radius: 4px; background: rgba(17, 17, 27, .8); color: #fff; font-size: 12px; line-height: 16px; font-variant-numeric: tabular-nums; }
