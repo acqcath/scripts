@@ -3,11 +3,18 @@
 The user checks a preview build on Tuesday morning before deeper work. Everything is ordered so nothing is built twice and each step unblocks the next.
 
 ## How to work (cuts wasted effort)
-- Order: pure logic + unit test → wire into the page pass → check on recordings (rec/ct-recordings.json.gz). Run headless screenshots once per milestone, not per feature.
+- Order: pure logic + unit test → wire into the page pass → check on recordings (rec/ct-recordings.json.gz). Run headless screenshots only at M1 and M6.
 - Every page change goes into ONE synchronous pass in the MutationObserver, in this order: dedupe → site prefs → cap folds → snippet/title cleanup → answer/slot placeholders. Never add a second observer or a later fix-up.
 - Batch all live web checks for a milestone into one run, done once.
 - Reuse v49 code where it already meets the spec. Delete v49 code that breaks it, rather than patching around it.
 - Before ending a run, leave the branch green: tests passing, files parsing.
+
+## Test budget (user approved trimming; tests are proof, not ritual)
+- Unit tests and replaying the 54 recordings in jsdom: every milestone. Cheap, and they catch real bugs.
+- Layout shift: measured automatically with a PerformanceObserver (layout-shift sum must be 0), not by eyeballing frames. Fail = fix.
+- Headless screenshots at 390 and 1280: only at M1 (preview) and M6 (final), and only for the cases that milestone touches.
+- Outside sources: every network call goes through ONE shared fetch helper (timeout, JSON/shape check, hide on failure). Test that helper once with slow/empty/malformed/error responses, not each source separately.
+- Live checks: one batch per milestone that needs them (M4), not per feature.
 
 ## M1: Morning preview (target: before ~9 AM Tue)
 Biggest visible wins and the base for everything else:
