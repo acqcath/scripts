@@ -29,6 +29,13 @@ assert old in out, 'version check changed on main'
 out = out.replace(old, f'"plugin code inside the page (should be {ver}): " + (docker exec $c grep -o -m1 \'clean-titles v[0-9a-z-]*\' /app/src/public/themes/degoog-theme/layout.html | Select-Object -First 1)\n'
                   '"public suffix file (should be a psl file): " + (docker exec $c sh -c \'ls /app/src/public/ct/\')\n'
                   '"progressive results off (should be False): $($ss.settings.streamingEnabled -eq $true)"')
+# ai-summary keeps answers as long as degoog keeps results (files/aittl.js), patched before the restart
+aittl = open('files/aittl.js', encoding='utf-8').read()
+assert "\n'@" not in aittl
+old = 'Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $t\ndocker restart $c | Out-Null'
+assert out.count(old) == 1, 'restart step changed on main'
+out = out.replace(old, '[IO.File]::WriteAllText("$t\\aittl.js", @\'\n' + aittl + "\n'@)\n"
+                  'docker cp "$t\\aittl.js" "${c}:/tmp/aittl.js"; docker exec $c bun /tmp/aittl.js; docker exec $c rm -f /tmp/aittl.js\n' + old)
 target = 'install-preview.ps1' if mode == 'preview' else '../install.ps1'
 open(target, 'w', encoding='utf-8', newline='\n').write(out)
 print(target, len(out), 'chars,', ver)
