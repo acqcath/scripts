@@ -361,3 +361,42 @@ test("archived copy: parallel lookup, paywall order, save page when none has it"
   srv.default.init({ id: "clean-titles", fetch: async (u) => (new URL(u).hostname === "archive.ph" ? new Response(null, { status: 302, headers: { location: "https://archive.ph/challenge?x" } }) : new Response("{}")) });
   expect((await srv.archFind("https://w.com/e", true)).src).toBe("save");
 });
+
+test("quick view: JSON-LD recipe/FAQ/article/product, main text fallback, JS-only pages give nothing", async () => {
+  const srv = await import("../files/index.js");
+  expect(["PT1H30M", "PT45M", "P0DT2H", "PT0S", "bad", "P1D"].map(srv.isoDur)).toEqual(["1 hr 30 min", "45 min", "2 hr", "", "", "24 hr"]);
+  const ld = (o) => `<html><head><script type="application/ld+json">${JSON.stringify(o)}</script></head><body><div id=app></div></body></html>`;
+  const recipe = srv.qvFrom(ld({ "@context": "https://schema.org", "@graph": [{ "@type": "WebPage" }, { "@type": "Recipe", name: "Chewy Chocolate Chip Cookies", totalTime: "PT1H15M", recipeYield: ["24", "24 cookies"], aggregateRating: { ratingValue: "4.9", ratingCount: "3120" }, recipeIngredient: ["2 cups flour", "1 cup <b>butter</b>"], recipeInstructions: [{ "@type": "HowToSection", name: "Dough", itemListElement: [{ "@type": "HowToStep", text: "Whisk the flour." }, { "@type": "HowToStep", text: "Cream the butter &amp; sugar." }] }, "Bake 12 minutes."] }] }));
+  expect(recipe.kind).toBe("recipe");
+  expect(recipe.facts).toEqual([["Rating", "4.9 ★ (3,120)"], ["Total time", "1 hr 15 min"], ["Serves", "24"]]);
+  expect(recipe.lists).toEqual([{ label: "ingredients", items: ["2 cups flour", "1 cup butter"] }, { label: "steps", items: ["Whisk the flour.", "Cream the butter & sugar.", "Bake 12 minutes."], ordered: true }]);
+  const faq = srv.qvFrom(ld({ "@type": "FAQPage", mainEntity: [{ "@type": "Question", name: "Is it free?", acceptedAnswer: { "@type": "Answer", text: "<p>Yes, always.</p>" } }] }));
+  expect(faq.lists[0]).toEqual({ label: "questions", items: ["Is it free?\nYes, always."], qa: true });
+  const prod = srv.qvFrom(ld({ "@type": "Product", name: "Keyboard", brand: { "@type": "Brand", name: "Keychron" }, offers: { price: "99.00", priceCurrency: "USD" }, aggregateRating: { ratingValue: 9, bestRating: 10, reviewCount: 12 } }));
+  expect(prod.facts).toEqual([["Rating", "4.5 ★ (12)"], ["Brand", "Keychron"]]);
+  expect(JSON.stringify(prod)).not.toContain("99");
+  const para = "The Eiffel Tower is a wrought-iron lattice tower on the Champ de Mars in Paris, France, named after Gustave Eiffel.";
+  const art = srv.qvFrom(`<script type="application/ld+json">{"@type":"NewsArticle","headline":"Big news","author":[{"@type":"Person","name":"Ann Lee"}],"datePublished":"2026-11-20T10:00:00Z","wordCount":1150,"isAccessibleForFree":false}</script><article><p>${para}</p><p>Short.</p></article>`);
+  expect(art.facts).toEqual([["By", "Ann Lee"], ["Published", "Nov 20, 2026"], ["Reading time", "5 min"], ["Access", "Paywall"]]);
+  expect(art.text).toEqual([para]);
+  expect(srv.qvFrom(`<main><p>${para}</p></main>`)).toEqual({ kind: "page", title: "", facts: [], lists: [], text: [para] });
+  expect(srv.qvFrom('<div id="root"></div><script src="app.js"></script>')).toBeNull();
+  expect(srv.qvFrom('<script type="application/ld+json">{bad json</script>')).toBeNull();
+});
+
+test("quick view: never fetches this server's own network; follows redirects with a check at every hop", async () => {
+  const srv = await import("../files/index.js");
+  for (const u of ["http://localhost/x", "http://127.0.0.1/", "http://192.168.1.5/admin", "http://[::1]/", "ftp://x.com/", "http://nas.local/", "http://user:pw@example.com/", "http://example.com:8080/"]) expect([u, await srv.publicUrl(u)]).toEqual([u, false]);
+  const seen = [];
+  srv.default.init({ id: "clean-titles", fetch: async (u) => {
+    seen.push(u);
+    if (u === "https://a.com/r") return new Response(null, { status: 301, headers: { location: "/final" } });
+    if (u === "https://a.com/final") return new Response('<script type="application/ld+json">{"@type":"HowTo","name":"Reset","step":[{"@type":"HowToStep","text":"Hold the button."}]}</script>');
+    if (u === "https://b.com/r") return new Response(null, { status: 302, headers: { location: "http://10.0.0.1/" } });
+    return new Response("", { status: 404 });
+  } });
+  const ok = (u) => Promise.resolve(!/10\.0\.0\.1/.test(u));
+  expect((await srv.qvFor("https://a.com/r", ok)).lists[0].items).toEqual(["Hold the button."]);
+  expect(await srv.qvFor("https://b.com/r", ok)).toBeNull();
+  expect(seen).toEqual(["https://a.com/r", "https://a.com/final", "https://b.com/r"]);
+});
