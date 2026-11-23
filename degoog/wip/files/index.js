@@ -223,6 +223,19 @@ const aiSchedule = () => {
   if (_aiTimer.unref) _aiTimer.unref();
 };
 
+// ===== Will ai-summary answer? (so the page reserves its spot only when the summary is sure to come) =====
+// Mirrors its slot trigger(): a model is set, it isn't switched off, and "only for questions" (a search ending in
+// "?") if that's on. Read from degoog's plugin-settings.json; only these two yes/no values leave the server.
+export const aiStatus = (data) => {
+  try {
+    const all = JSON.parse(fs.readFileSync(process.env.DEGOOG_PLUGIN_SETTINGS_FILE || `${data}/plugin-settings.json`, "utf8"));
+    const a = all && all["ai-summary-slot"];
+    const yes = (v) => v === true || v === "true";
+    if (!a || !String(a.model || "").trim() || yes(a.disabled)) return { on: false };
+    return { on: true, qmark: yes(a.questionMarkOnly) };
+  } catch { return { on: false }; }
+};
+
 // ===== Anti-SEO auto-Lower =====
 // Each search's first page sends its signs (core seoSigns: copies, SEO-bait wording, stale "best 20XX" lists, AI
 // tells, essay-writing services). Per site: searches it was in, and how many of those showed a sign. A site with
@@ -730,7 +743,7 @@ export const routes = [
       }
       const sites = sitesFromLists(block, score);
       mirrorTo(sites);
-      return new Response(JSON.stringify({ sites, auto: autoList().filter((d) => sites[d] === "lower"), seo: SEO_ON }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+      return new Response(JSON.stringify({ sites, auto: autoList().filter((d) => sites[d] === "lower"), seo: SEO_ON, ai: aiStatus(data) }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
     },
   },
   {

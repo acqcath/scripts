@@ -174,3 +174,18 @@ test("installer: ai-summary's 2-minute cache line becomes degoog's TTL_MS (exact
   fs.writeFileSync(path.join(plug, "index.js"), "const SHORT_TTL_MS = 5 * 60 * 1000;\n");
   expect(run()).toContain("found 0 copies");
 });
+
+test("server: ai-summary status mirrors its trigger (model set, not off, questions only)", async () => {
+  const srv = await import("../files/index.js");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ct-aist-"));
+  const put = (v) => fs.writeFileSync(path.join(dir, "plugin-settings.json"), JSON.stringify(v));
+  expect(srv.aiStatus(dir)).toEqual({ on: false });
+  put({ "ai-summary-slot": { model: "llama3", questionMarkOnly: "false" } });
+  expect(srv.aiStatus(dir)).toEqual({ on: true, qmark: false });
+  put({ "ai-summary-slot": { model: "llama3", questionMarkOnly: "true" } });
+  expect(srv.aiStatus(dir)).toEqual({ on: true, qmark: true });
+  put({ "ai-summary-slot": { model: "llama3", disabled: "true" } });
+  expect(srv.aiStatus(dir)).toEqual({ on: false });
+  put({ "ai-summary-slot": { model: " " } });
+  expect(srv.aiStatus(dir)).toEqual({ on: false });
+});

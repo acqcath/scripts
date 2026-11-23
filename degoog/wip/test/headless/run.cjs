@@ -22,7 +22,10 @@ const PNG = (() => {
   const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 2;
   return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", ihdr), chunk("IDAT", zlib.deflateSync(raw)), chunk("IEND", Buffer.alloc(0))]);
 })();
-const CASES = ["react useEffect cleanup", "attention is all you need pdf", "how to reset airpods", "best mechanical keyboard reddit", "apple support"];
+// CT_CASES="a|b" picks other recorded searches (answer card, AI spot...). AI-worded ones get ai-summary "set up" and
+// a panel arriving 300 ms after the results (then its text 300 ms later), like degoog's slot stream.
+const CASES = process.env.CT_CASES ? process.env.CT_CASES.split("|") : ["react useEffect cleanup", "attention is all you need pdf", "how to reset airpods", "best mechanical keyboard reddit", "apple support"];
+const AI_CASE = /^(why|.* vs .*|best laptop)/;
 // The page as the server sends it, minus every script (degoog's app.js isn't here; results are inserted below),
 // with its stylesheets inlined from the recording and this build's custom CSS
 const page = (q) => {
@@ -30,7 +33,8 @@ const page = (q) => {
   h = h.replace(/<link[^>]*rel="(?:modulepreload|preload|manifest|icon|search)"[^>]*>/gi, "");
   h = h.replace(/<link\s+rel="stylesheet"\s+href="([^"]+)"\s*\/?>/gi, (m, href) => (REC.css[href] ? `<style>${REC.css[href]}</style>` : ""));
   h = h.replace(/<style id="degoog-custom-css">[\s\S]*?<\/style>/, () => `<style id="degoog-custom-css">${CSS}</style>`);
-  const boot = `<script>window.CT_PSL=${JSON.stringify(PSL)};window.__cls=0;</script>`;
+  const ai = AI_CASE.test(q) ? `localStorage.setItem("ct-sites-auto", ${JSON.stringify(JSON.stringify({ auto: [], seo: false, ai: { on: true } }))});` : "";
+  const boot = `<script>window.CT_PSL=${JSON.stringify(PSL)};window.__cls=0;${ai}</script>`;
   const mod = `<script type="module">const __PLUGIN_ID__="clean-titles";\n${CODE.replace(/<\/script/gi, "<\\/script")}\n</script>`;
   return h.replace("</body>", () => `${boot}${mod}</body>`);
 };
@@ -69,6 +73,19 @@ const page = (q) => {
         new PerformanceObserver((l) => { for (const e of l.getEntries()) { window.__cls += e.value; window.__shifts.push(`${Math.round(e.startTime - t0)}ms ${e.value.toFixed(5)} ${e.sources.map((s) => `${name(s.node)} ${s.previousRect.y}->${s.currentRect.y} h${s.previousRect.height}->${s.currentRect.height}`).join(" | ")}`); } }).observe({ type: "layout-shift" });
         return document.querySelectorAll("#results-list .result-item").length;
       }, html);
+      if (AI_CASE.test(q)) await p.evaluate(async () => {
+        await new Promise((r) => setTimeout(r, 300));
+        const g = document.getElementById("at-a-glance");
+        if ([...g.children].every((c) => c.getAttribute("data-slot-order") === null)) [...g.children].forEach((c) => { if (!c.classList.contains("ct-ai")) c.remove(); });
+        const w = document.createElement("div");
+        w.className = "results-slot-panel degoog-panel degoog-panel--slot degoog-panel--stack-item"; w.setAttribute("data-slot-order", "0");
+        w.innerHTML = '<div class="results-slot-panel-body degoog-panel--slot-body degoog-panel--slot-body-padded"><div class="glance-ai degoog-panel degoog-panel--slot"><div class="glance-ai-head"><div class="glance-ai-title"><span>AI Summary</span></div></div><div class="glance-ai-summary-wrap"><div class="glance-ai-body glance-ai-body--clamped"><div class="glance-snippet glance-ai-stream degoog-text degoog-text--md" data-state="pending"><div class="skeleton-glance glance-ai-skeleton"><div class="skeleton-line"></div><div class="skeleton-line"></div></div></div></div><button class="glance-ai-expand" type="button">Read more</button></div><div class="glance-ai-chat" hidden></div></div></div>';
+        g.append(w);
+        await new Promise((r) => setTimeout(r, 300));
+        const t = w.querySelector(".glance-ai-stream");
+        t.dataset.state = "done";
+        t.innerHTML = "<p>The sky looks blue because air molecules scatter short blue wavelengths of sunlight much more than long red ones (Rayleigh scattering). At sunset light crosses more air, so the blue is scattered away and reds and oranges remain.</p><ul><li>Rayleigh scattering</li><li>Violet is absorbed high up</li></ul>";
+      });
       await p.waitForTimeout(1500);
       await p.mouse.wheel(0, 2500); await p.waitForTimeout(800);
       await p.evaluate(() => window.scrollTo(0, 0)); await p.waitForTimeout(300);

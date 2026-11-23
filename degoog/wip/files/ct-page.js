@@ -432,7 +432,7 @@ const parse = (toks) => {
   return v;
 };
 // Things that look like sums but aren't: phone numbers, dates, ZIP+4, course numbers, version numbers, ranges
-const NOT_MATH = /^\d{2}-\d{3}$|^\d{3}-\d{3}-\d{4}$|^\d{5}-\d{4}$|^\d{4}-\d{1,2}-\d{1,2}$|^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}$|^\d+(?:\.\d+){2,}$|^\d+-\d+$/;
+const NOT_MATH = /^24\/7$|^\d{2}-\d{3}$|^\d{3}-\d{3}-\d{4}$|^\d{5}-\d{4}$|^\d{4}-\d{1,2}-\d{1,2}$|^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}$|^\d+(?:\.\d+){2,}$|^\d+-\d+$/;
 const calc = (q) => {
   let s = String(q).trim().toLowerCase().replace(/^(?:what(?:'s| is)|calculate|calc|compute|solve)\s+/, "").replace(/\s*=\s*\??$|\?$/, "").trim();
   if (!s || s.length > 120 || NOT_MATH.test(s)) return null;
@@ -894,13 +894,14 @@ let SITES = {};
 try { const c = JSON.parse(localStorage.getItem(SITES_KEY) || "null"); if (c && typeof c === "object") SITES = c; } catch {}
 const saveSites = () => { try { localStorage.setItem(SITES_KEY, JSON.stringify(SITES)); } catch {} };
 // Sites lowered by the anti-SEO checks ("auto" in the menu), and whether those checks are on (Settings)
-let SITES_AUTO = [], SEO_ON = false;
-try { const c = JSON.parse(localStorage.getItem("ct-sites-auto") || "null"); if (c && Array.isArray(c.auto)) { SITES_AUTO = c.auto; SEO_ON = !!c.seo; } } catch {}
+// Also: will ai-summary answer (a model set, not off, "only for questions"?), so its spot is kept only when it will come
+let SITES_AUTO = [], SEO_ON = false, AI_ON = { on: false };
+try { const c = JSON.parse(localStorage.getItem("ct-sites-auto") || "null"); if (c && Array.isArray(c.auto)) { SITES_AUTO = c.auto; SEO_ON = !!c.seo; if (c.ai) AI_ON = c.ai; } } catch {}
 const takeSites = (j) => {
   if (!j || !j.sites || typeof j.sites !== "object") return;
   SITES = j.sites; saveSites();
-  SITES_AUTO = Array.isArray(j.auto) ? j.auto : []; SEO_ON = !!j.seo;
-  try { localStorage.setItem("ct-sites-auto", JSON.stringify({ auto: SITES_AUTO, seo: SEO_ON })); } catch {}
+  SITES_AUTO = Array.isArray(j.auto) ? j.auto : []; SEO_ON = !!j.seo; AI_ON = j.ai && typeof j.ai === "object" ? j.ai : { on: false };
+  try { localStorage.setItem("ct-sites-auto", JSON.stringify({ auto: SITES_AUTO, seo: SEO_ON, ai: AI_ON })); } catch {}
 };
 bridge("sites", {}).then(takeSites).catch(() => {});
 // Only whole-site entries count here (a line for one subdomain is left to degoog's own filter)
@@ -1885,7 +1886,64 @@ const groups = () => {
 // Worked out from the search words alone, so it's drawn in the same pass that clears the panel area for a new
 // search: in place before the results, nothing reserved, nothing late. While it's there, every other panel in the
 // area (AI summary, math-slot...) is hidden by CSS (one answer per search; patterns and sums come first).
-let ansFor = null, ansVal = null;
+let ansFor = null, ansVal = null, aiVal = false;
+// AI summary only where the wording asks for judgement or explanation (spec: best / vs / why / explain / compare);
+// facts and how-tos get results (a snippet later). A search that names a site or a type gets a plain list, no AI.
+const AI_WORDS = /^(?:why|how (?:does|do|did|is|are|can|come)|explain|what(?:'s| is| are) the (?:difference|best|point)|difference between|should i|is it worth)\b|\b(?:vs\.?|versus|compared? to|comparison|best|pros and cons|worth it|better than|or)\b/i;
+const TYPE_WORDS = /\b(?:pdf|paper|reddit|docs|documentation|recipe|github|lab|lecture|slides|video|videos|youtube|wiki|wikipedia)\b/i;
+const aiWanted = (q) => {
+  if (!AI_ON.on || !q || q.startsWith("!") || (AI_ON.qmark && !q.trim().endsWith("?"))) return false;
+  if (!AI_WORDS.test(q) || TYPE_WORDS.test(q) || /\bbest buy\b/i.test(q)) return false;
+  try { if (CT.namedSites(q, PSL()).size) return false; } catch {}
+  return true;
+};
+// The AI spot: label, 3 text lines and the ⌄ line, at its final size before the results are drawn. ai-summary's
+// panel (it comes after the results) stays where degoog put it, so degoog's own panel bookkeeping keeps working
+// (it clears and sweeps that area), but CSS lays it over the spot's 3 lines: it takes no room and its text covers
+// the placeholder lines once it streams. It never grows by itself: ⌄ opens it (your tap). No panel within degoog's
+// slot limit (SLOT_PLUGIN_TIMEOUT_MS 10 s, + 2 s for the trip) after the results, or a failed answer
+// -> "AI summary unavailable" in the same space.
+const AIS = { key: "", got: false, fail: false, open: false, t: 0 };
+const aiBox = () => {
+  const box = mk("div", "ct-ai");
+  const label = mk("div", "ct-ai-label");
+  label.append(mk("span", "ct-ai-star", "✦"), " AI summary");
+  const text = mk("div", "ct-ai-text");
+  for (let i = 0; i < 3; i++) text.append(mk("span", "ct-ai-line"));
+  text.append(mk("div", "ct-ai-err", "AI summary unavailable"));
+  const more = mk("button", "ct-ai-more", "⌄");
+  more.type = "button";
+  more.setAttribute("aria-label", "Show the whole AI summary");
+  box.append(label, text, more);
+  return box;
+};
+const aiPass = (g, key) => {
+  if (AIS.key !== key) { clearTimeout(AIS.t); Object.assign(AIS, { key, got: false, fail: false, open: false, t: 0 }); }
+  let n = 0;
+  for (const p of g.querySelectorAll(".glance-ai")) {
+    const w = [...g.children].find((c) => c.contains(p)) || p;
+    // Not an AI search (or a second panel): never drawn
+    if (!aiVal || n++) { w.style.display = "none"; w.classList.remove("ct-ai-panel"); continue; }
+    w.classList.add("ct-ai-panel");
+    AIS.got = true;
+    if (p.querySelector('.glance-ai-stream[data-state="error"]')) AIS.fail = true;
+  }
+  if (!aiVal) return;
+  if (AIS.got && !n) AIS.fail = true; // ai-summary took its panel away ("hide on error")
+  if (!AIS.got && !AIS.t && drawnFor === key) AIS.t = setTimeout(() => { if (!AIS.got && AIS.key === key) { AIS.fail = true; const b = document.querySelector("#at-a-glance > .ct-ai"); if (b) b.classList.add("ct-ai-fail"); } }, 12000);
+  let box = [...g.children].find((c) => c.classList.contains("ct-ai"));
+  if (!box) { g.style.display = ""; box = aiBox(); g.prepend(box); }
+  box.classList.toggle("ct-ai-fail", AIS.fail);
+  box.classList.toggle("ct-ai-open", AIS.open && !AIS.fail);
+  g.classList.toggle("ct-ai-opened", AIS.open && !AIS.fail);
+};
+document.addEventListener("click", (e) => {
+  const b = e.target.closest && e.target.closest(".ct-ai-more");
+  if (!b || AIS.fail) return;
+  const g = document.getElementById("at-a-glance");
+  AIS.open = true;
+  if (g) { aiPass(g, AIS.key); g.querySelector(".ct-ai-panel .glance-ai-expand")?.click(); } // ai-summary's own "read more": unclamps, opens its follow-up chat
+});
 const ansCard = (a) => {
   const box = mk("div", "ct-ans");
   box.dataset.kind = a.kind;
@@ -1912,8 +1970,10 @@ const ansPass = () => {
     let q = "", page = 1;
     try { const u = new URL(key); q = (u.searchParams.get("q") || "").trim(); page = Number(u.searchParams.get("page") || 1); } catch {}
     ansVal = webTab && page <= 1 ? CT.answer(q) : null;
-    g.querySelectorAll(".ct-ans").forEach((x) => x.remove());
+    aiVal = webTab && page <= 1 && !ansVal && aiWanted(q);
+    g.querySelectorAll(".ct-ans, .ct-ai").forEach((x) => x.remove());
   }
+  aiPass(g, key);
   if (!ansVal || g.querySelector(".ct-ans")) return;
   g.style.display = "";
   g.prepend(ansCard(ansVal));
@@ -1951,6 +2011,7 @@ const init = () => {
     for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { safe("scan", () => scan(n)); safe("skeleton", () => skel(n)); safe("usage", () => noUsage(n)); }
     safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("card", glance);
     safe("drawn", markDrawn);
+    safe("ai", () => { const g = document.getElementById("at-a-glance"); if (g) aiPass(g, searchId(location.href)); });
   }).observe(document.body, { childList: true, subtree: true });
 };
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
