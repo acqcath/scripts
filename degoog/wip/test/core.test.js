@@ -253,3 +253,11 @@ test("relevance rule on the user's recordings: junk folds, identifier lookups an
   expect(relJudgeable("how to reset airpods")).toBe(true);
   expect(r("nobody loves me", "Feel like nobody love you")).toBe(true);
 });
+
+test("relevance second look: synonyms of the page's own topic stay (UPS tracking), generic junk still folds", async () => {
+  const { topicOf, relWords } = await import("../files/core.js");
+  const rel = Array.from({ length: 6 }, (_, i) => ({ title: `Track package ${i} | tracking status`, snippet: "Enter a tracking number to track your package delivery status." }));
+  const same = topicOf(rel, relWords("1Z999AA10123456784"));
+  expect(same({ title: "Tracking | UPS - Germany", snippet: "Track your package status" })).toBe(true);
+  expect(same({ title: "Wendy's 2 for $3 Biggie Bundles", snippet: "Get a burger and fries" })).toBe(false);
+});

@@ -459,6 +459,24 @@ const matchShare = (words, text) => {
 // A search made mostly of common words (a quote, "why does no one love me") can't be judged by its words: no check
 const relJudgeable = (q) => { const t = relToks(q); return t.length > 0 && relWords(q).length * 2 >= t.length; };
 const related = (words, ident, text, engines, pos) => matchShare(words, text) > 0 || engines >= 2 || (ident && pos < 3);
+// Second look before a result is folded: words the related results share (in 15%+ of them, at least 3; one also in
+// 2+ of their titles) are the topic of this search ("tracking", "package" for a UPS number; "attention", "encoder"
+// for an arXiv id; "football", "pittsburgh" for steelers on Science). A result with 2+ of them stays: it uses other
+// words for the same thing. Built from this page's own results each time: nothing stored, nothing to maintain.
+const TOPIC_STOP = new Set("that this your with from have more about what when where which their there they them will been were into also just like only some than then these those other such most many much number word words meaning definition best free online official home page site http https html".split(" "));
+const topicToks = (t) => relToks(t).filter((w) => w.length >= 4 && /\p{L}/u.test(w) && !TOPIC_STOP.has(w));
+const topicOf = (rel, words) => {
+  const df = new Map(), dt = new Map();
+  for (const r of rel) {
+    for (const t of new Set(topicToks(`${r.title} ${r.snippet || ""}`))) df.set(t, (df.get(t) || 0) + 1);
+    for (const t of new Set(topicToks(r.title))) dt.set(t, (dt.get(t) || 0) + 1);
+  }
+  const need = Math.max(3, Math.ceil(rel.length * 0.15));
+  const own = (t) => words.some((w) => relHit(w, t));
+  const topic = new Set([...df].filter(([t, n]) => n >= need && !own(t)).map(([t]) => t));
+  const titled = new Set([...dt].filter(([t, n]) => n >= 2 && topic.has(t)).map(([t]) => t));
+  return (r) => { const hits = [...new Set(topicToks(`${r.title} ${r.snippet || ""}`))].filter((t) => topic.has(t)); return hits.length >= 2 && hits.some((t) => titled.has(t)); };
+};
 
 // ===== Answer card, local part (no network): math, units incl. cooking, tip / percent, date math, patterns =====
 // answer(q, now) -> null, or { kind, label, value | title + href, detail, copy, swatch? }. Pure: the page draws it in
@@ -1246,7 +1264,7 @@ const featuredSnippet = (q, results) => {
   return null;
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, related, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippet };
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, related, topicOf, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippet };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -1477,29 +1495,34 @@ const tabPass = () => {
 // search (none of its words, one engine only, not an identifier lookup's top 3) goes to the end of the batch it came
 // in, folded under "N unrelated results ⌄" (one tap shows them). Decided before paint; nothing is filtered by topic.
 const relPlanned = new WeakSet();
-let RP = { key: "", n: 0 };
+let RP = { key: "", n: 0, rel: [] };
 const relPass = () => {
   const list = document.getElementById("results-list");
   if (!list) return;
   const fresh = [...list.querySelectorAll(":scope > .result-item")].filter((el) => !relPlanned.has(el));
   if (!fresh.length) return;
   const key = searchId(location.href);
-  if (RP.key !== key) RP = { key, n: 0 };
+  if (RP.key !== key) RP = { key, n: 0, rel: [] };
   // Words of the corrected search too, when degoog searched a typo fix ("Showing results for …")
   const words = [...new Set([...qWords, ...CT.relWords(document.querySelector("#ct-fix a")?.textContent || "")])];
   let q0 = "";
   try { q0 = new URL(location.href).searchParams.get("q") || ""; } catch {}
   if (!CT.relJudgeable(q0)) { fresh.forEach((el) => relPlanned.add(el)); return; }
-  const out = [];
+  let out = [];
   for (const el of fresh) {
     relPlanned.add(el);
     if (el.style.display === "none" || el.classList.contains("ct-grouped")) continue;
     const pos = RP.n++;
     const a = el.querySelector("a.result-title");
-    if (!a || el.nextElementSibling?.classList.contains("ct-fold")) continue; // a fold's anchor stays put
-    const text = `${el.dataset.resultUrl || a.href} ${a.textContent} ${el.querySelector(".result-snippet")?.textContent || ""}`;
-    if (!CT.related(words, qIdent, text, el.querySelectorAll(".result-engine-tag").length, pos)) out.push(el);
+    if (!a) continue;
+    const r = { title: a.textContent || "", snippet: el.querySelector(".result-snippet")?.textContent || "" };
+    const anchor = el.nextElementSibling?.classList.contains("ct-fold"); // a fold's anchor stays put
+    if (anchor || CT.related(words, qIdent, `${el.dataset.resultUrl || a.href} ${r.title} ${r.snippet}`, el.querySelectorAll(".result-engine-tag").length, pos)) RP.rel.push(r);
+    else out.push([el, r]);
   }
+  // Second look: results that use other words for the same topic as the related ones stay (core topicOf)
+  if (out.length) { const same = CT.topicOf(RP.rel, words); out = out.filter(([, r]) => !same(r)); }
+  out = out.map(([el]) => el);
   const shown = fresh.filter((el) => !out.includes(el) && el.style.display !== "none" && !el.classList.contains("ct-grouped"));
   if (!out.length || !shown.length) return;
   for (const el of out) { el.style.display = "none"; el.dataset.ctUnrel = "1"; }

@@ -227,29 +227,34 @@ const tabPass = () => {
 // search (none of its words, one engine only, not an identifier lookup's top 3) goes to the end of the batch it came
 // in, folded under "N unrelated results ⌄" (one tap shows them). Decided before paint; nothing is filtered by topic.
 const relPlanned = new WeakSet();
-let RP = { key: "", n: 0 };
+let RP = { key: "", n: 0, rel: [] };
 const relPass = () => {
   const list = document.getElementById("results-list");
   if (!list) return;
   const fresh = [...list.querySelectorAll(":scope > .result-item")].filter((el) => !relPlanned.has(el));
   if (!fresh.length) return;
   const key = searchId(location.href);
-  if (RP.key !== key) RP = { key, n: 0 };
+  if (RP.key !== key) RP = { key, n: 0, rel: [] };
   // Words of the corrected search too, when degoog searched a typo fix ("Showing results for …")
   const words = [...new Set([...qWords, ...CT.relWords(document.querySelector("#ct-fix a")?.textContent || "")])];
   let q0 = "";
   try { q0 = new URL(location.href).searchParams.get("q") || ""; } catch {}
   if (!CT.relJudgeable(q0)) { fresh.forEach((el) => relPlanned.add(el)); return; }
-  const out = [];
+  let out = [];
   for (const el of fresh) {
     relPlanned.add(el);
     if (el.style.display === "none" || el.classList.contains("ct-grouped")) continue;
     const pos = RP.n++;
     const a = el.querySelector("a.result-title");
-    if (!a || el.nextElementSibling?.classList.contains("ct-fold")) continue; // a fold's anchor stays put
-    const text = `${el.dataset.resultUrl || a.href} ${a.textContent} ${el.querySelector(".result-snippet")?.textContent || ""}`;
-    if (!CT.related(words, qIdent, text, el.querySelectorAll(".result-engine-tag").length, pos)) out.push(el);
+    if (!a) continue;
+    const r = { title: a.textContent || "", snippet: el.querySelector(".result-snippet")?.textContent || "" };
+    const anchor = el.nextElementSibling?.classList.contains("ct-fold"); // a fold's anchor stays put
+    if (anchor || CT.related(words, qIdent, `${el.dataset.resultUrl || a.href} ${r.title} ${r.snippet}`, el.querySelectorAll(".result-engine-tag").length, pos)) RP.rel.push(r);
+    else out.push([el, r]);
   }
+  // Second look: results that use other words for the same topic as the related ones stay (core topicOf)
+  if (out.length) { const same = CT.topicOf(RP.rel, words); out = out.filter(([, r]) => !same(r)); }
+  out = out.map(([el]) => el);
   const shown = fresh.filter((el) => !out.includes(el) && el.style.display !== "none" && !el.classList.contains("ct-grouped"));
   if (!out.length || !shown.length) return;
   for (const el of out) { el.style.display = "none"; el.dataset.ctUnrel = "1"; }
