@@ -105,3 +105,11 @@ For fact and how-to wording (what / who / where / when / how many / how long / h
 - how long to microwave shin ramen red → etfoodvoyage.com: "…Shin Ramen takes about 5 minutes in the microwave when using hot water."
 - how many ways are there to skin a cat → english.stackexchange.com: "So there are actually only two ways to skin a cat: while it's alive, or while it's dead."
 - none: when is dad coming home with the milk · why does no one love me (AI spot instead) · who are you who do you work for
+
+## Look and layout (your screenshots, 2026-11-23)
+- **Stray spaces gone** on every tab: `"No Shit "` → `"No Shit"`, `slang ?` → `slang?`, `Shit ,` → `Shit,`, `It 's` → `It's`, `( crazy )` → `(crazy)`. Inch marks (`2" pipe`) and times are left alone.
+- **Site icons are back.** A 16px icon before each site name, in a fixed box (nothing moves), loaded through degoog's own favicon proxy (the sites never see your browser), with a letter tile when a site has none. Why: every major engine shows them because a known site is spotted faster by its icon than by reading grey text; the cost (one tiny cached picture per result) is small and private here; at 16px and muted they don't compete with titles.
+- **Header:** the gear sits right after the search bar (same height, round hover), not alone in the far corner; **Tools** sits at the right end of the tab row, exactly under the bar's ✕ / →, so logo, bar, tabs and results are one column. On phones Tools follows the last tab behind a thin divider.
+- **Spacing by meaning:** parts of one result stay tight; equal results are 24px apart; a box that groups things (Videos, Discussions, Top stories, People also ask, Related) gets 36px above and below, so it reads as its own block; heading-to-items 12px. "Showing results for" now starts at the results' left edge.
+- **News:** the same picture twice means the same story twice (one site's two write-ups or a syndicated copy): only the first shows.
+- **Science:** doi.org links show the publisher ("Elsevier", "Springer", "Nature"…), the source line has the Web tab's colour and size, and long paper titles get 2 lines instead of "…".

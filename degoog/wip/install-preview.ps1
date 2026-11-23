@@ -1931,6 +1931,32 @@ const cleanSnippet = (s) => {
   t = t.replace(/^(?:\.\.\.|…)\s*/, "").replace(/\s*(?:\.\.\.|…)\s*(?:\.\.\.|…)+/g, " … ").replace(/\s+(?:\.\.\.|…)$/, "…").replace(/\.\.\./g, "…").trim();
   return { date, text: t };
 };
+// doi.org links say nothing about where a paper is: the DOI's registrant prefix names the publisher
+const DOI_PUB = { "10.1016": "Elsevier", "10.1007": "Springer", "10.1038": "Nature", "10.1126": "Science", "10.1002": "Wiley", "10.1111": "Wiley", "10.1080": "Taylor & Francis", "10.1177": "SAGE", "10.1093": "Oxford Academic", "10.1017": "Cambridge", "10.1371": "PLOS", "10.3390": "MDPI", "10.3389": "Frontiers", "10.1186": "BMC", "10.1136": "BMJ", "10.1056": "NEJM", "10.1001": "JAMA", "10.1073": "PNAS", "10.1021": "ACS", "10.1039": "RSC", "10.1103": "APS", "10.1088": "IOP", "10.1109": "IEEE", "10.1145": "ACM", "10.1101": "bioRxiv / medRxiv", "10.48550": "arXiv", "10.2139": "SSRN", "10.7554": "eLife", "10.1146": "Annual Reviews", "10.1037": "APA", "10.1097": "Wolters Kluwer", "10.1515": "De Gruyter", "10.1163": "Brill", "10.4324": "Routledge", "10.1057": "Palgrave", "10.1108": "Emerald", "10.2307": "JSTOR", "10.1353": "Project MUSE", "10.1155": "Hindawi", "10.1159": "Karger", "10.1055": "Thieme", "10.1128": "ASM", "10.1182": "ASH", "10.1161": "AHA", "10.1172": "JCI", "10.1083": "Rockefeller UP", "10.1242": "Company of Biologists", "10.1098": "Royal Society", "10.1063": "AIP", "10.1209": "EPL", "10.5281": "Zenodo", "10.6084": "figshare", "10.31234": "PsyArXiv", "10.31219": "OSF Preprints" };
+const doiPublisher = (url) => { try { const u = new URL(url); if (!/^(?:dx\.)?doi\.org$/.test(u.hostname.replace(/^www\./, ""))) return ""; const m = /^\/(10\.\d{4,9})\//.exec(decodeURIComponent(u.pathname)); return (m && DOI_PUB[m[1]]) || ""; } catch { return ""; } };
+// Stray spaces the engines leave where they bolded the search words: "slang ?" "( crazy )" " shit " "Schrödinger 's".
+// Spaces go before , . ; : ! ? ) ] % and 's / n't, after ( [, and inside a quote pair ("…" “…” ‘…’). Straight
+// double quotes are fixed only when they pair up (even count), so a stray inch mark is never touched.
+const tidyText = (s) => {
+  let t = String(s || "");
+  if (!/\s[,.;:!?)\]%’”]|[(\[“‘]\s|\s'(?:s|t|re|ve|ll|d|m)\b|\sn't\b|"/.test(t)) return t;
+  t = t.replace(/(\S)\s+([,;:!?)\]%]+)(?=\s|$|["”’])/g, (m, a, b) => (/\d/.test(a) && b[0] === ":" ? m : `${a}${b}`))
+    .replace(/(\S)\s+(\.)(?=\s|$|["”’])/g, "$1$2")
+    .replace(/([(\[])\s+(?=\S)/g, "$1")
+    .replace(/(\w)\s+('(?:s|t|re|ve|ll|d|m)|n't)\b/g, "$1$2")
+    .replace(/“\s+/g, "“").replace(/\s+”/g, "”").replace(/‘\s+(?=[^’]*’)/g, "‘").replace(/(‘[^’]*?)\s+’/g, "$1’");
+  // Straight quotes pair up left to right; an inch mark (2" pipe) is skipped. A quote with no space on either side
+  // (a"b) is left alone. An odd last one (cut-off snippet) counts as opening.
+  let open = true;
+  t = t.replace(/(\s*)"(\s*)/g, (m, a, b, i, all) => {
+    if (/\d$/.test(all.slice(0, i)) && !a) return m; // 2" = inches
+    if (!a && !b && i > 0 && i + 1 < all.length) { open = !open; return m; }
+    const r = open ? `${a}"` : `"${b}`;
+    open = !open;
+    return r;
+  });
+  return t;
+};
 // Label for a date found in a snippet or given by the engine: relative ones stay as written, absolute ones go
 // through relDate
 const dateLabel = (raw, now = Date.now()) => {
@@ -2765,7 +2791,7 @@ const featuredSnippet = (q, results) => {
   return null;
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, dateLabel, relDate, upsValid, isbnValid, cmuCourse, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippet };
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippet };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -2803,12 +2829,21 @@ window.fetch = async (input, init) => {
 // One look for everything the plugin adds: it enters with degoog's own result fade (once, not again when
 // re-attached after a redraw), and lines that sit above results start exactly where the results' text starts
 const fadeIn = (e) => { e.classList.add("ct-in"); e.addEventListener("animationend", () => e.classList.remove("ct-in"), { once: true }); return e; };
+// The tab row ends where the search bar ends (Tools sits under the bar's → button, in the same column as results)
+const tabsEdge = () => {
+  const bar = document.getElementById("results-search-bar"), tabs = document.getElementById("results-tabs");
+  if (!bar || !tabs) return;
+  const w = Math.round(bar.getBoundingClientRect().right - tabs.getBoundingClientRect().left + (parseFloat(getComputedStyle(tabs).paddingRight) || 0));
+  if (w > 200) tabs.style.setProperty("--ct-tabs-w", `${w}px`);
+};
 const lineUp = () => {
+  tabsEdge();
   // Lined up with the content under it on every tab and screen size: a result's text, or the edge of the picture grid
   const main = document.getElementById("results-main");
   const c = main && [...main.querySelectorAll("#results-list .result-item .result-title, #results-list .image-card, #results-list .video-card")].find((e) => e.offsetParent);
   if (!c) return;
-  const x = Math.round(c.getBoundingClientRect().left - main.getBoundingClientRect().left);
+  // Measured from the inside of main's own padding (the lines above already start there; v50-preview added it twice)
+  const x = Math.round(c.getBoundingClientRect().left - main.getBoundingClientRect().left - (parseFloat(getComputedStyle(main).paddingLeft) || 0));
   if (Number.isFinite(x) && x >= 0 && x < 80) main.style.setProperty("--ct-x", `${x}px`);
 };
 addEventListener("resize", () => requestAnimationFrame(lineUp), { passive: true });
@@ -3082,6 +3117,16 @@ const near = new IntersectionObserver((list) => {
   }
 }, { rootMargin: "800px 0px" });
 
+// A picture's identity: the real address inside degoog's image proxy, without size/quality settings
+const newsPics = new Map();
+const picKey = (src) => {
+  try {
+    const u = new URL(src, location.href);
+    const inner = new URL(u.pathname.includes("/api/proxy/image") ? u.searchParams.get("url") || "" : u.href);
+    for (const p of ["w", "h", "qlt", "q", "quality", "width", "height", "pid", "c", "rs", "dpr", "o"]) inner.searchParams.delete(p);
+    return inner.hostname + inner.pathname.replace(/\/rs:[^/]*\//, "/") + inner.search;
+  } catch { return ""; }
+};
 const row = (el) => {
   const a = el.querySelector("a.result-title");
   if (!a) return;
@@ -3090,7 +3135,8 @@ const row = (el) => {
   const text = a.textContent || "";
   let u = null;
   try { u = new URL(a.href); } catch {}
-  const out = cleanTitle(text, a.href);
+  // Engines leave spaces where they bolded the search words ("slang ?", "\" shit \""): core tidyText, every tab
+  const out = CT.tidyText(cleanTitle(text, a.href) || text.replace(/\s+/g, " ").trim());
   if (out && out !== text.replace(/\s+/g, " ").trim()) { a.title = text.trim(); a.textContent = out; }
   // Link line: just the site name, like Google on phones (the full address shows on hover)
   const cite = el.querySelector(".result-cite");
@@ -3098,6 +3144,8 @@ const row = (el) => {
   try { site = new URL(el.dataset.resultUrl || a.href).hostname.replace(/^www\./, ""); } catch {}
   // Forum threads (any tab): the community is the source ("r/Jersey", "Stack Overflow"), not repeated in the title,
   // and Reddit's "Archived post. New comments cannot be posted..." filler is dropped from the description
+  const pub = CT.doiPublisher(el.dataset.resultUrl || a.href);
+  if (pub) site = pub; // "Elsevier" instead of doi.org (the address still shows on hover)
   const fn = u ? forumName(u, site) : "";
   if (fn) {
     site = fn;
@@ -3117,6 +3165,9 @@ const row = (el) => {
     let n0 = p0.firstChild;
     while (n0 && n0.nodeType === 3 && !n0.data.trim()) n0 = n0.nextSibling;
     if (n0 && n0.nodeType === 3) { const c = CT.cleanSnippet(n0.data); if (!dRaw) dRaw = c.date; n0.data = c.text; }
+    // Same stray-space fix in every text piece of the description (bold words stay bold)
+    for (const n of p0.childNodes) if (n.nodeType === 3) n.data = CT.tidyText(n.data);
+    p0.querySelectorAll("b, strong, em").forEach((b) => { const x = b.firstChild; if (x && x.nodeType === 3) x.data = CT.tidyText(x.data); });
     const label = dRaw ? CT.dateLabel(dRaw) : "";
     if (label && cite) { const d = mk("span", "ct-date", label); d.dataset.raw = dRaw; cite.after(d); }
   }
@@ -3125,6 +3176,12 @@ const row = (el) => {
   // "PDF" on the source line for PDF files (any search), like the Paywall word
   if (cite && u && (/\.pdf$/i.test(u.pathname) || /(^|\.)arxiv\.org$/.test(u.hostname) && /^\/pdf\//.test(u.pathname))) { const t = mk("span", "ct-paywall ct-pdf", "PDF"); (el.querySelector(".result-url-row .ct-paywall, .result-url-row .ct-date") || cite).after(t); }
   const img = el.querySelector(".result-thumbnail-wrap img");
+  // News: the same picture twice is the same story told twice (one site's two write-ups, or a syndicated copy):
+  // only the first is shown. Decided here, before paint, from the picture's address (sizes ignored).
+  if (img && /[?&]type=news\b/.test(location.search)) {
+    const k = picKey(img.getAttribute("src") || "");
+    if (k) { const seen = newsPics.get(k); if (seen && seen !== el && seen.isConnected) { el.style.display = "none"; el.dataset.ctDup = "1"; return; } newsPics.set(k, el); }
+  }
   if (img) { if (/[?&]type=news\b/.test(location.search)) lowres(el, img); work.set(el, () => hdImg(img)); near.observe(el); }
 };
 
@@ -3144,6 +3201,7 @@ const card = (el, isImage) => {
   const host = raw.toLowerCase().replace(/^www\./, "");
   const text = t && t.textContent || "";
   if (adult(host, text)) { el.style.display = "none"; return; }
+  if (t && !t.dataset.ctTidy) { t.dataset.ctTidy = "1"; const x = CT.tidyText(text.replace(/\s+/g, " ").trim()); if (x !== text.trim()) t.textContent = x; }
   if (!isImage) return;
   if (aiImg(host)) { el.style.display = "none"; el.dataset.ctAi = "1"; return; }
   if (src && host !== raw) src.textContent = host;
@@ -3255,6 +3313,7 @@ const earlyStart = () => {
   if (earlyFor === key) return;
   earlyFor = key;
   early.clear();
+  newsPics.clear();
   let u;
   try { u = new URL(key); } catch { return; }
   const q = (u.searchParams.get("q") || "").trim();
@@ -3662,6 +3721,7 @@ const tools = () => {
   t.textContent = "Tools";
   t.setAttribute("aria-expanded", "false");
   tabs.append(t);
+  tabsEdge();
   t.addEventListener("click", () => {
     let f = document.getElementById("ct-adv");
     if (f) { f.remove(); t.setAttribute("aria-expanded", "false"); return; }
@@ -4725,15 +4785,19 @@ html:root { --ct-desc-pc: 15px; --ct-desc-phone: 13.5px; }
     box-shadow: -8px 0 24px rgba(0,0,0,.5) !important;
   }
 
-  /* Header: search bar ends at the 44rem content edge, gear in the corner */
+  /* Header: search bar ends at the 44rem content edge; the gear sits right after it, same height, centred on the
+     bar (page controls next to the search they change, not alone in the far corner of a wide screen) */
   #results-header .results-logo { flex: none !important; width: 6.5rem !important; }
   #results-header #results-search-bar { flex: none !important; width: 36.75rem !important; max-width: none !important; }
   #nav-settings-results {
-    position: absolute !important;
-    top: 1rem !important; right: 1.25rem !important;
-    height: 2.75rem !important; margin: 0 !important;
-    display: flex !important; align-items: center !important;
+    position: static !important;
+    height: 2.75rem !important; width: 2.75rem !important; margin: 0 0 0 .25rem !important; padding: 0 !important;
+    display: flex !important; align-items: center !important; justify-content: center !important;
+    border-radius: 999px !important; color: var(--text-secondary) !important;
   }
+  #nav-settings-results:hover { background: var(--bg-hover) !important; color: var(--text-primary) !important; }
+  #nav-settings-results i { font-size: 1.15rem !important; }
+
 
   /* One column like the phone: info panel, then AI summary, then results */
   #results-layout:not(.media-mode) {
@@ -4828,8 +4892,9 @@ html:root { --ct-desc-pc: 15px; --ct-desc-phone: 13.5px; }
 #results-page:is(:has(.results-tab.active[data-type="tab:engine:science"]), :not(:has(.results-tab.active)):has(.result-item:is([data-result-url*="doi.org/"], [data-result-url*="openalex.org/"], [data-result-url*="semanticscholar.org/"], [data-result-url*="ncbi.nlm.nih.gov/"], [data-result-url*="arxiv.org/"], [data-result-url*="researchhub.com/"]))) {
   & .results-tab[data-type="tab:engine:science"] { color: var(--text-primary) !important; border-bottom-color: var(--text-primary) !important; }
   & .result-thumbnail-wrap { display: none !important; }
-  & .result-cite { color: #9fc5a8 !important; }
+  /* Same source line as Web (colour, size), and long paper titles get 2 lines instead of "…" */
   & .result-snippet { -webkit-line-clamp: 2 !important; }
+  & .result-item .result-title { white-space: normal !important; display: -webkit-box !important; -webkit-line-clamp: 2 !important; -webkit-box-orient: vertical; }
   & .result-insecure-badge { display: none !important; }
 }
 
@@ -5098,7 +5163,8 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 /* Sitelinks, Discussions and forums, Videos, Top stories: same family as People also ask (heading, dividers)
    and your News cards (12px rounded tiles); every row is one big tap target */
 .result-item.ct-grouped { display: none !important; }
-.ct-grp { margin: 4px 0 24px; }
+/* Same gap above and below a box (12px here + a result's 12px padding = the 24px between two results) */
+.ct-grp { margin: 12px 0; }
 .ct-gh { font-size: 20px; line-height: 26px; font-weight: 400; margin: 0 0 12px; color: var(--text-primary); }
 .ct-meta { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; line-height: 18px; color: var(--text-secondary); }
 .ct-fav { width: 16px; height: 16px; flex: none; border-radius: 4px; object-fit: contain; }
@@ -5166,7 +5232,17 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 }
 
 /* Tools: a small link beside the tabs, opening Google-style advanced search fields */
-#ct-tools { background: none; border: 0; padding: 0 12px; font: inherit; font-size: 13.5px; color: var(--text-secondary); cursor: pointer; margin-left: auto; }
+/* Tools lives with the search it changes: on wider screens the tab row ends where the search bar ends, and Tools
+   sits at that edge, right under the bar's ✕ and → (one column: logo, bar, tabs, results). On phones it follows the
+   last tab behind a thin divider, inside the scrolling tab row. Same size and baseline as the tabs. */
+#ct-tools { position: relative; align-self: stretch; display: flex; align-items: center; background: none; border: 0; border-bottom: 3px solid transparent; padding: 0 12px 0 16px; margin-left: 4px; font: inherit; font-size: 14px; color: var(--text-secondary); cursor: pointer; flex: none; }
+#ct-tools::before { content: ""; position: absolute; left: 0; top: 50%; height: 16px; margin-top: -8px; width: 1px; background: var(--border-light); }
+@media (min-width: 768px) {
+  #results-tabs:has(#ct-tools) { max-width: var(--ct-tabs-w, none); box-sizing: border-box; }
+  #results-tabs #ct-tools { margin-left: auto !important; padding: 0 14px; }
+  #ct-tools::before { display: none; }
+}
+#ct-tools:hover { color: var(--text-primary); }
 #ct-tools[aria-expanded="true"] { color: var(--text-primary); }
 #ct-adv { display: grid; grid-template-columns: max-content minmax(0, 360px); gap: 8px 16px; align-items: center; padding: 14px 0 16px; max-width: 600px; font-size: 13.5px; color: var(--text-secondary); }
 #ct-adv label { display: contents; }
@@ -5323,10 +5399,24 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .ct-mean-a:hover { text-decoration: underline; }
 .ct-mean-dot { white-space: pre; }
 
-/* Design system: no site icons or favicons anywhere (results, Discussions, Videos, Top stories) */
-.result-item :is(.result-favicon, .result-favicon-missing, .result-favicon-fallback), .ct-fav { display: none !important; }
+/* Site icons are back (user, 2026-11-23): a 16px icon in a fixed box before the site name, from degoog's own
+   favicon proxy (your server asks, cached; the browser never contacts the site), a letter tile when a site has none.
+   Faster to spot a known site than reading grey text, and the box never changes size, so nothing moves. */
 /* Menu lines are tap targets: 44px on phones */
 @media (max-width: 767px) { .ct-arch, .ct-seg-b { min-height: 44px; } }
+
+/* ===== Vertical rhythm (one scale, by how things belong together) =====
+   inside one result (source, title, description, its sitelinks / "N more" line): 2-10px, tight, they're one item
+   between equal results: 24px (each result's 12px padding top + bottom), all alike
+   around a box that groups several things (Videos, Discussions, Top stories, People also ask, Related searches):
+     36px above and below (24px margin + the neighbour's 12px), so a box reads as its own block, not as one more
+     result; inside it the heading sits 12px over its items, and the items sit 8-12px apart (they're a set)
+   the answer at the top (instant answer, featured snippet) keeps its own ~40px before the first result (the answer
+   area's own spacing), a tier of its own
+   The result list is a flex column, so margins don't merge: two boxes in a row get 24 + 12 = 36px, the same as box to result. */
+.ct-grp, #ct-qa, #ct-related { margin: 24px 0 !important; }
+:is(.ct-grp, #ct-qa, #ct-related) + :is(.ct-grp, #ct-qa, #ct-related) { margin-top: 12px !important; }
+.ct-gh, #ct-qa h3, #ct-related h3 { margin: 0 0 12px !important; }
 
 '@)
 [IO.File]::WriteAllText("$t\setcss.js", @'

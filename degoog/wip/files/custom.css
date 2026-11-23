@@ -163,15 +163,19 @@ html:root { --ct-desc-pc: 15px; --ct-desc-phone: 13.5px; }
     box-shadow: -8px 0 24px rgba(0,0,0,.5) !important;
   }
 
-  /* Header: search bar ends at the 44rem content edge, gear in the corner */
+  /* Header: search bar ends at the 44rem content edge; the gear sits right after it, same height, centred on the
+     bar (page controls next to the search they change, not alone in the far corner of a wide screen) */
   #results-header .results-logo { flex: none !important; width: 6.5rem !important; }
   #results-header #results-search-bar { flex: none !important; width: 36.75rem !important; max-width: none !important; }
   #nav-settings-results {
-    position: absolute !important;
-    top: 1rem !important; right: 1.25rem !important;
-    height: 2.75rem !important; margin: 0 !important;
-    display: flex !important; align-items: center !important;
+    position: static !important;
+    height: 2.75rem !important; width: 2.75rem !important; margin: 0 0 0 .25rem !important; padding: 0 !important;
+    display: flex !important; align-items: center !important; justify-content: center !important;
+    border-radius: 999px !important; color: var(--text-secondary) !important;
   }
+  #nav-settings-results:hover { background: var(--bg-hover) !important; color: var(--text-primary) !important; }
+  #nav-settings-results i { font-size: 1.15rem !important; }
+
 
   /* One column like the phone: info panel, then AI summary, then results */
   #results-layout:not(.media-mode) {
@@ -266,8 +270,9 @@ html:root { --ct-desc-pc: 15px; --ct-desc-phone: 13.5px; }
 #results-page:is(:has(.results-tab.active[data-type="tab:engine:science"]), :not(:has(.results-tab.active)):has(.result-item:is([data-result-url*="doi.org/"], [data-result-url*="openalex.org/"], [data-result-url*="semanticscholar.org/"], [data-result-url*="ncbi.nlm.nih.gov/"], [data-result-url*="arxiv.org/"], [data-result-url*="researchhub.com/"]))) {
   & .results-tab[data-type="tab:engine:science"] { color: var(--text-primary) !important; border-bottom-color: var(--text-primary) !important; }
   & .result-thumbnail-wrap { display: none !important; }
-  & .result-cite { color: #9fc5a8 !important; }
+  /* Same source line as Web (colour, size), and long paper titles get 2 lines instead of "…" */
   & .result-snippet { -webkit-line-clamp: 2 !important; }
+  & .result-item .result-title { white-space: normal !important; display: -webkit-box !important; -webkit-line-clamp: 2 !important; -webkit-box-orient: vertical; }
   & .result-insecure-badge { display: none !important; }
 }
 
@@ -536,7 +541,8 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 /* Sitelinks, Discussions and forums, Videos, Top stories: same family as People also ask (heading, dividers)
    and your News cards (12px rounded tiles); every row is one big tap target */
 .result-item.ct-grouped { display: none !important; }
-.ct-grp { margin: 4px 0 24px; }
+/* Same gap above and below a box (12px here + a result's 12px padding = the 24px between two results) */
+.ct-grp { margin: 12px 0; }
 .ct-gh { font-size: 20px; line-height: 26px; font-weight: 400; margin: 0 0 12px; color: var(--text-primary); }
 .ct-meta { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; line-height: 18px; color: var(--text-secondary); }
 .ct-fav { width: 16px; height: 16px; flex: none; border-radius: 4px; object-fit: contain; }
@@ -604,7 +610,17 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 }
 
 /* Tools: a small link beside the tabs, opening Google-style advanced search fields */
-#ct-tools { background: none; border: 0; padding: 0 12px; font: inherit; font-size: 13.5px; color: var(--text-secondary); cursor: pointer; margin-left: auto; }
+/* Tools lives with the search it changes: on wider screens the tab row ends where the search bar ends, and Tools
+   sits at that edge, right under the bar's ✕ and → (one column: logo, bar, tabs, results). On phones it follows the
+   last tab behind a thin divider, inside the scrolling tab row. Same size and baseline as the tabs. */
+#ct-tools { position: relative; align-self: stretch; display: flex; align-items: center; background: none; border: 0; border-bottom: 3px solid transparent; padding: 0 12px 0 16px; margin-left: 4px; font: inherit; font-size: 14px; color: var(--text-secondary); cursor: pointer; flex: none; }
+#ct-tools::before { content: ""; position: absolute; left: 0; top: 50%; height: 16px; margin-top: -8px; width: 1px; background: var(--border-light); }
+@media (min-width: 768px) {
+  #results-tabs:has(#ct-tools) { max-width: var(--ct-tabs-w, none); box-sizing: border-box; }
+  #results-tabs #ct-tools { margin-left: auto !important; padding: 0 14px; }
+  #ct-tools::before { display: none; }
+}
+#ct-tools:hover { color: var(--text-primary); }
 #ct-tools[aria-expanded="true"] { color: var(--text-primary); }
 #ct-adv { display: grid; grid-template-columns: max-content minmax(0, 360px); gap: 8px 16px; align-items: center; padding: 14px 0 16px; max-width: 600px; font-size: 13.5px; color: var(--text-secondary); }
 #ct-adv label { display: contents; }
@@ -761,7 +777,21 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .ct-mean-a:hover { text-decoration: underline; }
 .ct-mean-dot { white-space: pre; }
 
-/* Design system: no site icons or favicons anywhere (results, Discussions, Videos, Top stories) */
-.result-item :is(.result-favicon, .result-favicon-missing, .result-favicon-fallback), .ct-fav { display: none !important; }
+/* Site icons are back (user, 2026-11-23): a 16px icon in a fixed box before the site name, from degoog's own
+   favicon proxy (your server asks, cached; the browser never contacts the site), a letter tile when a site has none.
+   Faster to spot a known site than reading grey text, and the box never changes size, so nothing moves. */
 /* Menu lines are tap targets: 44px on phones */
 @media (max-width: 767px) { .ct-arch, .ct-seg-b { min-height: 44px; } }
+
+/* ===== Vertical rhythm (one scale, by how things belong together) =====
+   inside one result (source, title, description, its sitelinks / "N more" line): 2-10px, tight, they're one item
+   between equal results: 24px (each result's 12px padding top + bottom), all alike
+   around a box that groups several things (Videos, Discussions, Top stories, People also ask, Related searches):
+     36px above and below (24px margin + the neighbour's 12px), so a box reads as its own block, not as one more
+     result; inside it the heading sits 12px over its items, and the items sit 8-12px apart (they're a set)
+   the answer at the top (instant answer, featured snippet) keeps its own ~40px before the first result (the answer
+   area's own spacing), a tier of its own
+   The result list is a flex column, so margins don't merge: two boxes in a row get 24 + 12 = 36px, the same as box to result. */
+.ct-grp, #ct-qa, #ct-related { margin: 24px 0 !important; }
+:is(.ct-grp, #ct-qa, #ct-related) + :is(.ct-grp, #ct-qa, #ct-related) { margin-top: 12px !important; }
+.ct-gh, #ct-qa h3, #ct-related h3 { margin: 0 0 12px !important; }

@@ -68,6 +68,15 @@ const page = (q) => {
       const res = REC.searches.find((x) => x.q === q && !x.type).results;
       const html = res.map((r, i) => render(TPL, ctx(r, i))).join("");
       // Results view on (app.js would do this), then the one insert degoog makes
+      // CT_HEADER=1: degoog's header (logo, search bar, gear) and tab row from its own templates, which app.js
+      // would render (the recorded page has them empty), to check the header layout
+      if (process.env.CT_HEADER) await p.evaluate(({ hdr, q }) => {
+        const h = document.getElementById("results-header"); if (h) h.innerHTML = hdr;
+        const i = document.getElementById("results-search-input"); if (i) i.value = q;
+        const c = document.getElementById("results-search-clear-btn"); if (c) c.style.display = "";
+        const t = document.getElementById("results-tabs");
+        if (t) t.innerHTML = ["Web", "Images", "Videos", "Forums", "News", "Science"].map((x, k) => `<div class="results-tab degoog-tab${k ? "" : " active"}" data-type="${k ? `tab:engine:${x.toLowerCase()}` : "web"}">${x}</div>`).join("") + '<div class="tools-wrap" id="tools-bar" style="display:none"></div>';
+      }, { hdr: fs.readFileSync(path.join(W, "test/fixtures/header.html"), "utf8"), q });
       const n = await p.evaluate(async (html) => {
         document.querySelectorAll("#results-page, #search-results, .results-page").forEach((e) => { e.style.display = ""; e.hidden = false; });
         document.body.classList.add("has-results");
@@ -106,6 +115,7 @@ const page = (q) => {
       await p.evaluate(() => window.scrollTo(0, 0)); await p.waitForTimeout(300);
       const r = await p.evaluate(() => ({ cls: window.__cls, shown: [...document.querySelectorAll("#results-list .result-item")].filter((e) => e.offsetParent).length, folds: document.querySelectorAll(".ct-fold").length, alts: document.querySelectorAll(".ct-alts").length, kp: (() => { const k = document.querySelector(".ct-kp"); if (!k || !k.offsetParent) return `none sw${document.documentElement.scrollWidth}`; const b = k.getBoundingClientRect(), f = document.querySelector("#results-list .result-item:not([style*=none])").getBoundingClientRect(); return `${Math.round(b.left)}-${Math.round(b.right)} top${Math.round(b.top - f.top)} vw${innerWidth} sw${document.documentElement.scrollWidth}`; })(), dates: document.querySelectorAll(".ct-date").length, shifts: window.__shifts }));
       if (process.env.CT_WIDE) console.log(q, width, await p.evaluate(() => [...document.querySelectorAll("body *")].filter((e) => { const b = e.getBoundingClientRect(); if (!(b.right > innerWidth + 0.5 && b.width > 0)) return false; for (let x = e.parentElement; x; x = x.parentElement) if (/auto|scroll|hidden|clip/.test(getComputedStyle(x).overflowX)) return false; return true; }).slice(0, 5).map((e) => `${e.tagName}.${e.className} ${Math.round(e.getBoundingClientRect().right)}`)));
+      if (process.env.CT_HEADER) console.log(width, await p.evaluate(() => { const t0 = document.getElementById("ct-tools"); const t = t0; window.__d = t0 && [getComputedStyle(t0.parentElement).display, getComputedStyle(t0).display, t0.parentElement.id, getComputedStyle(t0).marginLeft]; console.log(JSON.stringify(window.__d)), tabs = document.getElementById("results-tabs"), bar = document.getElementById("results-search-bar"), g = document.getElementById("nav-settings-results"); const R = (e) => e ? (({ left, right, top, bottom }) => [left, right, top, bottom].map(Math.round))(e.getBoundingClientRect()) : null; return { tools: R(t), ml: t && getComputedStyle(t).marginLeft, tabs: R(tabs), tw: tabs && tabs.style.getPropertyValue("--ct-tabs-w"), d: window.__d, bar: R(bar), gear: R(g) }; }));
       if (r.shifts.length) console.log(width, q, "\n  " + r.shifts.slice(0, 6).join("\n  "));
       delete r.shifts;
       const file = path.join(out, `${width}-${q.replace(/\W+/g, "_")}.png`);

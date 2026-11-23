@@ -344,6 +344,32 @@ export const cleanSnippet = (s) => {
   t = t.replace(/^(?:\.\.\.|…)\s*/, "").replace(/\s*(?:\.\.\.|…)\s*(?:\.\.\.|…)+/g, " … ").replace(/\s+(?:\.\.\.|…)$/, "…").replace(/\.\.\./g, "…").trim();
   return { date, text: t };
 };
+// doi.org links say nothing about where a paper is: the DOI's registrant prefix names the publisher
+const DOI_PUB = { "10.1016": "Elsevier", "10.1007": "Springer", "10.1038": "Nature", "10.1126": "Science", "10.1002": "Wiley", "10.1111": "Wiley", "10.1080": "Taylor & Francis", "10.1177": "SAGE", "10.1093": "Oxford Academic", "10.1017": "Cambridge", "10.1371": "PLOS", "10.3390": "MDPI", "10.3389": "Frontiers", "10.1186": "BMC", "10.1136": "BMJ", "10.1056": "NEJM", "10.1001": "JAMA", "10.1073": "PNAS", "10.1021": "ACS", "10.1039": "RSC", "10.1103": "APS", "10.1088": "IOP", "10.1109": "IEEE", "10.1145": "ACM", "10.1101": "bioRxiv / medRxiv", "10.48550": "arXiv", "10.2139": "SSRN", "10.7554": "eLife", "10.1146": "Annual Reviews", "10.1037": "APA", "10.1097": "Wolters Kluwer", "10.1515": "De Gruyter", "10.1163": "Brill", "10.4324": "Routledge", "10.1057": "Palgrave", "10.1108": "Emerald", "10.2307": "JSTOR", "10.1353": "Project MUSE", "10.1155": "Hindawi", "10.1159": "Karger", "10.1055": "Thieme", "10.1128": "ASM", "10.1182": "ASH", "10.1161": "AHA", "10.1172": "JCI", "10.1083": "Rockefeller UP", "10.1242": "Company of Biologists", "10.1098": "Royal Society", "10.1063": "AIP", "10.1209": "EPL", "10.5281": "Zenodo", "10.6084": "figshare", "10.31234": "PsyArXiv", "10.31219": "OSF Preprints" };
+export const doiPublisher = (url) => { try { const u = new URL(url); if (!/^(?:dx\.)?doi\.org$/.test(u.hostname.replace(/^www\./, ""))) return ""; const m = /^\/(10\.\d{4,9})\//.exec(decodeURIComponent(u.pathname)); return (m && DOI_PUB[m[1]]) || ""; } catch { return ""; } };
+// Stray spaces the engines leave where they bolded the search words: "slang ?" "( crazy )" " shit " "Schrödinger 's".
+// Spaces go before , . ; : ! ? ) ] % and 's / n't, after ( [, and inside a quote pair ("…" “…” ‘…’). Straight
+// double quotes are fixed only when they pair up (even count), so a stray inch mark is never touched.
+export const tidyText = (s) => {
+  let t = String(s || "");
+  if (!/\s[,.;:!?)\]%’”]|[(\[“‘]\s|\s'(?:s|t|re|ve|ll|d|m)\b|\sn't\b|"/.test(t)) return t;
+  t = t.replace(/(\S)\s+([,;:!?)\]%]+)(?=\s|$|["”’])/g, (m, a, b) => (/\d/.test(a) && b[0] === ":" ? m : `${a}${b}`))
+    .replace(/(\S)\s+(\.)(?=\s|$|["”’])/g, "$1$2")
+    .replace(/([(\[])\s+(?=\S)/g, "$1")
+    .replace(/(\w)\s+('(?:s|t|re|ve|ll|d|m)|n't)\b/g, "$1$2")
+    .replace(/“\s+/g, "“").replace(/\s+”/g, "”").replace(/‘\s+(?=[^’]*’)/g, "‘").replace(/(‘[^’]*?)\s+’/g, "$1’");
+  // Straight quotes pair up left to right; an inch mark (2" pipe) is skipped. A quote with no space on either side
+  // (a"b) is left alone. An odd last one (cut-off snippet) counts as opening.
+  let open = true;
+  t = t.replace(/(\s*)"(\s*)/g, (m, a, b, i, all) => {
+    if (/\d$/.test(all.slice(0, i)) && !a) return m; // 2" = inches
+    if (!a && !b && i > 0 && i + 1 < all.length) { open = !open; return m; }
+    const r = open ? `${a}"` : `"${b}`;
+    open = !open;
+    return r;
+  });
+  return t;
+};
 // Label for a date found in a snippet or given by the engine: relative ones stay as written, absolute ones go
 // through relDate
 export const dateLabel = (raw, now = Date.now()) => {
