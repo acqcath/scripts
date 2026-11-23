@@ -192,3 +192,8 @@ test("same-shape results: type words, filter sites, the Only line, docs first", 
   // Lower wins over docs-first
   expect(C.planPage(items, C.listCtx("react useEffect cleanup", null, { "react.dev": "lower" })).shown[0].url).toBe("https://www.reddit.com/r/reactjs/a");
 });
+
+test("dedupe: NeurIPS proceedings copies (old nips.cc host, page and its PDF) are one paper", () => {
+  expect(C.docKey("https://papers.nips.cc/paper/7181-attention-is-all-you-need")).toBe(C.docKey("https://papers.neurips.cc/paper/7181-attention-is-all-you-need.pdf"));
+  expect(C.docKey("https://papers.neurips.cc/paper/7181-a")).not.toBe(C.docKey("https://papers.neurips.cc/paper/7182-a"));
+});
