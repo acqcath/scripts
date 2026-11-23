@@ -1458,8 +1458,15 @@ const QV_SHOW = { ingredients: 8, steps: 3, questions: 3 };
 const qvBox = (v) => {
   const box = mk("div", "ct-qv");
   if (!v) { box.append(mk("div", "ct-qv-none", "No quick view for this page")); return box; }
-  const facts = v.facts.filter(([k]) => k !== "Access").map(([k, x]) => (k === "Rating" || k === "Total time" || k === "Time" ? x : `${k} ${x}`));
-  if (facts.length) box.append(mk("div", "ct-qv-facts", facts.join(" · ")));
+  // Headline rating: number then 5 amber stars filled to the exact value (design system), count after
+  const fl = mk("div", "ct-qv-facts ct-fit ct-fit-drop");
+  for (const [k, x] of v.facts) {
+    if (k === "Access") continue;
+    const m = k === "Rating" && /^(\d+(?:\.\d)?) ★(.*)$/.exec(x);
+    if (m) { const it = mk("span", "ct-it ct-rating", `${m[1]} `); const st = mk("span", "ct-stars", "★★★★★"); st.style.setProperty("--r", m[1]); st.setAttribute("aria-label", `${m[1]} out of 5`); it.append(st); if (m[2].trim()) it.append(m[2]); fl.append(it); continue; }
+    fl.append(mk("span", "ct-it", k === "Total time" || k === "Time" ? x : `${k} ${x}`));
+  }
+  if (fl.children.length) box.append(fl);
   for (const l of v.lists) {
     if (l.para) { box.append(mk("p", "ct-qv-p", l.items[0])); continue; }
     const n = QV_SHOW[l.label] || 3;
@@ -1501,7 +1508,10 @@ document.addEventListener("click", async (e) => {
   const j = await bridge("qv", { u }).catch(() => null);
   if (!box.isConnected) return;
   const v = j && j.v && Array.isArray(j.v.facts) && Array.isArray(j.v.lists) && Array.isArray(j.v.text) ? j.v : null;
-  box.replaceWith(qvBox(v));
+  const nb = qvBox(v);
+  box.replaceWith(nb);
+  nb.querySelectorAll(".ct-fit").forEach(fitLine);
+  if (fitRO) fitRO.observe(nb);
   // The page says it's for subscribers (isAccessibleForFree: false): the Paywall word joins the source line
   const cite = el.querySelector(".result-cite");
   if (v && v.facts.some(([k, x]) => k === "Access" && x === "Paywall") && cite && !el.querySelector(".result-url-row .ct-paywall:not(.ct-pdf)")) cite.after(mk("span", "ct-paywall", "Paywall"));
@@ -1527,7 +1537,12 @@ const starsPass = () => {
   for (const el of rows) {
     const a = el.querySelector("a.result-title"), u = (el.dataset.resultUrl || (a && a.href) || "");
     const c = u && qvs[qHash(u)], cite = el.querySelector(".result-cite");
-    if (c && cite) { const t = mk("span", "ct-paywall ct-stars-l", c[0]); (el.querySelector(".result-url-row .ct-pdf, .result-url-row .ct-paywall, .result-url-row .ct-date") || cite).after(t); }
+    if (c && cite) {
+      const t = mk("span", "ct-paywall ct-stars-l");
+      const m = /^(\d+(?:\.\d)?) ★(.*)$/.exec(c[0]);
+      if (m) { t.append(`${m[1]} `); const st = mk("span", "ct-stars", "★★★★★"); st.style.setProperty("--r", m[1]); st.setAttribute("aria-label", `${m[1]} out of 5`); t.append(st, m[2]); } else t.textContent = c[0];
+      (el.querySelector(".result-url-row .ct-pdf, .result-url-row .ct-paywall, .result-url-row .ct-date") || cite).after(t);
+    }
     else if (u && !c) ask.push(u);
   }
   if (ask.length) setTimeout(() => bridge("qvs", {}, JSON.stringify({ u: ask })).then((j) => {
