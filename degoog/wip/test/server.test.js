@@ -448,3 +448,26 @@ test("page part check: a degoog update that wiped layout.html's block or the psl
   expect(srv.PAGE_MISSING).toBe(false); // no layout.html in tests
   expect(srv.default.description.startsWith("Google-style")).toBe(true);
 });
+
+test("self-check fixes: subclass type (suspension bridge), Wikidata next item when the top one has no value, reasons", async () => {
+  const srv = await import("../files/index.js");
+  const snak = (value, extra = {}) => ({ rank: "normal", mainsnak: { snaktype: "value", datavalue: { value } }, ...extra });
+  const item = (id) => snak({ "entity-type": "item", id });
+  const ggb = { claims: { P31: [item("Q12570")], P131: [item("Q62")] }, sitelinks: { enwiki: { title: "Golden Gate Bridge" } } };
+  expect(srv.kpPlan(ggb).type).toBe("");
+  expect(srv.kpPlan(ggb, { Q12570: ["Q12280"] }).type).toBe("structure");
+  // population: top hit has no P1082 and a qualifier without a value -> second hit answers
+  const claim = { rank: "normal", mainsnak: { snaktype: "value", datavalue: { value: { amount: "+302971", unit: "1" } } }, qualifiers: { P585: [{ snaktype: "somevalue" }] } };
+  srv.default.init({ id: "clean-titles", fetch: async (u) => {
+    const p = new URL(u).searchParams;
+    if (p.get("action") === "wbsearchentities") return new Response(JSON.stringify({ search: [{ id: "Q1", label: "Pittsburgh" }, { id: "Q1342", label: "Pittsburgh", description: "city" }] }));
+    if (p.get("action") === "wbgetclaims") return new Response(JSON.stringify({ claims: p.get("entity") === "Q1342" ? { P1082: [claim] } : {} }));
+    return new Response("", { status: 404 });
+  } });
+  const d = await srv.wdFor("population", "pittsburgh x");
+  expect(d.v[0].amount).toBe("+302971");
+  expect(d.v[0].asOf).toBeUndefined();
+  srv.default.init({ id: "clean-titles", fetch: async () => new Response("", { status: 403 }) });
+  expect(await srv.wdFor("population", "nowhere y")).toBe(null);
+  expect(srv.WHY.wd).toContain("http 403");
+});

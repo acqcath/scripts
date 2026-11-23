@@ -81,3 +81,10 @@ A degoog image update replaces the page files this plugin adds (it can't write t
 
 ## Not in this preview yet
 Featured snippet for fact/how-to searches (needs about 10 real "what is / how to / who is" searches recorded from your server first).
+
+## After your first self-check (4 FAIL) — please run the installer again and paste the new table
+- **Knowledge panel:** "golden gate bridge" got no facts because Wikidata calls it a *suspension bridge*, and only "bridge" was known. Now a type one step up counts too (suspension bridge → bridge).
+- **Wikidata facts:** if the first item found has no value (e.g. no population), the next two are tried; one odd kind of Wikidata date no longer breaks the answer; one retry when Wikidata says "slow down".
+- **Every FAIL now says why** after its time (e.g. "ESPN schedule http 403", "page http 403", "no photo"), so a second round can be fixed exactly.
+- The self-check now runs the checks one at a time (Wikidata dislikes bursts) and accepts image addresses when degoog runs under a base path.
+- **Safe Search off:** the installer sets Safe Search to *off* on every installed engine that has the setting (Bing Images was "moderate" by default). Its line: "Safe Search: now off for … (OK)". Two new rows in the table: "Safe Search off on all engines" and "Touchy searches get full results" (3 blunt searches from your list must each return at least 8 results from 5+ sites; only counts are printed). The plugin itself never filters by topic.
