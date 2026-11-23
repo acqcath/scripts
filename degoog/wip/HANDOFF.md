@@ -134,13 +134,20 @@ The spec is the user's handoff text (they paste it into each new chat). These no
 - Replay of all 50 recorded web searches through the built page script (test/page.test.js, `CT_REPORT=1 bun test` prints the table): zero page-script errors; merges per search 0–4, fold lines 0–4.
 - PLAN.md (pushed by another session at 05:16–05:18 UTC, while this run held LOCK) is followed: this run's work is M1 item 1 plus part of item 2 (HD crossfade; groups no longer wait for the prefs bridge).
 
-## Assumptions (this run)
+## Assumptions (run 2026-11-23 09:17)
+- WebFetch was not available to this run either (no tool), so no outside service was checked live. Every network source added (ECB, endoflife.date, Wikidata, Wikipedia REST, CMU API, ESPN, laylavish list) parses defensively, hides itself on any shape mismatch, and is listed below for the M6 installer self-check, which is the spec's own live check (SPEC line 82).
+- M6 self-check must print (feature names + status only): fx.json date + count; ai-images.json count + which URL answered; /eol windows + python; /wd population|pittsburgh and height|eiffel tower; /cmu 15-213 (hrs, rating[7], rating[8]); /sports steelers (state, abbrs, signed logo); /kp eiffel tower (type, facts, photo signed); aittl.js status line; whether index.js could import degoog's domain-lists.ts / plugin-settings.ts.
+- AI summary now shows only on AI-worded searches (spec 2); other searches get no AI box. Featured snippets (the fact/how-to side) are still to do (M5).
+- Sports: a word-only search sends its words to this server's /sports (never to ESPN); ESPN's team lists are fetched once a day after the first such search.
+
+## Assumptions (earlier runs)
 - Rollback: main's v49 installer replaces only the ct-inline module, so the psl defer tag and file stay. Harmless (v49 doesn't read CT_PSL); not cleaned up.
 - The PSL file and layout block live in /app/src (image files): a degoog image update wipes both, same as v49's inline block. Todo before ship: the server plugin restores them at startup if missing (index.js has the files in /app/data).
 - Prefer/Lower reorder only within one endless-scroll page; a fold is only made under a result on the same page (one above would move what's on screen). Later-page extras are just hidden.
 - Site prefs come from `window.CT_DATA.sites` ({domain: "prefer"|"lower"|"hide"}), compiled into the inline block by the server. Not built yet: until then every site is Normal.
 - PSL is read from `window.CT_PSL` (string), set by /public/ct/psl.<hash>.js loaded with defer before the module (defer and module scripts run in document order).
 ## Next
+- **Status 2026-11-23 10:05 UTC:** M1, M2, M3 done. M4: currency, endoflife.date, Wikidata facts, CMU card, sports done; knowledge panel server part done, its page UI is next (see the M4 knowledge panel notes in Done). Then M5, M6. Tests: 68 pass; headless CLS 0 on all checked cases.
 - **M1 is done** (2026-11-23 06:05 UTC): install-preview.ps1 + PREVIEW.md are on the branch. Now M2 (PLAN.md).
 - Step 3, part 2 (after-paint items still open):
   - Measure live how often /fix and /qs are in hand before results arrive (engine cache hits come back fast). If "Showing results for" is often dropped while the search really was changed, show it from the server's answer: the interceptor knows the fix before the engines run.
