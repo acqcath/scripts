@@ -132,6 +132,20 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
     } catch (e) { note = `no answer: ${String(e && e.message || e).slice(0, 50)}`; }
     rows.push(["Wikipedia API from this server", ok ? "PASS" : "INFO", note]);
   }
+  // How degoog has been opening on each device (timings the page sent, last 60 loads): median and the slowest load,
+  // split into where the time went
+  try {
+    const list = JSON.parse(fs.readFileSync(`${DIR}/perf.json`, "utf8"));
+    const med = (a) => { const b = a.filter((x) => x >= 0).sort((x, y) => x - y); return b.length ? b[Math.floor(b.length / 2)] : -1; };
+    for (const dev of ["phone", "pc"]) {
+      const L = list.filter((x) => x.dev === dev && x.nav);
+      if (!L.length) continue;
+      const worst = L.reduce((a, b) => ((b.nav.loaded || 0) > (a.nav.loaded || 0) ? b : a));
+      const part = (x) => x ? `wait ${x.wait} · dns ${x.dns} · connect ${x.connect} · tls ${x.tls} · server ${x.server} · download ${x.download}` : "none";
+      rows.push([`Page opens (${dev}, ${L.length})`, "INFO", `median ready ${med(L.map((x) => x.nav.ready))} ms, first search ${med(L.map((x) => x.search ? x.search.wait + x.search.total : -1))} ms after open`]);
+      rows.push([`  slowest (${dev})`, "INFO", `ready ${worst.nav.ready} ms (${part(worst.nav)}); search: ${part(worst.search)}`]);
+    }
+  } catch {}
   // Safe Search off on every engine that has it (set by the installer just before the restart)
   let safe = [];
   try {
