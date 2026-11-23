@@ -89,3 +89,16 @@ test("answers: versions and support from endoflife.date cycles", () => {
   expect(A.eolQuery("node latest version").slug).toBe("nodejs");
   for (const q of ["latest news", "is it supported", "python tutorial", "latest"]) expect([q, A.eolQuery(q)]).toEqual([q, null]);
 });
+
+test("answers: Wikidata facts (query shapes, metric + imperial, as-of, age, distance)", () => {
+  expect(A.wdQuery("how tall is the eiffel tower")).toEqual({ fact: "height", s: "eiffel tower" });
+  expect(A.wdQuery("pittsburgh population")).toEqual({ fact: "population", s: "pittsburgh" });
+  expect(A.wdQuery("distance between pittsburgh and new york")).toEqual({ fact: "distance", s: "pittsburgh", s2: "new york" });
+  expect(A.wdQuery("nvidia ceo")).toEqual({ fact: "ceo", s: "nvidia" });
+  for (const q of ["jaguar", "python", "taylor swift", "react useEffect cleanup"]) expect([q, A.wdQuery(q)]).toEqual([q, null]);
+  expect(A.wdAnswer(A.wdQuery("eiffel tower height"), { label: "Eiffel Tower", desc: "tower in Paris, France", v: [{ amount: "+330", unit: "Q11573" }] }, now)).toMatchObject({ value: "330 m", detail: "1,083 ft · tower in Paris, France", src: "Wikidata" });
+  expect(A.wdAnswer(A.wdQuery("pittsburgh population"), { label: "Pittsburgh", desc: "city in Pennsylvania", v: [{ amount: "+302971", asOf: "+2020-04-01T00:00:00Z" }] }, now)).toMatchObject({ value: "302,971", detail: "as of 2020 · city in Pennsylvania" });
+  expect(A.wdAnswer(A.wdQuery("how old is taylor swift"), { label: "Taylor Swift", desc: "American singer-songwriter", v: [{ time: "+1989-12-13T00:00:00Z", prec: 11 }] }, now)).toMatchObject({ value: "36 years", detail: "born December 13, 1989 · American singer-songwriter" });
+  expect(A.wdAnswer(A.wdQuery("distance between pittsburgh and new york"), { label: "Pittsburgh", v: [{ lat: 40.4397, lon: -79.9764 }], b: { label: "New York City", v: [{ lat: 40.7127, lon: -74.0059 }] } }, now)).toMatchObject({ value: "505 km", detail: "314 mi as the crow flies" });
+  expect(A.wdAnswer(A.wdQuery("eiffel tower height"), { label: "Eiffel Tower", v: [{ amount: "+330", unit: "Q99999" }] }, now)).toBe(null); // unknown unit: nothing
+});

@@ -2,6 +2,7 @@
 $t = "$env:TEMP\ct-new"; New-Item -ItemType Directory -Force $t | Out-Null
 [IO.File]::WriteAllText("$t\index.js", @'
 import * as fs from "node:fs";
+import { createHash } from "node:crypto";
 
 const INFO_HTML =
   `<div class="command-result"><p>Tidies result titles and loads sharper news/video thumbnails on every search page.</p></div>`;
@@ -161,10 +162,10 @@ export const _sitesIdle = () => _sitesQ;
 
 // ===== Shared fetch helper: every outside request goes through here (timeout, size cap, never throws) =====
 // -> {status, text, etag} or {status: 0} on any failure. 304 when the If-None-Match tag still matches.
-export const net = async (url, { etag = "", timeout = 10000, max = 2_000_000, accept = "*/*" } = {}) => {
+export const net = async (url, { etag = "", timeout = 10000, max = 2_000_000, accept = "*/*", headers = {} } = {}) => {
   try {
     const f = _fetch || fetch;
-    const r = await f(url, { headers: { Accept: accept, ...(etag ? { "If-None-Match": etag } : {}) }, signal: AbortSignal.timeout(timeout), redirect: "follow" });
+    const r = await f(url, { headers: { Accept: accept, ...headers, ...(etag ? { "If-None-Match": etag } : {}) }, signal: AbortSignal.timeout(timeout), redirect: "follow" });
     if (r.status === 304) return { status: 304, text: "", etag };
     if (!r.ok) return { status: r.status, text: "", etag: "" };
     const text = await r.text();
@@ -295,6 +296,66 @@ export const eolFor = async (slug) => {
   }
   // A failure is remembered for 10 minutes only, so a short outage doesn't hide the answer for half a day
   _eol.set(slug, { t: v ? Date.now() : Date.now() - TTL + 600000, v });
+  return v;
+};
+
+// ===== Wikidata facts for the answer card =====
+// The page sends the fact asked (one of WD) and the subject's name, never the whole search. Subject -> top item
+// (wbsearchentities), then only that property (wbgetclaims). RAM cache under a hashed key for TTL_MS.
+const WD = { height: "P2048", population: "P1082", born: "P569", age: "P569", died: "P570", founded: "P571", ceo: "P169", released: "P577", distance: "P625" };
+const WD_API = "https://www.wikidata.org/w/api.php";
+const WD_UA = { "User-Agent": "degoog-clean-titles/50 (self-hosted search; one lookup per search)" };
+const wdGet = async (params) => {
+  const r = await net(`${WD_API}?${new URLSearchParams({ ...params, format: "json" })}`, { timeout: 3000, max: 2_000_000, accept: "application/json", headers: WD_UA });
+  if (r.status !== 200) return null;
+  try { return JSON.parse(r.text); } catch { return null; }
+};
+const rankOrder = { preferred: 0, normal: 1 };
+// Claims -> best ones first: preferred rank, still current (no end time), newest "point in time"
+export const wdBest = (claims) => (Array.isArray(claims) ? claims : [])
+  .filter((c) => c && c.rank !== "deprecated" && c.mainsnak && c.mainsnak.snaktype === "value" && c.mainsnak.datavalue)
+  .map((c) => ({ c, r: rankOrder[c.rank] ?? 1, ended: !!(c.qualifiers && c.qualifiers.P582), at: (c.qualifiers && c.qualifiers.P585 && c.qualifiers.P585[0].datavalue && c.qualifiers.P585[0].datavalue.value.time) || "" }))
+  .sort((a, b) => a.r - b.r || a.ended - b.ended || (b.at > a.at ? 1 : b.at < a.at ? -1 : 0))
+  .map((x) => x.c);
+const wdValue = (c) => {
+  const v = c.mainsnak.datavalue.value;
+  if (v && typeof v === "object" && "amount" in v) return { amount: v.amount, unit: String(v.unit || "").split("/").pop(), asOf: c.qualifiers && c.qualifiers.P585 ? c.qualifiers.P585[0].datavalue.value.time : undefined };
+  if (v && typeof v === "object" && "time" in v) return { time: v.time, prec: v.precision };
+  if (v && typeof v === "object" && "latitude" in v) return { lat: v.latitude, lon: v.longitude };
+  if (v && typeof v === "object" && v["entity-type"] === "item") return { id: v.id };
+  return null;
+};
+const wdOne = async (name, prop) => {
+  const s = await wdGet({ action: "wbsearchentities", search: name, language: "en", uselang: "en", type: "item", limit: "1" });
+  const hit = s && Array.isArray(s.search) && s.search[0];
+  if (!hit || !hit.id) return null;
+  const props = prop === "P569" ? ["P569", "P570"] : [prop];
+  const got = await Promise.all(props.map((p) => wdGet({ action: "wbgetclaims", entity: hit.id, property: p })));
+  const vals = wdBest(got[0] && got[0].claims && got[0].claims[prop]).map(wdValue).filter(Boolean).slice(0, 1);
+  if (!vals.length) return null;
+  const out = { label: hit.label || name, desc: hit.description || "", v: vals };
+  if (props[1]) { const d = wdBest(got[1] && got[1].claims && got[1].claims.P570).map(wdValue).filter(Boolean)[0]; if (d && d.time) out.died = d.time; }
+  // CEO is another item: its name
+  if (vals[0].id) {
+    const e = await wdGet({ action: "wbgetentities", ids: vals[0].id, props: "labels", languages: "en" });
+    const l = e && e.entities && e.entities[vals[0].id] && e.entities[vals[0].id].labels && e.entities[vals[0].id].labels.en;
+    if (!l || !l.value) return null;
+    out.v = [{ label: l.value }];
+  }
+  return out;
+};
+const _wd = new Map();
+export const wdFor = async (fact, s, s2) => {
+  const prop = WD[fact];
+  s = String(s || "").trim().slice(0, 80); s2 = String(s2 || "").trim().slice(0, 80);
+  if (!prop || s.length < 2 || (fact === "distance" && s2.length < 2)) return null;
+  const key = createHash("sha256").update(`${fact}\n${s}\n${s2}`).digest("hex").slice(0, 24);
+  const hit = _wd.get(key);
+  if (hit && Date.now() - hit.t < TTL) return hit.v;
+  let v = await wdOne(s, prop);
+  if (v && fact === "distance") { const b = await wdOne(s2, prop); v = b ? { ...v, b } : null; }
+  if (_wd.size > 1000) _wd.clear();
+  _wd.set(key, { t: v ? Date.now() : Date.now() - TTL + 600000, v });
   return v;
 };
 
@@ -819,6 +880,15 @@ export const routes = [
       const sites = sitesFromLists(block, score);
       mirrorTo(sites);
       return new Response(JSON.stringify({ sites, auto: autoList().filter((d) => sites[d] === "lower"), seo: SEO_ON, ai: aiStatus(data), fx: readFx().rates ? { date: FX.date, rates: FX.rates } : null }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+    },
+  },
+  {
+    method: "get",
+    path: "/wd",
+    async handler(req) {
+      const u = new URL(req.url).searchParams;
+      const d = await wdFor(u.get("f") || "", u.get("s") || "", u.get("s2") || "");
+      return new Response(JSON.stringify({ d }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
     },
   },
   {
@@ -1769,6 +1839,87 @@ const eolAnswer = (e, cycles, now = Date.now()) => {
   return { kind: "version", label: `${e.name} ${e.cycle} support`, value: yes ? "Yes" : "No", detail: [yes ? (end ? `Supported until ${end}` : "Still supported") : (end ? `Ended ${end}` : "Ended"), ed, c.latest ? `latest ${c.latest}` : ""].filter(Boolean).join(" · "), copy: yes ? "Yes" : "No", src: "endoflife.date" };
 };
 
+// ----- Facts from Wikidata ("how tall is the eiffel tower", "pittsburgh population", "when was X born", "ceo of X",
+// "distance between A and B"). The page sends only the fact asked and the subject's name; the server looks the
+// subject up and sends back that one property. Drawn with the results if in hand, like every network answer.
+const WD_PROP = { height: "P2048", population: "P1082", born: "P569", age: "P569", died: "P570", founded: "P571", ceo: "P169", released: "P577", distance: "P625" };
+const WD_RULES = [
+  [/^(?:how tall is|how high is|what is the height of|height of) (?:the )?(.+)$/, "height"], [/^(?:the )?(.+?) (?:height|how tall)$/, "height"],
+  [/^(?:what is the )?population of (.+)$/, "population"], [/^(.+?) population$/, "population"], [/^how many people live in (.+)$/, "population"],
+  [/^when (?:was|is) (.+?) born$/, "born"], [/^(.+?) (?:birthday|date of birth|born)$/, "born"], [/^how old is (.+)$/, "age"],
+  [/^when did (.+?) die$/, "died"], [/^(.+?) (?:death date|died)$/, "died"],
+  [/^when was (.+?) (?:founded|established|built)$/, "founded"], [/^(.+?) (?:founded|founding date)$/, "founded"],
+  [/^(?:who is (?:the )?)?ceo of (.+)$/, "ceo"], [/^(.+?) ceo$/, "ceo"],
+  [/^when (?:was|did) (.+?) (?:released|come out)$/, "released"], [/^(.+?) release date$/, "released"],
+];
+const wdQuery = (q) => {
+  const s = String(q || "").trim().toLowerCase().replace(/\s+/g, " ").replace(/[?!.]+$/, "");
+  let m = /^(?:distance|how far is it|how far) (?:between|from) (.+?) (?:and|to) (.+)$/.exec(s) || /^how far is (.+?) from (.+)$/.exec(s);
+  if (m) return { fact: "distance", s: m[1].replace(/^the /, ""), s2: m[2].replace(/^the /, "") };
+  for (const [re, fact] of WD_RULES) if ((m = re.exec(s))) { const subj = m[1].replace(/^the /, "").trim(); if (subj.length >= 2 && subj.split(" ").length <= 6) return { fact, s: subj }; }
+  return null;
+};
+const UNIT_M = { Q11573: 1, Q174728: 0.01, Q3710: 0.3048, Q828224: 1000, Q11570: null };
+const wdDay = (t, prec) => {
+  const m = /^([+-]\d+)-(\d{2})-(\d{2})/.exec(String(t || ""));
+  if (!m) return "";
+  const y = Number(m[1]);
+  if (prec <= 9 || m[2] === "00") return y < 0 ? `${-y} BC` : String(y);
+  const d = new Date(Date.UTC(2000, Number(m[2]) - 1, Number(m[3] === "00" ? 1 : m[3])));
+  return prec === 10 || m[3] === "00" ? `${d.toLocaleDateString("en-US", { month: "long", timeZone: "UTC" })} ${y}` : `${d.toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: "UTC" })}, ${y}`;
+};
+const ageAt = (t, now, end) => {
+  const a = /^\+(\d{4})-(\d{2})-(\d{2})/.exec(String(t || "")); if (!a) return null;
+  const e = end ? /^\+(\d{4})-(\d{2})-(\d{2})/.exec(String(end)) : null;
+  const n = new Date(now), Y = e ? +e[1] : n.getFullYear(), M = e ? +e[2] : n.getMonth() + 1, D = e ? +e[3] : n.getDate();
+  if (+a[2] === 0) return null;
+  return Y - +a[1] - (M < +a[2] || (M === +a[2] && D < +a[3]) ? 1 : 0);
+};
+const hav = (a, b) => { const R = 6371.0088, r = Math.PI / 180, dLa = (b.lat - a.lat) * r, dLo = (b.lon - a.lon) * r; const h = Math.sin(dLa / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLo / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); };
+// d: server answer {label, desc, v: [{amount, unit} | {time, prec, asOf} | {label} | {lat, lon}], b?: same for subject 2}
+const wdAnswer = (w, d, now = Date.now()) => {
+  if (!w || !d || !d.label || !Array.isArray(d.v) || !d.v.length) return null;
+  const v = d.v[0], who = d.label, src = "Wikidata";
+  const desc = d.desc ? ` · ${d.desc}` : "";
+  if (w.fact === "height") {
+    const f = UNIT_M[v.unit];
+    const amt = Number(v.amount);
+    if (!f || !Number.isFinite(amt)) return null;
+    const mtr = amt * f, ft = mtr / 0.3048;
+    return { kind: "fact", label: `${who} · height`, value: `${fmtNum(mtr, 4)} m`, detail: `${Math.round(ft).toLocaleString("en-US")} ft${desc}`, copy: `${plain(mtr)} m`, src };
+  }
+  if (w.fact === "population") {
+    const n = Number(v.amount);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    const asOf = v.asOf ? wdDay(v.asOf, 9) : "";
+    return { kind: "fact", label: `${who} · population`, value: Math.round(n).toLocaleString("en-US"), detail: `${asOf ? `as of ${asOf}` : ""}${asOf ? desc : desc.slice(3)}`, copy: String(Math.round(n)), src };
+  }
+  if (w.fact === "age") {
+    const age = v.prec >= 11 ? ageAt(v.time, now, d.died) : null;
+    if (age == null || d.died) return null; // "how old was" isn't asked; a person who died gets no "age"
+    return { kind: "fact", label: `${who} · age`, value: `${age} years`, detail: `born ${wdDay(v.time, v.prec)}${desc}`, copy: String(age), src };
+  }
+  if (w.fact === "born" || w.fact === "died" || w.fact === "founded" || w.fact === "released") {
+    const day = wdDay(v.time, v.prec);
+    if (!day) return null;
+    let extra = "";
+    if (w.fact === "born" && v.prec >= 11) { const died = d.died; const age = ageAt(v.time, now, died); if (age != null) extra = died ? ` · died at ${age}` : ` · age ${age}`; }
+    const what = { born: "born", died: "died", founded: "founded", released: "released" }[w.fact];
+    return { kind: "fact", label: `${who} · ${what}`, value: day, detail: `${extra.slice(3)}${extra ? desc : desc.slice(3)}`, copy: day, src };
+  }
+  if (w.fact === "ceo") {
+    if (!v.label) return null;
+    return { kind: "fact", label: `${who} · CEO`, value: v.label, detail: desc.slice(3), copy: v.label, src };
+  }
+  if (w.fact === "distance") {
+    const b = d.b;
+    if (!b || !b.label || !Array.isArray(b.v) || !b.v.length || !Number.isFinite(v.lat) || !Number.isFinite(b.v[0].lat)) return null;
+    const km = hav(v, b.v[0]), mi = km / 1.609344;
+    return { kind: "fact", label: `${who} to ${b.label} · straight line`, value: `${fmtNum(km, 3)} km`, detail: `${Math.round(mi).toLocaleString("en-US")} mi as the crow flies`, copy: `${Math.round(km)} km`, src };
+  }
+  return null;
+};
+
 // ----- The one local answer for a search, or null. CMU course numbers are left to the CMU card (network). -----
 const answer = (q, now = Date.now(), data = {}) => {
   const s = String(q || "").trim();
@@ -1777,7 +1928,7 @@ const answer = (q, now = Date.now(), data = {}) => {
   return pattern(s) || convert(s) || currency(s, data.fx) || percent(s) || dateMath(s, now) || calc(s);
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, dateLabel, relDate, upsValid, isbnValid, cmuCourse, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, answer };
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, dateLabel, relDate, upsValid, isbnValid, cmuCourse, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, answer };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -2271,6 +2422,9 @@ const earlyStart = () => {
     // Versions / support (endoflife.date): only the product name is sent; drawn with the results if in hand by then
     const eq = CT.eolQuery(q);
     if (eq) ask("eol", key, { p: eq.slug });
+    // Facts (Wikidata): only the fact asked and the subject's name are sent
+    const wq = !eq && !CT.answer(q, Date.now(), { fx: FX }) && CT.wdQuery(q);
+    if (wq) ask("wd", key, { f: wq.fact, s: wq.s, ...(wq.s2 ? { s2: wq.s2 } : {}) });
     // Top stories: the News search starts now, in parallel, only for a search that looked like news last time
     if (SHOW.news && newsy.has(qHash(q))) {
       const e = { key, data: undefined };
@@ -2936,6 +3090,7 @@ const TYPE_WORDS = /\b(?:pdf|paper|reddit|docs|documentation|recipe|github|lab|l
 const aiWanted = (q) => {
   if (!AI_ON.on || !q || q.startsWith("!") || (AI_ON.qmark && !q.trim().endsWith("?"))) return false;
   if (!AI_WORDS.test(q) || TYPE_WORDS.test(q) || /\bbest buy\b/i.test(q)) return false;
+  if (CT.eolQuery(q) || CT.wdQuery(q)) return false; // a fact or version answer comes first
   try { if (CT.namedSites(q, PSL()).size) return false; } catch {}
   return true;
 };
@@ -3018,8 +3173,11 @@ const ansPass = () => {
   // Network answers (endoflife.date...): only in the pass that draws the results, and only if already in hand;
   // later than that they're dropped for this page (the server keeps them for the next search)
   if (!ansVal && !aiVal && drawnFor !== key && document.querySelector("#results-list .result-item")) {
-    const j = ready("eol", key);
-    if (j && j.cycles) { let q = ""; try { q = new URL(key).searchParams.get("q") || ""; } catch {} ansVal = CT.eolAnswer(CT.eolQuery(q), j.cycles); }
+    let q = "";
+    try { q = new URL(key).searchParams.get("q") || ""; } catch {}
+    const j = ready("eol", key), w = ready("wd", key);
+    if (j && j.cycles) ansVal = CT.eolAnswer(CT.eolQuery(q), j.cycles);
+    else if (w && w.d) ansVal = CT.wdAnswer(CT.wdQuery(q), w.d);
   }
   aiPass(g, key);
   if (!ansVal || g.querySelector(".ct-ans")) return;

@@ -460,6 +460,87 @@ export const eolAnswer = (e, cycles, now = Date.now()) => {
   return { kind: "version", label: `${e.name} ${e.cycle} support`, value: yes ? "Yes" : "No", detail: [yes ? (end ? `Supported until ${end}` : "Still supported") : (end ? `Ended ${end}` : "Ended"), ed, c.latest ? `latest ${c.latest}` : ""].filter(Boolean).join(" · "), copy: yes ? "Yes" : "No", src: "endoflife.date" };
 };
 
+// ----- Facts from Wikidata ("how tall is the eiffel tower", "pittsburgh population", "when was X born", "ceo of X",
+// "distance between A and B"). The page sends only the fact asked and the subject's name; the server looks the
+// subject up and sends back that one property. Drawn with the results if in hand, like every network answer.
+export const WD_PROP = { height: "P2048", population: "P1082", born: "P569", age: "P569", died: "P570", founded: "P571", ceo: "P169", released: "P577", distance: "P625" };
+const WD_RULES = [
+  [/^(?:how tall is|how high is|what is the height of|height of) (?:the )?(.+)$/, "height"], [/^(?:the )?(.+?) (?:height|how tall)$/, "height"],
+  [/^(?:what is the )?population of (.+)$/, "population"], [/^(.+?) population$/, "population"], [/^how many people live in (.+)$/, "population"],
+  [/^when (?:was|is) (.+?) born$/, "born"], [/^(.+?) (?:birthday|date of birth|born)$/, "born"], [/^how old is (.+)$/, "age"],
+  [/^when did (.+?) die$/, "died"], [/^(.+?) (?:death date|died)$/, "died"],
+  [/^when was (.+?) (?:founded|established|built)$/, "founded"], [/^(.+?) (?:founded|founding date)$/, "founded"],
+  [/^(?:who is (?:the )?)?ceo of (.+)$/, "ceo"], [/^(.+?) ceo$/, "ceo"],
+  [/^when (?:was|did) (.+?) (?:released|come out)$/, "released"], [/^(.+?) release date$/, "released"],
+];
+export const wdQuery = (q) => {
+  const s = String(q || "").trim().toLowerCase().replace(/\s+/g, " ").replace(/[?!.]+$/, "");
+  let m = /^(?:distance|how far is it|how far) (?:between|from) (.+?) (?:and|to) (.+)$/.exec(s) || /^how far is (.+?) from (.+)$/.exec(s);
+  if (m) return { fact: "distance", s: m[1].replace(/^the /, ""), s2: m[2].replace(/^the /, "") };
+  for (const [re, fact] of WD_RULES) if ((m = re.exec(s))) { const subj = m[1].replace(/^the /, "").trim(); if (subj.length >= 2 && subj.split(" ").length <= 6) return { fact, s: subj }; }
+  return null;
+};
+const UNIT_M = { Q11573: 1, Q174728: 0.01, Q3710: 0.3048, Q828224: 1000, Q11570: null };
+const wdDay = (t, prec) => {
+  const m = /^([+-]\d+)-(\d{2})-(\d{2})/.exec(String(t || ""));
+  if (!m) return "";
+  const y = Number(m[1]);
+  if (prec <= 9 || m[2] === "00") return y < 0 ? `${-y} BC` : String(y);
+  const d = new Date(Date.UTC(2000, Number(m[2]) - 1, Number(m[3] === "00" ? 1 : m[3])));
+  return prec === 10 || m[3] === "00" ? `${d.toLocaleDateString("en-US", { month: "long", timeZone: "UTC" })} ${y}` : `${d.toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: "UTC" })}, ${y}`;
+};
+const ageAt = (t, now, end) => {
+  const a = /^\+(\d{4})-(\d{2})-(\d{2})/.exec(String(t || "")); if (!a) return null;
+  const e = end ? /^\+(\d{4})-(\d{2})-(\d{2})/.exec(String(end)) : null;
+  const n = new Date(now), Y = e ? +e[1] : n.getFullYear(), M = e ? +e[2] : n.getMonth() + 1, D = e ? +e[3] : n.getDate();
+  if (+a[2] === 0) return null;
+  return Y - +a[1] - (M < +a[2] || (M === +a[2] && D < +a[3]) ? 1 : 0);
+};
+const hav = (a, b) => { const R = 6371.0088, r = Math.PI / 180, dLa = (b.lat - a.lat) * r, dLo = (b.lon - a.lon) * r; const h = Math.sin(dLa / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLo / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); };
+// d: server answer {label, desc, v: [{amount, unit} | {time, prec, asOf} | {label} | {lat, lon}], b?: same for subject 2}
+export const wdAnswer = (w, d, now = Date.now()) => {
+  if (!w || !d || !d.label || !Array.isArray(d.v) || !d.v.length) return null;
+  const v = d.v[0], who = d.label, src = "Wikidata";
+  const desc = d.desc ? ` · ${d.desc}` : "";
+  if (w.fact === "height") {
+    const f = UNIT_M[v.unit];
+    const amt = Number(v.amount);
+    if (!f || !Number.isFinite(amt)) return null;
+    const mtr = amt * f, ft = mtr / 0.3048;
+    return { kind: "fact", label: `${who} · height`, value: `${fmtNum(mtr, 4)} m`, detail: `${Math.round(ft).toLocaleString("en-US")} ft${desc}`, copy: `${plain(mtr)} m`, src };
+  }
+  if (w.fact === "population") {
+    const n = Number(v.amount);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    const asOf = v.asOf ? wdDay(v.asOf, 9) : "";
+    return { kind: "fact", label: `${who} · population`, value: Math.round(n).toLocaleString("en-US"), detail: `${asOf ? `as of ${asOf}` : ""}${asOf ? desc : desc.slice(3)}`, copy: String(Math.round(n)), src };
+  }
+  if (w.fact === "age") {
+    const age = v.prec >= 11 ? ageAt(v.time, now, d.died) : null;
+    if (age == null || d.died) return null; // "how old was" isn't asked; a person who died gets no "age"
+    return { kind: "fact", label: `${who} · age`, value: `${age} years`, detail: `born ${wdDay(v.time, v.prec)}${desc}`, copy: String(age), src };
+  }
+  if (w.fact === "born" || w.fact === "died" || w.fact === "founded" || w.fact === "released") {
+    const day = wdDay(v.time, v.prec);
+    if (!day) return null;
+    let extra = "";
+    if (w.fact === "born" && v.prec >= 11) { const died = d.died; const age = ageAt(v.time, now, died); if (age != null) extra = died ? ` · died at ${age}` : ` · age ${age}`; }
+    const what = { born: "born", died: "died", founded: "founded", released: "released" }[w.fact];
+    return { kind: "fact", label: `${who} · ${what}`, value: day, detail: `${extra.slice(3)}${extra ? desc : desc.slice(3)}`, copy: day, src };
+  }
+  if (w.fact === "ceo") {
+    if (!v.label) return null;
+    return { kind: "fact", label: `${who} · CEO`, value: v.label, detail: desc.slice(3), copy: v.label, src };
+  }
+  if (w.fact === "distance") {
+    const b = d.b;
+    if (!b || !b.label || !Array.isArray(b.v) || !b.v.length || !Number.isFinite(v.lat) || !Number.isFinite(b.v[0].lat)) return null;
+    const km = hav(v, b.v[0]), mi = km / 1.609344;
+    return { kind: "fact", label: `${who} to ${b.label} · straight line`, value: `${fmtNum(km, 3)} km`, detail: `${Math.round(mi).toLocaleString("en-US")} mi as the crow flies`, copy: `${Math.round(km)} km`, src };
+  }
+  return null;
+};
+
 // ----- The one local answer for a search, or null. CMU course numbers are left to the CMU card (network). -----
 export const answer = (q, now = Date.now(), data = {}) => {
   const s = String(q || "").trim();
