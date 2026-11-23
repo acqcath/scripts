@@ -28,6 +28,7 @@ Run the normal installer from main, as usual. It puts v49 back. A leftover `/pub
 ## Sites: Prefer / Normal / Lower / Hide (M2, first part)
 Each result's ⋮ menu now has one group of four: **Prefer · Normal · Lower · Hide** (it replaces Rank higher / Rank lower / Block). The choice is for the whole site (support.apple.com → apple.com) and is saved in degoog's own Block and Score lists, so degoog applies it on every tab. Prefer also lets that site show more than 2 results. Your old Block and Rank entries show up as Hide / Prefer / Lower.
 - It needs your Settings sign-in, like degoog's own menu. If you aren't signed in, the menu says "Sign in to Settings first" and nothing changes.
+- The same list is in Settings → Clean Titles → **Sites** (add a site, pick a choice, Save). Changes there and in the menu show up in both places.
 - Try: Hide a site on one search, then search something else where it usually shows up.
 
 ## Not in this preview yet

@@ -954,6 +954,8 @@ document.addEventListener("click", async (e) => {
   if (note) note.remove();
   if (pref === "normal") delete SITES[site]; else SITES[site] = pref;
   saveSites();
+  // The server reads the lists again, so the Settings list shows this choice too
+  bridge("sites", {}).catch(() => {});
   if (menu) menu.hidden = true;
   const tg = wrap && wrap.querySelector(".result-actions-toggle");
   if (tg) tg.setAttribute("aria-expanded", "false");
