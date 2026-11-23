@@ -431,7 +431,7 @@ const row = (el) => {
   let u = null;
   try { u = new URL(a.href); } catch {}
   // Engines leave spaces where they bolded the search words ("slang ?", "\" shit \""): core tidyText, every tab
-  const out = CT.calmCaps(CT.tidyText(cleanTitle(text, a.href) || text.replace(/\s+/g, " ").trim()));
+  const out = CT.tidyTitle(cleanTitle(text, a.href) || text.replace(/\s+/g, " ").trim());
   if (out && out !== text.replace(/\s+/g, " ").trim()) { a.title = text.trim(); a.textContent = out; }
   // Link line: just the site name, like Google on phones (the full address shows on hover)
   const cite = el.querySelector(".result-cite");
@@ -495,7 +495,7 @@ const card = (el, isImage) => {
   const raw = (src && src.textContent || "").trim();
   const host = raw.toLowerCase().replace(/^www\./, "");
   const text = t && t.textContent || "";
-  if (t && !t.dataset.ctTidy) { t.dataset.ctTidy = "1"; const x = CT.tidyText(text.replace(/\s+/g, " ").trim()); if (x !== text.trim()) t.textContent = x; }
+  if (t && !t.dataset.ctTidy) { t.dataset.ctTidy = "1"; const x = CT.tidyTitle(text.replace(/\s+/g, " ").trim()); if (x !== text.trim()) t.textContent = x; }
   if (!isImage) return;
   if (aiImg(host)) { el.style.display = "none"; el.dataset.ctAi = "1"; return; }
   if (src && host !== raw) src.textContent = host;
