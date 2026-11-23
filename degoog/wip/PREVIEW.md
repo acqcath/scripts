@@ -49,5 +49,8 @@ AI summaries now show only for searches that ask for judgement or an explanation
 ## AI summary cache
 The installer now lets ai-summary keep its answers as long as degoog keeps search results (12 hours) instead of 2 minutes, so a repeated search gets its summary at once. Look for the line "AI summary cache: … (OK)" while it installs; a NOTICE line there means ai-summary changed and nothing was touched.
 
+## Knowledge panel (M4)
+For a name-like search (`taylor swift`, `golden gate bridge`) a panel about it: on a wide PC window it sits in a right column next to the first result (photo, name, what it is, 2 lines from Wikipedia, key facts, "Wikipedia ↗ · Wikidata"); on a phone or narrower window it's a small card at the top (name, what it is, one line of facts, More ⌄). It replaces degoog's Wikipedia card. It shows only when the results back it up: your engines never return a Wikipedia result (none in 50 recorded searches), so a Britannica or Wikiwand article with the same title also counts. `jaguar`, `mercury`, `python` get no panel (the results are about several things). On a phone it shows from the first search if it's quick, otherwise from the next one; on a wide PC it can also appear a moment later beside the results, without moving them.
+
 ## Not in this preview yet
-The Paywall tag's archive link (M5). Then answer cards (M3/M4) and the rest of the spec.
+The Paywall tag's archive link and the rest of M5 (same-shape results, quick view, images row, !deepl), then M6 (full test pass, installer self-check of every outside source).
