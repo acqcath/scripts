@@ -5656,11 +5656,33 @@ for (const code of sx) {
   store[key] = { ...cur, safeSearch: "off" };
   changed.push(`searx ${code} (was ${cur.safeSearch || "its default"})`);
 }
+// One rule for every installed engine (user, 2026-11-23: uniform and sensible):
+// - score = how much its ranking is trusted for a general search: general web engines 1, specialist sources
+//   (Wikipedia, Reddit, Hacker News, Lemmy, The Guardian, archives, media libraries) 0.5. degoog ranks by
+//   (10 - position) x score, so at 0.5 a specialist's best hit lands around the end of the first page, under the
+//   general engines' top answers; at 0.25 it fell below their 8th results and never showed.
+// - timeout 3000 ms (with progressive results off, the slowest engine sets how long every search waits)
+// - outgoing client "curl-fallback" (plain fetch, retried with curl when a site answers 403/429/5xx)
+const SPECIAL = /(?:^|-)(?:wikipedia|reddit|hacker-news|lemmy|the-guardian|internet-archive|wikimedia-commons|openverse|nasa-images|immich)$/i;
+const tuned = [];
+for (const d of dirs) {
+  const id = d.toLowerCase().endsWith("-engine") ? d.toLowerCase() : `${d.toLowerCase()}-engine`;
+  const key = Object.keys(store).find((k) => k.toLowerCase() === id) || id;
+  const cur = store[key] && typeof store[key] === "object" ? store[key] : {};
+  const want = { score: SPECIAL.test(d) ? "0.5" : "1", timeoutMs: "3000", outgoingTransport: "curl-fallback" };
+  const diff = Object.entries(want).filter(([k, v]) => String(cur[k] ?? "") !== v);
+  if (!diff.length) continue;
+  store[key] = { ...cur, ...want };
+  tuned.push(`${d.replace(/^degoog-org-official-extensions-/, "")} (${diff.map(([k, v]) => `${k} ${cur[k] ?? "default"} -> ${v}`).join(", ")})`);
+}
+if (tuned.length) changed.push("");
 if (changed.length) {
   fs.writeFileSync(SF + ".ct-tmp", JSON.stringify(store, null, 2));
   fs.renameSync(SF + ".ct-tmp", SF);
-  console.log(`Safe Search: now off for ${changed.join(", ")} (OK)`);
-} else console.log(`Safe Search: off on all ${found} engines that have it (OK)`);
+  const ss = changed.filter(Boolean);
+  console.log(ss.length ? `Safe Search: now off for ${ss.join(", ")} (OK)` : `Safe Search: off on all ${found} engines that have it (OK)`);
+  console.log(tuned.length ? `Engine settings made uniform: ${tuned.join("; ")} (OK)` : "Engine settings: already uniform (OK)");
+} else { console.log(`Safe Search: off on all ${found} engines that have it (OK)`); console.log("Engine settings: already uniform (OK)"); }
 
 '@)
 docker cp "$t\safeoff.js" "${c}:/tmp/safeoff.js"; docker exec $c bun /tmp/safeoff.js; docker exec $c rm -f /tmp/safeoff.js
