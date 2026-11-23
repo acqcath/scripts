@@ -1,13 +1,5 @@
-## HOW TO WORK FOR THIS USER (read first, every run)
-Their principles, in priority order, decide every call: works on real data, verified, fast + private, cheap, clean consistent design, excellent or cut, least effort for them.
-What that means in practice:
-- Real data: judge a feature on their recorded searches or their server's output, never on guesses. If the data isn't here, ask for it as one ready-to-run command.
-- Verified: say something works only after it was checked (tests, headless screenshot, their self-check). Say plainly what wasn't checked.
-- Least effort: anything they must do is one copy-paste command with what to expect and what to send back. Files go to Downloads, never the Desktop.
-- Design: judge by looking (screenshots at phone and PC width): grouping and spacing that show what belongs together, one aligned column, controls where they're expected.
-- Relevance, not restriction: nothing is filtered by topic; off-topic junk may move down.
-- Estimates: from measured past work, counting every step that waits on them; revise out loud when scope changes.
-- Anything new they state that is durable goes into this section in the same turn, phrased as a principle, not as a story of what went wrong.
+## FIRST, EVERY RUN: read the user's memory before anything else
+Call mcp__memory__memory_read on /preferences.md and /topics/priorities.md (and /areas/degoog.md). They hold the user's principles and how they want replies and work done; they apply to every run and every message. This file only adds project facts. (2026-11-23: a whole live session skipped this and broke several of those rules.)
 
 # clean-titles v50: build notes (branch v50-wip)
 
