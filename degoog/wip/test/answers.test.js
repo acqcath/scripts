@@ -77,3 +77,15 @@ test("answers: currency from the ECB copy (none without it)", () => {
   expect(A.answer("100 usd to eur", now)).toBe(null);
   expect(A.answer("100 to eur", now, { fx })).toBe(null);
 });
+
+test("answers: versions and support from endoflife.date cycles", () => {
+  const win = [{ cycle: "11-25h2-e", eol: "2028-10-10", latest: "10.0.26200" }, { cycle: "11-25h2-w", eol: "2027-10-12", latest: "10.0.26200" }, { cycle: "10-22h2-e", eol: "2025-10-14", latest: "10.0.19045" }, { cycle: "10-22h2-w", eol: "2025-10-14", latest: "10.0.19045" }, { cycle: "10-21h2-iot-lts", eol: "2032-01-13" }];
+  expect(A.eolAnswer(A.eolQuery("is windows 10 supported"), win, now)).toMatchObject({ label: "Windows 10 support", value: "No", detail: "Ended Oct 14, 2025 · 22H2 · latest 10.0.19045" });
+  expect(A.eolAnswer(A.eolQuery("is windows 11 supported"), win, now)).toMatchObject({ value: "Yes", detail: "Supported until Oct 12, 2027 · 25H2 · latest 10.0.26200" });
+  const py = [{ cycle: "3.14", releaseDate: "2025-10-07", eol: "2030-10-31", latest: "3.14.1", latestReleaseDate: "2026-11-18" }, { cycle: "3.8", eol: "2024-10-07", latest: "3.8.20" }];
+  expect(A.eolAnswer(A.eolQuery("latest python"), py, now)).toMatchObject({ value: "Python 3.14.1", detail: "Released 5 days ago · supported until Oct 31, 2030", copy: "3.14.1" });
+  expect(A.eolAnswer(A.eolQuery("python 3.8 end of life"), py, now).value).toBe("No");
+  expect(A.eolAnswer(A.eolQuery("is python 2.7 supported"), py, now)).toBe(null); // unknown cycle: nothing
+  expect(A.eolQuery("node latest version").slug).toBe("nodejs");
+  for (const q of ["latest news", "is it supported", "python tutorial", "latest"]) expect([q, A.eolQuery(q)]).toEqual([q, null]);
+});

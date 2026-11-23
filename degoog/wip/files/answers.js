@@ -400,6 +400,66 @@ export const currency = (q, fx) => {
   return { kind: "currency", label: `Currency · ECB rate${day ? ` of ${day}` : ""}`, value: money(r, b), detail: `${money(v, a)} · 1 ${a} = ${one.toLocaleString("en-US", { maximumSignificantDigits: 5 })} ${b}`, copy: plain(Number(r.toFixed(b === "JPY" || b === "KRW" ? 0 : 2))) };
 };
 
+// ----- Versions and support (endoflife.date): the page asks the server for one product's release cycles at page
+// load (only the product name leaves the page), and draws the answer with the results if it's in hand by then.
+const EOL = [
+  ["ios", "iOS", "ios|iphone os"], ["ipados", "iPadOS", "ipados"], ["macos", "macOS", "macos|mac os|osx|os x"], ["windows", "Windows", "windows"],
+  ["windows-server", "Windows Server", "windows server"], ["android", "Android", "android"], ["python", "Python", "python"], ["nodejs", "Node.js", "node|nodejs|node\\.js"],
+  ["php", "PHP", "php"], ["go", "Go", "go|golang"], ["ruby", "Ruby", "ruby"], ["django", "Django", "django"], ["react", "React", "react"], ["angular", "Angular", "angular"],
+  ["vue", "Vue", "vue|vue\\.js|vuejs"], ["ubuntu", "Ubuntu", "ubuntu"], ["debian", "Debian", "debian"], ["fedora", "Fedora", "fedora"], ["postgresql", "PostgreSQL", "postgres|postgresql"],
+  ["mysql", "MySQL", "mysql"], ["mongodb", "MongoDB", "mongodb|mongo"], ["redis", "Redis", "redis"], ["nginx", "nginx", "nginx"], ["kubernetes", "Kubernetes", "kubernetes|k8s"],
+  ["docker-engine", "Docker Engine", "docker"], ["dotnet", ".NET", "\\.net|dotnet"], ["firefox", "Firefox", "firefox"], ["electron", "Electron", "electron"], ["laravel", "Laravel", "laravel"],
+  ["rails", "Ruby on Rails", "rails|ruby on rails"], ["spring-boot", "Spring Boot", "spring boot"],
+];
+const EOL_ALT = EOL.map((x) => x[2]).join("|");
+const eolOf = (w) => EOL.find((x) => new RegExp(`^(?:${x[2]})$`, "i").test(w));
+// "latest ios", "what is the latest version of python", "node latest version", "is windows 10 supported",
+// "python 3.8 end of life", "when does ubuntu 20.04 end support" -> {slug, name, cycle, ask}
+export const eolQuery = (q) => {
+  const s = String(q || "").trim().toLowerCase().replace(/\s+/g, " ").replace(/\?$/, "");
+  let m, ask = "", w = "", cycle = "";
+  if ((m = new RegExp(`^(?:what(?:'s| is) the )?(?:latest|newest|current) (?:version of |release of )?(${EOL_ALT})(?: version| release)?$`).exec(s))) { ask = "latest"; w = m[1]; }
+  else if ((m = new RegExp(`^(${EOL_ALT}) (?:latest|newest|current)(?: version| release)?$`).exec(s))) { ask = "latest"; w = m[1]; }
+  else if ((m = new RegExp(`^is (${EOL_ALT}) ([\\w.]+) (?:still )?supported$`).exec(s))) { ask = "support"; w = m[1]; cycle = m[2]; }
+  else if ((m = new RegExp(`^(${EOL_ALT}) ([\\w.]+) (?:end of life|eol|end of support|support end(?:s)?|support)$`).exec(s))) { ask = "support"; w = m[1]; cycle = m[2]; }
+  else if ((m = new RegExp(`^when (?:does|will) (${EOL_ALT}) ([\\w.]+) (?:reach end of life|end support|lose support|stop being supported)$`).exec(s))) { ask = "support"; w = m[1]; cycle = m[2]; }
+  if (!ask) return null;
+  const p = eolOf(w);
+  return p ? { slug: p[0], name: p[1], cycle, ask } : null;
+};
+const dayText = (d, now) => {
+  const t = Date.parse(`${d}T12:00:00Z`);
+  if (!Number.isFinite(t)) return "";
+  const days = Math.round((Date.UTC(new Date(now).getFullYear(), new Date(now).getMonth(), new Date(now).getDate()) - Date.UTC(new Date(t).getUTCFullYear(), new Date(t).getUTCMonth(), new Date(t).getUTCDate())) / 864e5);
+  if (days === 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days > 1 && days <= 6) return `${days} days ago`;
+  return new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+};
+const isDate = (x) => typeof x === "string" && /^\d{4}-\d{2}-\d{2}$/.test(x);
+// cycles: [{cycle, releaseDate, eol, latest, latestReleaseDate}] newest first (endoflife.date's order)
+export const eolAnswer = (e, cycles, now = Date.now()) => {
+  if (!e || !Array.isArray(cycles) || !cycles.length) return null;
+  const today = new Date(now).toISOString().slice(0, 10);
+  const ended = (c) => (c.eol === true || (isDate(c.eol) && c.eol <= today));
+  if (e.ask === "latest") {
+    const c = cycles.find((x) => x && x.latest && (!x.releaseDate || x.releaseDate <= today)) || cycles[0];
+    if (!c || !c.latest) return null;
+    const v = String(c.latest).startsWith(String(c.cycle).split("-")[0]) || /^\d/.test(String(c.latest)) ? c.latest : `${c.cycle} (${c.latest})`;
+    const rel = isDate(c.latestReleaseDate) ? dayText(c.latestReleaseDate, now) : "";
+    return { kind: "version", label: `Latest ${e.name}`, value: `${e.name} ${v}`, detail: [rel && `Released ${rel}`, ended(c) ? "no longer supported" : isDate(c.eol) ? `supported until ${dayText(c.eol, now)}` : "supported"].filter(Boolean).join(" · "), copy: String(v), src: "endoflife.date" };
+  }
+  // Support: that cycle ("10", "3.8", "20.04"); Windows' enterprise / IoT / LTSC editions aren't what people mean
+  const want = String(e.cycle).toLowerCase();
+  const pick = cycles.filter((c) => { const n = String(c.cycle).toLowerCase(); return (n === want || n.startsWith(`${want}-`) || n.startsWith(`${want}.`)) && !(e.slug === "windows" && /(?:^|-)(?:e|iot|lts|ltsc|ltsb)(?:-|$)/.test(n)); });
+  if (!pick.length) return null;
+  const c = pick[0];
+  const end = isDate(c.eol) ? dayText(c.eol, now) : "";
+  const ed = String(c.cycle).toLowerCase() === want ? "" : String(c.cycle).slice(want.length + 1).replace(/-w$/i, "").toUpperCase(); // "10-22h2-w" -> "22H2"
+  const yes = !ended(c);
+  return { kind: "version", label: `${e.name} ${e.cycle} support`, value: yes ? "Yes" : "No", detail: [yes ? (end ? `Supported until ${end}` : "Still supported") : (end ? `Ended ${end}` : "Ended"), ed, c.latest ? `latest ${c.latest}` : ""].filter(Boolean).join(" · "), copy: yes ? "Yes" : "No", src: "endoflife.date" };
+};
+
 // ----- The one local answer for a search, or null. CMU course numbers are left to the CMU card (network). -----
 export const answer = (q, now = Date.now(), data = {}) => {
   const s = String(q || "").trim();

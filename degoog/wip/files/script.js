@@ -487,6 +487,9 @@ const earlyStart = () => {
   ask("fix", key, { q, ...(u.searchParams.has("ct_keep") ? { keep: 1 } : {}), ...(u.searchParams.has("ct_acc") && from ? { acc: from } : {}) });
   if (webTab && Number(u.searchParams.get("page") || 1) <= 1 && !q.startsWith("!")) {
     ask("qs", key, { q });
+    // Versions / support (endoflife.date): only the product name is sent; drawn with the results if in hand by then
+    const eq = CT.eolQuery(q);
+    if (eq) ask("eol", key, { p: eq.slug });
     // Top stories: the News search starts now, in parallel, only for a search that looked like news last time
     if (SHOW.news && newsy.has(qHash(q))) {
       const e = { key, data: undefined };
@@ -1207,7 +1210,7 @@ const ansCard = (a) => {
   box.dataset.kind = a.kind;
   if (a.copy) { box.tabIndex = 0; box.setAttribute("role", "button"); box.dataset.copy = a.copy; box.setAttribute("aria-label", `${a.value || a.title}. Copy`); }
   const label = mk("div", "ct-ans-label");
-  label.append(mk("span", "ct-ans-l", a.label), mk("span", "ct-ans-copied", "Copied"));
+  label.append(mk("span", "ct-ans-l", a.src ? `${a.label} · ${a.src}` : a.label), mk("span", "ct-ans-copied", "Copied"));
   box.append(label);
   if (a.href) { const t = mk("a", "ct-ans-title", a.title); t.href = a.href; t.rel = "noopener"; box.append(t); }
   else {
@@ -1230,6 +1233,12 @@ const ansPass = () => {
     ansVal = webTab && page <= 1 ? CT.answer(q, Date.now(), { fx: FX }) : null;
     aiVal = webTab && page <= 1 && !ansVal && aiWanted(q);
     g.querySelectorAll(".ct-ans, .ct-ai").forEach((x) => x.remove());
+  }
+  // Network answers (endoflife.date...): only in the pass that draws the results, and only if already in hand;
+  // later than that they're dropped for this page (the server keeps them for the next search)
+  if (!ansVal && !aiVal && drawnFor !== key && document.querySelector("#results-list .result-item")) {
+    const j = ready("eol", key);
+    if (j && j.cycles) { let q = ""; try { q = new URL(key).searchParams.get("q") || ""; } catch {} ansVal = CT.eolAnswer(CT.eolQuery(q), j.cycles); }
   }
   aiPass(g, key);
   if (!ansVal || g.querySelector(".ct-ans")) return;

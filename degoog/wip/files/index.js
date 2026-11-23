@@ -262,6 +262,39 @@ const fxSchedule = () => {
   if (_fxTimer.unref) _fxTimer.unref();
 };
 
+// ===== Release cycles from endoflife.date, for the answer card ("latest ios", "is windows 10 supported") =====
+// Only a product name comes from the page (never the search). Kept in RAM for degoog's result-cache time (TTL_MS),
+// so repeat searches have it before the results; gone on restart. Hidden on any failure.
+const TTL = (() => { const n = Number.parseInt(process.env.DEGOOG_CACHE_TTL_MS || "", 10); return Number.isFinite(n) && n > 0 ? n : 12 * 3600 * 1000; })();
+const EOL_SLUGS = new Set(["ios", "ipados", "macos", "windows", "windows-server", "android", "python", "nodejs", "php", "go", "ruby", "django", "react", "angular", "vue", "ubuntu", "debian", "fedora", "postgresql", "mysql", "mongodb", "redis", "nginx", "kubernetes", "docker-engine", "dotnet", "firefox", "electron", "laravel", "rails", "spring-boot"]);
+const _eol = new Map();
+const day = (x) => (typeof x === "string" && /^\d{4}-\d{2}-\d{2}/.test(x) ? x.slice(0, 10) : undefined);
+// Either API shape -> [{cycle, releaseDate, eol, latest, latestReleaseDate}] newest first, or null
+export const eolCycles = (j) => {
+  const v0 = Array.isArray(j) ? j : null;
+  const v1 = !v0 && j && j.result && Array.isArray(j.result.releases) ? j.result.releases : null;
+  const out = (v0 || v1 || []).slice(0, 60).map((c) => v0
+    ? { cycle: String(c.cycle ?? ""), releaseDate: day(c.releaseDate), eol: typeof c.eol === "boolean" ? c.eol : day(c.eol), latest: c.latest != null ? String(c.latest) : undefined, latestReleaseDate: day(c.latestReleaseDate) }
+    : { cycle: String(c.name ?? ""), releaseDate: day(c.releaseDate), eol: day(c.eolFrom) || (typeof c.isEol === "boolean" ? c.isEol : undefined), latest: c.latest && c.latest.name != null ? String(c.latest.name) : undefined, latestReleaseDate: c.latest ? day(c.latest.date) : undefined })
+    .filter((c) => c.cycle);
+  return out.length ? out : null;
+};
+export const eolFor = async (slug) => {
+  if (!EOL_SLUGS.has(slug)) return null;
+  const hit = _eol.get(slug);
+  if (hit && Date.now() - hit.t < TTL) return hit.v;
+  let v = null;
+  for (const url of [`https://endoflife.date/api/${slug}.json`, `https://endoflife.date/api/v1/products/${slug}/`]) {
+    const r = await net(url, { timeout: 4000, max: 500000, accept: "application/json" });
+    if (r.status !== 200) continue;
+    try { v = eolCycles(JSON.parse(r.text)); } catch { v = null; }
+    if (v) break;
+  }
+  // A failure is remembered for 10 minutes only, so a short outage doesn't hide the answer for half a day
+  _eol.set(slug, { t: v ? Date.now() : Date.now() - TTL + 600000, v });
+  return v;
+};
+
 // ===== Will ai-summary answer? (so the page reserves its spot only when the summary is sure to come) =====
 // Mirrors its slot trigger(): a model is set, it isn't switched off, and "only for questions" (a search ending in
 // "?") if that's on. Read from degoog's plugin-settings.json; only these two yes/no values leave the server.
@@ -783,6 +816,15 @@ export const routes = [
       const sites = sitesFromLists(block, score);
       mirrorTo(sites);
       return new Response(JSON.stringify({ sites, auto: autoList().filter((d) => sites[d] === "lower"), seo: SEO_ON, ai: aiStatus(data), fx: readFx().rates ? { date: FX.date, rates: FX.rates } : null }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+    },
+  },
+  {
+    method: "get",
+    path: "/eol",
+    async handler(req) {
+      const p = (new URL(req.url).searchParams.get("p") || "").toLowerCase();
+      const cycles = await eolFor(p);
+      return new Response(JSON.stringify({ cycles }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
     },
   },
   {
