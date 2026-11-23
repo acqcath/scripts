@@ -36,6 +36,15 @@ old = 'Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $t\ndocker rest
 assert out.count(old) == 1, 'restart step changed on main'
 out = out.replace(old, '[IO.File]::WriteAllText("$t\\aittl.js", @\'\n' + aittl + "\n'@)\n"
                   'docker cp "$t\\aittl.js" "${c}:/tmp/aittl.js"; docker exec $c bun /tmp/aittl.js; docker exec $c rm -f /tmp/aittl.js\n' + old)
+# The self-check (files/ctcheck.js) replaces main's check: every outside source tried live through the page's bridge,
+# one PASS/FAIL table with feature names only (main's version printed a search and its answer)
+chk = open('files/ctcheck.js', encoding='utf-8').read()
+assert "\n'@" not in chk
+m = re.search(r"# Checks both code files.*?Remove-Item -Force \"\$env:TEMP\\ct-check\.js\"", out, flags=re.S)
+assert m, 'self-check block changed on main'
+out = out[:m.start()] + ('# Self-check: every feature against the live sources from this server; feature names + status only\n'
+    '[IO.File]::WriteAllText("$env:TEMP\\ct-check.js", @\'\n' + chk + "\n'@)\n"
+    'docker cp "$env:TEMP\\ct-check.js" "${c}:/tmp/ct-check.js"; docker exec $c bun /tmp/ct-check.js; docker exec $c rm -f /tmp/ct-check.js; Remove-Item -Force "$env:TEMP\\ct-check.js"') + out[m.end():]
 target = 'install-preview.ps1' if mode == 'preview' else '../install.ps1'
 open(target, 'w', encoding='utf-8', newline='\n').write(out)
 print(target, len(out), 'chars,', ver)

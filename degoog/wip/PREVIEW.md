@@ -4,7 +4,7 @@
 ```
 irm "https://api.github.com/repos/acqcath/scripts/contents/degoog/wip/install-preview.ps1?ref=v50-wip" -Headers @{Accept='application/vnd.github.raw'} | iex
 ```
-The first check line should say `clean-titles v50-preview`, and the next one should list a `psl.<code>.js` file.
+The first check line should say `clean-titles v50-preview`, and the next one should list a `psl.<code>.js` file. At the end the installer now tries every feature against its live source from your server (takes up to ~2 minutes) and prints one PASS/FAIL table (feature names only), copied to your clipboard. Paste it into the chat: any FAIL is fixed or cut before v50 ships.
 
 ## Roll back to v49
 Run the normal installer from main, as usual. It puts v49 back. A leftover `/public/ct/psl…js` file stays, but it's harmless: v49 never reads it.
