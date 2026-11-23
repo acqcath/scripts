@@ -34,7 +34,10 @@ const page = (q) => {
   h = h.replace(/<link\s+rel="stylesheet"\s+href="([^"]+)"\s*\/?>/gi, (m, href) => (REC.css[href] ? `<style>${REC.css[href]}</style>` : ""));
   h = h.replace(/<style id="degoog-custom-css">[\s\S]*?<\/style>/, () => `<style id="degoog-custom-css">${CSS}</style>`);
   const ai = AI_CASE.test(q) ? `localStorage.setItem("ct-sites-auto", ${JSON.stringify(JSON.stringify({ auto: [], seo: false, ai: { on: true } }))});` : "";
-  const boot = `<script>window.CT_PSL=${JSON.stringify(PSL)};window.__cls=0;${ai}</script>`;
+  // A search the user opened the Images tab for (recorded image results exist for it): the images row case
+  const qh = (x) => { let h = 2166136261; for (const c of x) h = Math.imul(h ^ c.codePointAt(0), 16777619); return (h >>> 0).toString(36); };
+  const vis = REC.searches.some((x) => x.type === "images" && x.q === q) ? `localStorage.setItem("ct-visual", ${JSON.stringify(JSON.stringify({ [qh(q)]: Date.now() }))});` : "";
+  const boot = `<script>window.CT_PSL=${JSON.stringify(PSL)};window.__cls=0;${ai}${vis}</script>`;
   const mod = `<script type="module">const __PLUGIN_ID__="clean-titles";\n${CODE.replace(/<\/script/gi, "<\\/script")}\n</script>`;
   return h.replace("</body>", () => `${boot}${mod}</body>`);
 };
@@ -52,6 +55,7 @@ const page = (q) => {
         const u = new URL(r.request().url());
         if (u.pathname === "/search") return r.fulfill({ status: 200, contentType: "text/html", body: page(q) });
         if (r.request().resourceType() === "image") return r.fulfill({ status: 200, contentType: "image/png", body: PNG });
+        if (u.pathname === "/api/search" && u.searchParams.get("type") === "images") { const ir = REC.searches.find((x) => x.type === "images" && x.q === u.searchParams.get("q")); return r.fulfill({ status: ir ? 200 : 404, contentType: "application/json", body: JSON.stringify(ir ? { results: ir.results } : {}) }); }
         // Bridge answers for network-card cases (CMU), as degoog's /api/command returns them
         const body = r.request().postData() || "";
         const fx = { sports: { g: { state: "in", detail: "Q3 4:12", date: "2026-11-23T18:00Z", league: "NFL", away: { abbr: "CLE", score: "17", record: "3-7", logo: "/logo-cle.png" }, home: { abbr: "PIT", score: "24", winner: false, record: "7-3", logo: "/logo-pit.png" } } }, cmu: { c: { course: { name: "Introduction to Computer Systems", units: "12", prereqs: "15-122 and 21-127" }, fces: [["RAILING, BRIAN", 140, 4.3], ["GIBBONS, PHILLIP", 120, 4.2], ["O'HALLARON, DAVID", 90, 4.5], ["KESDEN, GREGORY", 60, 3.9]].map(([instructor, n, t]) => ({ year: 2026, semester: "spring", instructor, numRespondents: n, responseRate: "55%", hrsPerWeek: 14.3, rating: [0, 0, 0, 0, 0, 0, 0, t, 4.0], location: "Pittsburgh" })) } } };

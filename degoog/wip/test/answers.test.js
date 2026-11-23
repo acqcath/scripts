@@ -149,3 +149,8 @@ test("!deepl: DeepL translator link, optional target language", () => {
   expect(A.deeplUrl("deepl hello")).toBe("");
   expect(A.deeplUrl("!deeplx hello")).toBe("");
 });
+
+test("images row: clearly visual searches from their words", () => {
+  for (const q of ["golden gate bridge photos", "eiffel tower pictures", "nike logo", "short hairstyles", "what does a capybara look like", "minimalist wallpaper"]) expect([q, A.visualQ(q)]).toEqual([q, true]);
+  for (const q of ["golden gate bridge", "how to reset airpods", "image processing python", "resize photo", "logo generator", "!images cats", ""]) expect([q, A.visualQ(q)]).toEqual([q, false]);
+});
