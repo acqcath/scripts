@@ -1470,6 +1470,23 @@ export const routes = [
     handler: () => new Response(JSON.stringify(SHOW), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } }),
   },
   {
+    // Page-load timings from the page (milliseconds only), last 60 kept in perf.json for the installer's self-check
+    method: "post",
+    path: "/perf",
+    async handler(req) {
+      try {
+        const j = await req.json();
+        const num = (o) => (o && typeof o === "object" ? Object.fromEntries(Object.entries(o).filter(([k, v]) => /^[a-z]{2,10}$/.test(k) && (typeof v === "number" || typeof v === "boolean" || (k === "type" && typeof v === "string" && v.length < 20)))) : null);
+        const e = { t: Date.now(), dev: j.dev === "phone" ? "phone" : "pc", nav: num(j.nav), search: num(j.search) };
+        let list = [];
+        try { list = JSON.parse(fs.readFileSync(`${DIR}/perf.json`, "utf8")); } catch {}
+        list = (Array.isArray(list) ? list : []).concat([e]).slice(-60);
+        fs.writeFileSync(`${DIR}/perf.json`, JSON.stringify(list));
+      } catch {}
+      return new Response(null, { status: 204 });
+    },
+  },
+  {
     method: "post",
     path: "/learn",
     async handler(req) {
@@ -4704,6 +4721,29 @@ const init = () => {
 };
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
 else init();
+// ===== Load timing (for the self-check; no searches, no addresses, only milliseconds) =====
+// Where the wait goes when degoog opens slowly: name lookup, connection, encryption, server, download, page work,
+// and the first search request after the page opened. Kept on this server (last 60), printed by the installer.
+(() => {
+  const r = (x) => (Number.isFinite(x) && x >= 0 ? Math.round(x) : -1);
+  const send = () => {
+    try {
+      const n = performance.getEntriesByType("navigation")[0];
+      if (!n) return;
+      const first = performance.getEntriesByType("resource").find((e) => /\/api\/(?:search|command)\b/.test(e.name) && !/cleantitles/.test(e.name));
+      const ph = (x) => (x ? { wait: r(x.startTime), dns: r(x.domainLookupEnd - x.domainLookupStart), connect: r(x.connectEnd - x.connectStart), tls: r(x.secureConnectionStart > 0 ? x.connectEnd - x.secureConnectionStart : 0), server: r(x.responseStart - x.requestStart), download: r(x.responseEnd - x.responseStart), total: r(x.duration) } : null);
+      const nav = ph(n);
+      nav.ready = r(n.domContentLoadedEventEnd);
+      nav.loaded = r(n.loadEventEnd);
+      nav.type = n.type;
+      nav.cached = n.transferSize === 0;
+      bridge("perf", {}, JSON.stringify({ dev: PHONE.matches ? "phone" : "pc", nav, search: ph(first) })).catch(() => {});
+    } catch {}
+  };
+  const go = () => setTimeout(send, 4000); // after the first search usually finished
+  if (document.readyState === "complete") go(); else addEventListener("load", go, { once: true });
+})();
+
 '@)
 $c = docker ps -q | Where-Object { (docker inspect $_ --format '{{range .Mounts}}{{.Destination}} {{end}}') -match '/app/data' }
 docker cp "$t\index.js" "${c}:/app/data/plugins/clean-titles/index.js"; docker exec $c rm -f /app/data/plugins/clean-titles/reports.json
@@ -5893,6 +5933,20 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
     } catch (e) { note = `no answer: ${String(e && e.message || e).slice(0, 50)}`; }
     rows.push(["Wikipedia API from this server", ok ? "PASS" : "INFO", note]);
   }
+  // How degoog has been opening on each device (timings the page sent, last 60 loads): median and the slowest load,
+  // split into where the time went
+  try {
+    const list = JSON.parse(fs.readFileSync(`${DIR}/perf.json`, "utf8"));
+    const med = (a) => { const b = a.filter((x) => x >= 0).sort((x, y) => x - y); return b.length ? b[Math.floor(b.length / 2)] : -1; };
+    for (const dev of ["phone", "pc"]) {
+      const L = list.filter((x) => x.dev === dev && x.nav);
+      if (!L.length) continue;
+      const worst = L.reduce((a, b) => ((b.nav.loaded || 0) > (a.nav.loaded || 0) ? b : a));
+      const part = (x) => x ? `wait ${x.wait} · dns ${x.dns} · connect ${x.connect} · tls ${x.tls} · server ${x.server} · download ${x.download}` : "none";
+      rows.push([`Page opens (${dev}, ${L.length})`, "INFO", `median ready ${med(L.map((x) => x.nav.ready))} ms, first search ${med(L.map((x) => x.search ? x.search.wait + x.search.total : -1))} ms after open`]);
+      rows.push([`  slowest (${dev})`, "INFO", `ready ${worst.nav.ready} ms (${part(worst.nav)}); search: ${part(worst.search)}`]);
+    }
+  } catch {}
   // Safe Search off on every engine that has it (set by the installer just before the restart)
   let safe = [];
   try {
