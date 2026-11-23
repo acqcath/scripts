@@ -117,3 +117,11 @@ test("answers: CMU course numbers by CMU Courses' method (2 recent fall/spring s
   expect(A.cmuAnswer({ id: "15-213", level: false }, { name: "x" }, rows)).toBe(null); // "15-213 malloc lab": no card
   expect(A.cmuAnswer({ id: "15-213", level: true }, { name: "Intro" }, []).parts).toEqual([]); // no evaluations: just the course
 });
+
+test("answers: sports card data (final, live, next)", () => {
+  const g = { state: "post", detail: "Final", date: "2026-11-22T18:00Z", league: "NFL", away: { abbr: "CLE", score: "17", record: "3-7" }, home: { abbr: "PIT", score: "24", winner: true, record: "7-3" } };
+  expect(A.sportsAnswer(g, now)).toMatchObject({ label: "NFL", status: "Final", live: false, showScore: true, copy: "CLE 17 – 24 PIT", detail: "Sun, Nov 22 · CLE 3–7 · PIT 7–3" });
+  expect(A.sportsAnswer({ ...g, state: "in", detail: "Q3 4:12" }, now)).toMatchObject({ live: true, status: "Q3 4:12" });
+  expect(A.sportsAnswer({ ...g, state: "pre" }, now)).toMatchObject({ status: "Next game", showScore: false, copy: "" });
+  expect(A.sportsAnswer({ ...g, state: "postponed" }, now)).toBe(null);
+});

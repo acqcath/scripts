@@ -662,3 +662,20 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .ct-fit > * + *::before { content: " · "; }
 .ct-fit > [hidden] { display: none; }
 @media (max-width: 767px) { .ct-fn { display: none; } }
+
+/* Sports card: logos are the image anchors (fixed 28px boxes, shown once decoded), scores in tabular digits */
+.ct-sp { display: flex; align-items: center; gap: 14px; margin-top: 4px; font-size: 24px; line-height: 32px; color: var(--text-primary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ct-sp-team { display: inline-flex; align-items: center; gap: 8px; color: var(--text-secondary); }
+.ct-sp-team.ct-win { color: var(--text-primary); }
+.ct-sp-away { flex-direction: row; }
+.ct-sp-team:not(.ct-sp-away) { flex-direction: row-reverse; }
+.ct-sp-logo { display: inline-block; width: 28px; height: 28px; flex: none; }
+.ct-sp-logo img { width: 28px; height: 28px; object-fit: contain; opacity: 0; transition: opacity .3s; }
+.ct-sp-logo img.ct-on { opacity: 1; }
+.ct-sp-abbr { font-size: 15px; line-height: 20px; }
+.ct-sp-score { min-width: 1.3em; text-align: center; }
+.ct-sp-dash { color: var(--text-secondary); font-size: 15px; }
+.ct-live-dot { display: inline-block; width: 7px; height: 7px; margin: 0 5px 1px 0; border-radius: 50%; background: #e5484d; vertical-align: middle; }
+@media (prefers-reduced-motion: no-preference) { .ct-live-dot { animation: ctLive 1.6s ease-in-out infinite; } .ct-sp-logo img { transition: opacity .3s; } }
+@media (prefers-reduced-motion: reduce) { .ct-sp-logo img { transition: none; } }
+@keyframes ctLive { 50% { opacity: .35; } }

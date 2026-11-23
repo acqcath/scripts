@@ -385,6 +385,70 @@ export const cmuFor = async (id, now = Date.now()) => {
   return v;
 };
 
+// ===== Sports (ESPN's public site API): a team's live, last or next game =====
+// Team names come from ESPN's team lists (fetched once a day, only when a short search could be a team), so the
+// search itself never leaves this server; a match costs one schedule request (RAM 60 s while live, else 10 min).
+const ESPN = "https://site.api.espn.com/apis/site/v2/sports";
+const LEAGUES = [["football/nfl", "NFL"], ["basketball/nba", "NBA"], ["baseball/mlb", "MLB"], ["hockey/nhl", "NHL"]];
+let _teams = { t: 0, list: [] };
+const normT = (x) => String(x || "").toLowerCase().replace(/[^a-z0-9 ]+/g, "").replace(/\s+/g, " ").trim();
+export const espnTeams = (j, league, tag) => {
+  const ts = j && j.sports && j.sports[0] && j.sports[0].leagues && j.sports[0].leagues[0] && j.sports[0].leagues[0].teams;
+  return (Array.isArray(ts) ? ts : []).map((x) => x && x.team).filter((t) => t && t.id && t.displayName)
+    .map((t) => ({ id: String(t.id), league, tag, abbr: String(t.abbreviation || ""), name: String(t.displayName), nick: String(t.name || t.shortDisplayName || ""), place: String(t.location || "") }));
+};
+const teamsList = async () => {
+  if (_teams.list.length && Date.now() - _teams.t < 86400000) return _teams.list;
+  const all = await Promise.all(LEAGUES.map(async ([l, tag]) => { const r = await net(`${ESPN}/${l}/teams`, { timeout: 4000, max: 3_000_000, accept: "application/json" }); try { return r.status === 200 ? espnTeams(JSON.parse(r.text), l, tag) : []; } catch { return []; } }));
+  const list = all.flat();
+  _teams = { t: list.length ? Date.now() : Date.now() - 86400000 + 600000, list: list.length ? list : _teams.list };
+  return _teams.list;
+};
+// "steelers", "pittsburgh steelers score", "steelers game", "lakers last night", "penguins nhl" -> one team, or null
+export const teamFor = (q, list) => {
+  let s = normT(q).replace(/\b(score|scores|game|games|schedule|result|results|today|tonight|last night|yesterday|next game|live)\b/g, " ").replace(/\s+/g, " ").trim();
+  const lg = /\b(nfl|nba|mlb|nhl)\b/.exec(s);
+  if (lg) s = s.replace(lg[0], "").trim();
+  if (!s || s.split(" ").length > 4) return null;
+  const hits = list.filter((t) => (!lg || t.tag.toLowerCase() === lg[1]) && [t.name, t.nick, `${t.place} ${t.nick}`].map(normT).includes(s));
+  return hits.length === 1 ? hits[0] : null;
+};
+const scoreOf = (c) => (c && c.score != null ? (typeof c.score === "object" ? String(c.score.displayValue ?? c.score.value ?? "") : String(c.score)) : "");
+// One schedule event -> the card's data
+export const espnGame = (ev, sign) => {
+  const comp = ev && Array.isArray(ev.competitions) && ev.competitions[0];
+  if (!comp || !Array.isArray(comp.competitors) || comp.competitors.length !== 2) return null;
+  const st = (comp.status || ev.status || {}).type || {};
+  const side = (c) => ({ abbr: String((c.team && c.team.abbreviation) || ""), name: String((c.team && (c.team.shortDisplayName || c.team.displayName)) || ""), logo: (() => { const t = c.team || {}; const l = t.logo || (Array.isArray(t.logos) && t.logos[0] && t.logos[0].href) || ""; return l && sign ? sign(l) : ""; })(), score: scoreOf(c), winner: c.winner === true, record: Array.isArray(c.record) ? String((c.record[0] && (c.record[0].displayValue || c.record[0].summary)) || "") : Array.isArray(c.records) ? String((c.records[0] && c.records[0].summary) || "") : "", home: c.homeAway === "home" });
+  const [a, b] = comp.competitors.map(side);
+  return { state: String(st.state || ""), detail: String(st.shortDetail || st.detail || ""), date: String(ev.date || comp.date || ""), away: a.home ? b : a, home: a.home ? a : b };
+};
+// Live game first; else the last game if it ended within 2 days; else the next one; else the last one
+export const pickGame = (events, now = Date.now()) => {
+  const evs = (Array.isArray(events) ? events : []).map((e) => ({ e, st: ((((e.competitions || [])[0] || {}).status || e.status || {}).type || {}).state, t: Date.parse(e.date) })).filter((x) => Number.isFinite(x.t));
+  const live = evs.find((x) => x.st === "in");
+  if (live) return live.e;
+  const past = evs.filter((x) => x.st === "post").sort((a, b) => b.t - a.t)[0];
+  const next = evs.filter((x) => x.st === "pre" && x.t >= now - 6 * 3600000).sort((a, b) => a.t - b.t)[0];
+  if (past && now - past.t < 2 * 86400000) return past.e;
+  return (next || past || {}).e || null;
+};
+const _games = new Map();
+export const sportsFor = async (q, now = Date.now()) => {
+  const words = normT(q);
+  if (!words || words.split(" ").length > 6) return null;
+  const list = await teamsList();
+  const t = teamFor(words, list);
+  if (!t) return null;
+  const hit = _games.get(t.id + t.league);
+  if (hit && now - hit.t < (hit.v && hit.v.state === "in" ? 60000 : 600000)) return hit.v;
+  const r = await net(`${ESPN}/${t.league}/teams/${t.id}/schedule`, { timeout: 4000, max: 5_000_000, accept: "application/json" });
+  let v = null;
+  try { const ev = r.status === 200 ? pickGame(JSON.parse(r.text).events, now) : null; const g = ev && espnGame(ev, _sign); if (g) v = { ...g, league: t.tag, team: t.abbr }; } catch {}
+  _games.set(t.id + t.league, { t: now, v });
+  return v;
+};
+
 // ===== Will ai-summary answer? (so the page reserves its spot only when the summary is sure to come) =====
 // Mirrors its slot trigger(): a model is set, it isn't switched off, and "only for questions" (a search ending in
 // "?") if that's on. Read from degoog's plugin-settings.json; only these two yes/no values leave the server.
@@ -915,6 +979,14 @@ export const routes = [
       const u = new URL(req.url).searchParams;
       const d = await wdFor(u.get("f") || "", u.get("s") || "", u.get("s2") || "");
       return new Response(JSON.stringify({ d }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+    },
+  },
+  {
+    method: "get",
+    path: "/sports",
+    async handler(req) {
+      const q = (new URL(req.url).searchParams.get("q") || "").slice(0, 100);
+      return new Response(JSON.stringify({ g: await sportsFor(q) }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
     },
   },
   {
@@ -2006,6 +2078,16 @@ const cmuAnswer = (c, course, fces) => {
   return { kind: "cmu", label: "CMU Courses", title: `${c.id} ${course.name}`, href: `https://cmucourses.com/course/${c.id}`, parts, sem: agg ? agg.sem : "", profs, prof: !!c.prof, copy: "" };
 };
 
+// ----- Sports card from the server's ESPN game ({state pre|in|post, detail, date, away, home, league}) -----
+const sportsAnswer = (g, now = Date.now()) => {
+  if (!g || !g.away || !g.home || !g.away.abbr || !g.home.abbr || !["pre", "in", "post"].includes(g.state)) return null;
+  const t = Date.parse(g.date);
+  const when = Number.isFinite(t) ? new Date(t).toLocaleString("en-US", g.state === "pre" ? { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" } : { weekday: "short", month: "short", day: "numeric" }) : "";
+  const status = g.state === "in" ? (g.detail || "Live") : g.state === "post" ? (g.detail || "Final") : "Next game";
+  const rec = [g.away, g.home].filter((x) => x.record).map((x) => `${x.abbr} ${x.record.replace(/-/g, "–")}`).join(" · ");
+  return { kind: "sports", label: g.league || "", live: g.state === "in", status, teams: [g.away, g.home], showScore: g.state !== "pre", detail: [when, rec].filter(Boolean).join(" · "), copy: g.state === "pre" ? "" : `${g.away.abbr} ${g.away.score} – ${g.home.score} ${g.home.abbr}` };
+};
+
 // ----- The one local answer for a search, or null. CMU course numbers are left to the CMU card (network). -----
 const answer = (q, now = Date.now(), data = {}) => {
   const s = String(q || "").trim();
@@ -2014,7 +2096,7 @@ const answer = (q, now = Date.now(), data = {}) => {
   return pattern(s) || convert(s) || currency(s, data.fx) || percent(s) || dateMath(s, now) || calc(s);
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, dateLabel, relDate, upsValid, isbnValid, cmuCourse, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, answer };
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, dateLabel, relDate, upsValid, isbnValid, cmuCourse, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, answer };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -2514,6 +2596,8 @@ const earlyStart = () => {
     // CMU course card: "15-213" (and "15213", which the server answers only if that course exists: it's also a ZIP)
     const cq = cmuQ(q);
     if (cq && cq.level) ask("cmu", key, { id: cq.id });
+    // A team's game (ESPN): short searches made of words only go to this server, which knows the team names
+    if (!eq && !wq && !cq && /^[a-z][a-z .'&-]*$/i.test(q) && q.split(/\s+/).length <= 6 && !CT.answer(q, Date.now(), { fx: FX })) ask("sports", key, { q });
     // Top stories: the News search starts now, in parallel, only for a search that looked like news last time
     if (SHOW.news && newsy.has(qHash(q))) {
       const e = { key, data: undefined };
@@ -3235,18 +3319,38 @@ document.addEventListener("click", (e) => {
 const ansCard = (a) => {
   const box = mk("div", "ct-ans");
   box.dataset.kind = a.kind;
-  if (a.copy) { box.tabIndex = 0; box.setAttribute("role", "button"); box.dataset.copy = a.copy; box.setAttribute("aria-label", `${a.value || a.title}. Copy`); }
+  if (a.copy) { box.tabIndex = 0; box.setAttribute("role", "button"); box.dataset.copy = a.copy; box.setAttribute("aria-label", `${a.value || a.title || a.copy}. Copy`); }
   const label = mk("div", "ct-ans-label");
   label.append(mk("span", "ct-ans-l", a.src ? `${a.label} · ${a.src}` : a.label), mk("span", "ct-ans-copied", "Copied"));
   box.append(label);
   if (a.href) { const t = mk("a", "ct-ans-title", a.title); t.href = a.href; t.rel = "noopener"; box.append(t); }
-  else {
+  else if (a.kind !== "sports") {
     const v = mk("div", "ct-ans-value");
     if (a.swatch) { const sw = mk("span", "ct-ans-sw"); sw.style.background = a.swatch; v.append(sw); }
     v.append(a.value);
     box.append(v);
   }
-  if (a.detail) box.append(mk("div", "ct-ans-detail", a.detail));
+  if (a.detail && a.kind !== "sports") box.append(mk("div", "ct-ans-detail", a.detail));
+  if (a.kind === "sports") {
+    // Label line: "NFL · Final" or "NFL · ● Live · Q3 4:12" (pulsing red dot); then logos, teams and scores
+    const l = box.querySelector(".ct-ans-l");
+    l.textContent = `${a.label} · `;
+    if (a.live) l.append(mk("span", "ct-live-dot"), "Live · ");
+    l.append(mk("span", "ct-sp-status", a.status));
+    const row = mk("div", "ct-sp");
+    a.teams.forEach((t, i) => {
+      const side = mk("span", `ct-sp-team${t.winner ? " ct-win" : ""}`);
+      const logo = mk("span", "ct-sp-logo");
+      if (t.logo) { const im = new Image(); im.alt = ""; im.decoding = "async"; im.onload = () => im.classList.add("ct-on"); im.src = t.logo; logo.append(im); }
+      side.append(logo, mk("span", "ct-sp-abbr", t.abbr));
+      if (a.showScore) side.append(mk("span", "ct-sp-score", t.score));
+      if (i === 0) side.classList.add("ct-sp-away");
+      row.append(side);
+      if (i === 0) row.append(mk("span", "ct-sp-dash", a.showScore ? "–" : "at"));
+    });
+    box.append(row);
+    if (a.detail) box.append(mk("div", "ct-ans-detail", a.detail));
+  }
   if (a.kind === "cmu") {
     // Facts line: "12 units · 14.3 hrs/wk · 4.0 ★★★★☆ · prereq 15-122"; people line: "Spring 2026 · Railing 4.3 · +N"
     const facts = mk("div", "ct-ans-detail ct-fit ct-fit-drop");
@@ -3266,6 +3370,26 @@ const ansCard = (a) => {
     if (a.prof) box.append(people, facts); else box.append(facts, people);
   }
   return box;
+};
+// Live game: score and status refreshed in place (same size: tabular digits, fixed logo boxes) while the game is on
+// and this tab is visible, every 60 s: the server keeps a live game for 60 s, so asking more often gets the same.
+let liveT = 0;
+const livePoll = (key, q) => {
+  clearTimeout(liveT);
+  liveT = setTimeout(async () => {
+    if (searchId(location.href) !== key) return;
+    if (document.visibilityState !== "visible") { document.addEventListener("visibilitychange", () => livePoll(key, q), { once: true }); return; }
+    const j = await bridge("sports", { q }).catch(() => null);
+    const a = j && j.g && CT.sportsAnswer(j.g);
+    const box = document.querySelector("#at-a-glance > .ct-ans[data-kind=sports]");
+    if (!a || !box || searchId(location.href) !== key) return;
+    ansVal = a;
+    box.querySelectorAll(".ct-sp-score").forEach((el, i) => { el.textContent = a.teams[i].score; });
+    box.querySelectorAll(".ct-sp-team").forEach((el, i) => el.classList.toggle("ct-win", !!a.teams[i].winner));
+    const st = box.querySelector(".ct-sp-status");
+    if (st) st.textContent = a.status;
+    if (!a.live) box.querySelector(".ct-live-dot")?.remove(); else livePoll(key, q);
+  }, 60000);
 };
 // One line, items never cut (re-measured when the width changes): people that don't fit fold into "+N"; mixed
 // facts (units, hours, rating, prereq) that don't fit are dropped whole from the end, never a bare "+N"
@@ -3299,6 +3423,7 @@ const ansPass = () => {
     if (j && j.cycles) ansVal = CT.eolAnswer(CT.eolQuery(q), j.cycles);
     else if (w && w.d) ansVal = CT.wdAnswer(CT.wdQuery(q), w.d);
     else if (cm && cm.c) ansVal = CT.cmuAnswer(cmuQ(q), cm.c.course, cm.c.fces);
+    else { const sp = ready("sports", key); if (sp && sp.g) { ansVal = CT.sportsAnswer(sp.g); if (ansVal && ansVal.live) livePoll(key, q); } }
   }
   aiPass(g, key);
   if (!ansVal || g.querySelector(".ct-ans")) return;
@@ -4095,6 +4220,23 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .ct-fit > * + *::before { content: " · "; }
 .ct-fit > [hidden] { display: none; }
 @media (max-width: 767px) { .ct-fn { display: none; } }
+
+/* Sports card: logos are the image anchors (fixed 28px boxes, shown once decoded), scores in tabular digits */
+.ct-sp { display: flex; align-items: center; gap: 14px; margin-top: 4px; font-size: 24px; line-height: 32px; color: var(--text-primary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ct-sp-team { display: inline-flex; align-items: center; gap: 8px; color: var(--text-secondary); }
+.ct-sp-team.ct-win { color: var(--text-primary); }
+.ct-sp-away { flex-direction: row; }
+.ct-sp-team:not(.ct-sp-away) { flex-direction: row-reverse; }
+.ct-sp-logo { display: inline-block; width: 28px; height: 28px; flex: none; }
+.ct-sp-logo img { width: 28px; height: 28px; object-fit: contain; opacity: 0; transition: opacity .3s; }
+.ct-sp-logo img.ct-on { opacity: 1; }
+.ct-sp-abbr { font-size: 15px; line-height: 20px; }
+.ct-sp-score { min-width: 1.3em; text-align: center; }
+.ct-sp-dash { color: var(--text-secondary); font-size: 15px; }
+.ct-live-dot { display: inline-block; width: 7px; height: 7px; margin: 0 5px 1px 0; border-radius: 50%; background: #e5484d; vertical-align: middle; }
+@media (prefers-reduced-motion: no-preference) { .ct-live-dot { animation: ctLive 1.6s ease-in-out infinite; } .ct-sp-logo img { transition: opacity .3s; } }
+@media (prefers-reduced-motion: reduce) { .ct-sp-logo img { transition: none; } }
+@keyframes ctLive { 50% { opacity: .35; } }
 
 '@)
 [IO.File]::WriteAllText("$t\setcss.js", @'
