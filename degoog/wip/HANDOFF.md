@@ -227,6 +227,9 @@ Everything else in FEATURES 1-15, RULES, LOADING and DESIGN SYSTEM is built and 
 
 - **v50 INSTALLED on the user's server (2026-11-23 ~16:20 UTC)** from v50-wip's degoog/install.ps1: version line "clean-titles v50", Safe Search off on all 21 engines, self-check ALL PASS (21 rows). Main not updated yet (user's call; offered to open a PR).
 
+- Relevance (17:5x): core relWords/relIdent/matchShare/related/relJudgeable + page relPass (all tabs, after listPass/tabPass): unrelated = no search word (prefix match, digit groups joined, typo-fix words count) AND 1 engine AND not (identifier search & pos < 3); folded at batch end under "N unrelated results"; quotes/common-word searches skipped. All explicit-content lists (ADULT_HOST/TEXT, WANTS_ADULT) removed: the user wants no maintained lists and one consistent rule. Recordings: 160 of 2253 judged results fold. Headless CLS 0.
+- Recordings are private: rec/ is git-ignored and removed from the repo; tests that need them skip when absent. build_installer.py's skeleton is pinned to 9daedd5 (v49 main) since main now holds v50.
+
 ## Next
 - **Status 2026-11-23 14:56 UTC (live run 14:48):** waiting for the user's 2nd self-check table (round-1 fixes + reasons) and the recordings of their 10 snippet searches (list below). Then fix/cut remaining FAILs, build the featured snippet, install.ps1 at v50, READY TO SHIP.
 - **Status 2026-11-23 11:18 UTC (run 11:16):** startup notice when a degoog update wiped the page part (the old "restore at startup" todo; restore itself is impossible, see below). Tests 89 pass. Still blocked on the user: (a) self-check table from install-preview.ps1, (b) ~10 recorded fact/how-to searches for the featured snippet. Nothing else unblocked is left that passes "works on real data"; runs should exit quickly until the user replies.

@@ -239,3 +239,17 @@ test("relevance: matchShare on the search's words; identifier searches use their
   expect(matchShare(relWords("adventure time princess bubblegum"), "scrollx.org adventure_time princess_bubblegum seldom")).toBeGreaterThanOrEqual(0.5);
   expect(matchShare(relWords("how many ways are there to skin a cat"), "So there are only two ways to skin a cat")).toBe(1);
 });
+
+test("relevance rule on the user's recordings: junk folds, identifier lookups and quotes are left alone", async () => {
+  const { relWords, relIdent, related, relJudgeable } = await import("../files/core.js");
+  const r = (q, text, engines = 1, pos = 9) => related(relWords(q), relIdent(q), text, engines, pos);
+  expect(r("15213", "xvideos.com 'mature couple missionary' Search")).toBe(false);
+  expect(r("15-213 professor", "Number 15 facts")).toBe(false);
+  expect(r("15-213 professor", "15-213/15-513 Introduction to Computer Systems")).toBe(true);
+  expect(r("9780140328721", "Fantastic Mr. Fox: Dahl, Roald", 1, 0)).toBe(true);
+  expect(r("1Z999AA10123456784", "Tracking Your Shipment | FedEx", 2)).toBe(true);
+  expect(r("why is it called", "anything at all")).toBe(false);
+  expect(relJudgeable("who are you who do you work for")).toBe(false);
+  expect(relJudgeable("how to reset airpods")).toBe(true);
+  expect(r("nobody loves me", "Feel like nobody love you")).toBe(true);
+});
