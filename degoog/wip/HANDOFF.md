@@ -216,6 +216,9 @@ Everything else in FEATURES 1-15, RULES, LOADING and DESIGN SYSTEM is built and 
 
 - User rule (live 15:45): relevance, not restriction. Adult results: Web shows them when wantsAdult OR every search word (>=3 letters, minus a few stopwords) is in the result's host+title (aboutSearch); specialised tabs only when wantsAdult. User also wants News/Science/Forums skewed to their kind and junk avoided: not built (no recorded Science/Forums searches; only 2 news). Needs recordings of those tabs first.
 
+## Self-check round 3 (user, ~15:55 UTC): ALL PASS (Wikidata x2, ESPN, KP, meanings, archive 4 s, quick view, touchy searches, Safe Search everywhere).
+- install.ps1 at v50 BUILT on the branch (build_installer.py release; same as the preview but "v50"). Not marked READY TO SHIP yet: the user's newer ask (News/Science/Forums skewed to their kind, junk out) waits on record-tabs.ps1's file. If the user says ship without it, mark READY TO SHIP as is.
+
 ## Next
 - **Status 2026-11-23 14:56 UTC (live run 14:48):** waiting for the user's 2nd self-check table (round-1 fixes + reasons) and the recordings of their 10 snippet searches (list below). Then fix/cut remaining FAILs, build the featured snippet, install.ps1 at v50, READY TO SHIP.
 - **Status 2026-11-23 11:18 UTC (run 11:16):** startup notice when a degoog update wiped the page part (the old "restore at startup" todo; restore itself is impossible, see below). Tests 89 pass. Still blocked on the user: (a) self-check table from install-preview.ps1, (b) ~10 recorded fact/how-to searches for the featured snippet. Nothing else unblocked is left that passes "works on real data"; runs should exit quickly until the user replies.
