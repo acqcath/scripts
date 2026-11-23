@@ -226,6 +226,45 @@ const aiSchedule = () => {
   if (_aiTimer.unref) _aiTimer.unref();
 };
 
+// ===== Currency rates: the ECB's euro reference rates (published ~16:00 CET each TARGET working day) =====
+// Checked hourly with no request unless a newer publication is due (the last weekday 16:00 Berlin time after the
+// stored date), then one conditional GET. Kept in fx.json (rates aren't private); the page gets a copy via /sites.
+const ECB_URL = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml";
+export const parseEcb = (xml) => {
+  const t = /<Cube\s+time=['"](\d{4}-\d{2}-\d{2})['"]/.exec(String(xml || ""));
+  const rates = {};
+  for (const m of String(xml || "").matchAll(/<Cube\s+currency=['"]([A-Z]{3})['"]\s+rate=['"]([\d.]+)['"]/g)) { const v = Number(m[2]); if (v > 0 && Number.isFinite(v)) rates[m[1]] = v; }
+  return t && Object.keys(rates).length >= 20 && rates.USD ? { date: t[1], rates } : null;
+};
+// Date (YYYY-MM-DD) of the newest publication that should exist at `now`
+export const ecbDue = (now = Date.now()) => {
+  const berlin = (ms) => { const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Berlin", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hour12: false, weekday: "short" }).formatToParts(new Date(ms)).map((x) => [x.type, x.value])); return p; };
+  for (let ms = now, i = 0; i < 8; i++, ms -= 86400000) {
+    const p = berlin(ms);
+    if (p.weekday === "Sat" || p.weekday === "Sun") continue;
+    if (i === 0 && Number(p.hour) < 16) continue;
+    return `${p.year}-${p.month}-${p.day}`;
+  }
+  return "";
+};
+const fxFile = () => `${DIR}/fx.json`;
+let FX = null;
+export const readFx = () => { if (FX) return FX; try { const j = JSON.parse(fs.readFileSync(fxFile(), "utf8")); FX = j && j.rates ? j : { rates: null }; } catch { FX = { rates: null }; } return FX; };
+export const fxRefresh = async (now = Date.now()) => {
+  const cur = readFx();
+  if (cur.date && cur.date >= ecbDue(now)) return cur;
+  // A holiday leaves the ECB's date behind what's due: an unchanged answer (304) is fine, ask again next hour
+  const r = await net(ECB_URL, { etag: cur.etag || "", timeout: 15000, max: 50000 });
+  if (r.status === 200) { const p = parseEcb(r.text); if (p) { FX = { ...p, etag: r.etag }; try { fs.writeFileSync(fxFile(), JSON.stringify(FX)); } catch {} } }
+  return readFx();
+};
+let _fxTimer = null;
+const fxSchedule = () => {
+  if (_fxTimer) return;
+  _fxTimer = setTimeout(async () => { _fxTimer = null; await fxRefresh(); fxSchedule(); }, readFx().rates ? 3600000 : 30000);
+  if (_fxTimer.unref) _fxTimer.unref();
+};
+
 // ===== Will ai-summary answer? (so the page reserves its spot only when the summary is sure to come) =====
 // Mirrors its slot trigger(): a model is set, it isn't switched off, and "only for questions" (a search ending in
 // "?") if that's on. Read from degoog's plugin-settings.json; only these two yes/no values leave the server.
@@ -746,7 +785,7 @@ export const routes = [
       }
       const sites = sitesFromLists(block, score);
       mirrorTo(sites);
-      return new Response(JSON.stringify({ sites, auto: autoList().filter((d) => sites[d] === "lower"), seo: SEO_ON, ai: aiStatus(data) }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+      return new Response(JSON.stringify({ sites, auto: autoList().filter((d) => sites[d] === "lower"), seo: SEO_ON, ai: aiStatus(data), fx: readFx().rates ? { date: FX.date, rates: FX.rates } : null }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
     },
   },
   {
@@ -845,7 +884,7 @@ export default {
     if (ctx && ctx.dir) DIR = ctx.dir;
     if (ctx && typeof ctx.signProxyUrl === "function") _sign = ctx.signProxyUrl;
     if (ctx && typeof ctx.fetch === "function") _fetch = ctx.fetch;
-    if (!process.env.CT_NO_TIMERS) aiSchedule();
+    if (!process.env.CT_NO_TIMERS) { aiSchedule(); fxSchedule(); }
   },
 
   // Bridge: the page reaches the routes above through degoog's command address (/api/command),
@@ -1604,15 +1643,39 @@ const pattern = (q) => {
   return null;
 };
 
+// ----- Currency, from the ECB's daily reference rates (the server fetches them once after each publication and the
+// page keeps a copy, so the answer is local and instant). fx = { date: "2026-11-20", rates: { USD: 1.08, ... } } per EUR.
+const CUR = { usd: "USD", "us dollar": "USD", "us dollars": "USD", dollar: "USD", dollars: "USD", "$": "USD", eur: "EUR", euro: "EUR", euros: "EUR", "€": "EUR",
+  gbp: "GBP", pound: "GBP", pounds: "GBP", "british pound": "GBP", "british pounds": "GBP", "£": "GBP", jpy: "JPY", yen: "JPY", "¥": "JPY", cny: "CNY", yuan: "CNY", rmb: "CNY",
+  cad: "CAD", "canadian dollar": "CAD", "canadian dollars": "CAD", aud: "AUD", "australian dollar": "AUD", "australian dollars": "AUD", chf: "CHF", "swiss franc": "CHF", "swiss francs": "CHF",
+  inr: "INR", rupee: "INR", rupees: "INR", "₹": "INR", krw: "KRW", won: "KRW", mxn: "MXN", peso: "MXN", pesos: "MXN", "mexican peso": "MXN", "mexican pesos": "MXN", sek: "SEK", nok: "NOK", dkk: "DKK",
+  pln: "PLN", zloty: "PLN", czk: "CZK", huf: "HUF", ron: "RON", bgn: "BGN", isk: "ISK", try: "TRY", lira: "TRY", brl: "BRL", real: "BRL", reais: "BRL", zar: "ZAR", rand: "ZAR", nzd: "NZD",
+  sgd: "SGD", hkd: "HKD", thb: "THB", baht: "THB", idr: "IDR", rupiah: "IDR", myr: "MYR", ringgit: "MYR", php: "PHP", ils: "ILS", shekel: "ILS", shekels: "ILS" };
+const SYM = { USD: "$", EUR: "€", GBP: "£", JPY: "¥", INR: "₹" };
+const CUR_NAMES = Object.keys(CUR).sort((a, b) => b.length - a.length).map((n) => n.replace(/[$€£¥₹]/g, "\\$&")).join("|");
+const CUR_RE = new RegExp(`^(?:convert\\s+)?(${CUR_NAMES})?\\s*(${NUM})\\s*(${CUR_NAMES})?\\s+(?:to|in|into|=)\\s+(${CUR_NAMES})\\s*\\??$`, "i");
+const money = (v, c) => { const d = c === "JPY" || c === "KRW" || c === "ISK" || c === "HUF" || c === "IDR" ? 0 : 2; const t = v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }); return SYM[c] ? `${SYM[c]}${t}` : `${t} ${c}`; };
+const currency = (q, fx) => {
+  if (!fx || !fx.rates) return null;
+  const m = CUR_RE.exec(String(q).trim().toLowerCase().replace(/\s+/g, " "));
+  if (!m || !(m[1] || m[3])) return null;
+  const a = CUR[m[3] || m[1]], b = CUR[m[4]], v = num(m[2]);
+  const per = (c) => (c === "EUR" ? 1 : fx.rates[c]);
+  if (!a || !b || a === b || !per(a) || !per(b)) return null;
+  const r = (v / per(a)) * per(b), one = per(b) / per(a);
+  const day = fx.date ? new Date(`${fx.date}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }) : "";
+  return { kind: "currency", label: `Currency · ECB rate${day ? ` of ${day}` : ""}`, value: money(r, b), detail: `${money(v, a)} · 1 ${a} = ${one.toLocaleString("en-US", { maximumSignificantDigits: 5 })} ${b}`, copy: plain(Number(r.toFixed(b === "JPY" || b === "KRW" ? 0 : 2))) };
+};
+
 // ----- The one local answer for a search, or null. CMU course numbers are left to the CMU card (network). -----
-const answer = (q, now = Date.now()) => {
+const answer = (q, now = Date.now(), data = {}) => {
   const s = String(q || "").trim();
   if (!s || s.length > 200 || s.startsWith("!")) return null;
   if (/^\d{2}-\d{3}\b/.test(s)) return null;
-  return pattern(s) || convert(s) || percent(s) || dateMath(s, now) || calc(s);
+  return pattern(s) || convert(s) || currency(s, data.fx) || percent(s) || dateMath(s, now) || calc(s);
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, dateLabel, relDate, upsValid, isbnValid, cmuCourse, fmtNum, calc, convert, percent, dateMath, pattern, answer };
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, dateLabel, relDate, upsValid, isbnValid, cmuCourse, fmtNum, calc, convert, percent, dateMath, pattern, currency, answer };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -1767,13 +1830,15 @@ try { const c = JSON.parse(localStorage.getItem(SITES_KEY) || "null"); if (c && 
 const saveSites = () => { try { localStorage.setItem(SITES_KEY, JSON.stringify(SITES)); } catch {} };
 // Sites lowered by the anti-SEO checks ("auto" in the menu), and whether those checks are on (Settings)
 // Also: will ai-summary answer (a model set, not off, "only for questions"?), so its spot is kept only when it will come
-let SITES_AUTO = [], SEO_ON = false, AI_ON = { on: false };
-try { const c = JSON.parse(localStorage.getItem("ct-sites-auto") || "null"); if (c && Array.isArray(c.auto)) { SITES_AUTO = c.auto; SEO_ON = !!c.seo; if (c.ai) AI_ON = c.ai; } } catch {}
+// and the ECB currency rates for the answer card (fx)
+let SITES_AUTO = [], SEO_ON = false, AI_ON = { on: false }, FX = null;
+try { const c = JSON.parse(localStorage.getItem("ct-sites-auto") || "null"); if (c && Array.isArray(c.auto)) { SITES_AUTO = c.auto; SEO_ON = !!c.seo; if (c.ai) AI_ON = c.ai; if (c.fx && c.fx.rates) FX = c.fx; } } catch {}
 const takeSites = (j) => {
   if (!j || !j.sites || typeof j.sites !== "object") return;
   SITES = j.sites; saveSites();
   SITES_AUTO = Array.isArray(j.auto) ? j.auto : []; SEO_ON = !!j.seo; AI_ON = j.ai && typeof j.ai === "object" ? j.ai : { on: false };
-  try { localStorage.setItem("ct-sites-auto", JSON.stringify({ auto: SITES_AUTO, seo: SEO_ON, ai: AI_ON })); } catch {}
+  if (j.fx && j.fx.rates) FX = j.fx;
+  try { localStorage.setItem("ct-sites-auto", JSON.stringify({ auto: SITES_AUTO, seo: SEO_ON, ai: AI_ON, fx: FX })); } catch {}
 };
 bridge("sites", {}).then(takeSites).catch(() => {});
 // Only whole-site entries count here (a line for one subdomain is left to degoog's own filter)
@@ -2841,7 +2906,7 @@ const ansPass = () => {
     ansFor = key;
     let q = "", page = 1;
     try { const u = new URL(key); q = (u.searchParams.get("q") || "").trim(); page = Number(u.searchParams.get("page") || 1); } catch {}
-    ansVal = webTab && page <= 1 ? CT.answer(q) : null;
+    ansVal = webTab && page <= 1 ? CT.answer(q, Date.now(), { fx: FX }) : null;
     aiVal = webTab && page <= 1 && !ansVal && aiWanted(q);
     g.querySelectorAll(".ct-ans, .ct-ai").forEach((x) => x.remove());
   }

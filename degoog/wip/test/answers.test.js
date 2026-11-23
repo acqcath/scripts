@@ -68,3 +68,12 @@ test("answers: patterns with checksums; look-alikes get nothing", () => {
   expect(A.answer("TBA123456789012", now).label).toBe("Amazon tracking number");
   expect(A.answer("9400111899223197428490", now).label).toBe("USPS tracking number");
 });
+
+test("answers: currency from the ECB copy (none without it)", () => {
+  const fx = { date: "2026-11-20", rates: { USD: 1.05, GBP: 0.83, JPY: 160.5, CAD: 1.47 } };
+  expect(A.answer("100 usd to eur", now, { fx })).toMatchObject({ label: "Currency · ECB rate of Nov 20", value: "€95.24", detail: "$100.00 · 1 USD = 0.95238 EUR", copy: "95.24" });
+  expect(A.answer("€50 in dollars", now, { fx }).value).toBe("$52.50");
+  expect(A.answer("50 euros to yen", now, { fx }).value).toBe("¥8,025");
+  expect(A.answer("100 usd to eur", now)).toBe(null);
+  expect(A.answer("100 to eur", now, { fx })).toBe(null);
+});

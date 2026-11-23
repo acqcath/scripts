@@ -189,3 +189,27 @@ test("server: ai-summary status mirrors its trigger (model set, not off, questio
   put({ "ai-summary-slot": { model: " " } });
   expect(srv.aiStatus(dir)).toEqual({ on: false });
 });
+
+test("server: ECB rates: parsed with a shape check, fetched only when a newer publication is due, kept on failure", async () => {
+  const srv = await import("../files/index.js");
+  const xml = `<?xml version="1.0"?><gesmes:Envelope><Cube><Cube time='2026-11-20'>${["USD|1.0512", "JPY|160.5", "GBP|0.8312", ...Array.from({ length: 27 }, (_, i) => `X${String.fromCharCode(65 + (i % 26))}${String.fromCharCode(65 + Math.floor(i / 26))}|${i + 1}`)].map((x) => `<Cube currency='${x.split("|")[0]}' rate='${x.split("|")[1]}'/>`).join("")}</Cube></Cube></gesmes:Envelope>`;
+  expect(srv.parseEcb(xml).rates.USD).toBe(1.0512);
+  expect(srv.parseEcb("<html>busy</html>")).toBe(null);
+  // Due dates (Berlin time): Mon 2026-11-23 10:00 UTC = 11:00 CET -> Friday's; 16:30 CET -> today's; Sunday -> Friday's
+  expect(srv.ecbDue(Date.parse("2026-11-23T10:00:00Z"))).toBe("2026-11-20");
+  expect(srv.ecbDue(Date.parse("2026-11-23T15:30:00Z"))).toBe("2026-11-23");
+  expect(srv.ecbDue(Date.parse("2026-11-22T20:00:00Z"))).toBe("2026-11-20");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ct-fx-"));
+  let calls = 0, mode = "ok";
+  srv._setDegoog(null, dir);
+  srv.default.init({ id: "clean-titles", dir, fetch: async () => { calls++; if (mode === "down") throw new Error("x"); return new Response(xml, { headers: { etag: '"f1"' } }); } });
+  const a = await srv.fxRefresh(Date.parse("2026-11-23T10:00:00Z"));
+  expect(a.date).toBe("2026-11-20");
+  expect(calls).toBe(1);
+  await srv.fxRefresh(Date.parse("2026-11-23T12:00:00Z")); // nothing newer due: no request
+  expect(calls).toBe(1);
+  mode = "down";
+  const b = await srv.fxRefresh(Date.parse("2026-11-23T16:00:00Z")); // due, ECB unreachable: old rates kept
+  expect(calls).toBe(2);
+  expect(b.date).toBe("2026-11-20");
+});

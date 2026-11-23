@@ -151,13 +151,15 @@ try { const c = JSON.parse(localStorage.getItem(SITES_KEY) || "null"); if (c && 
 const saveSites = () => { try { localStorage.setItem(SITES_KEY, JSON.stringify(SITES)); } catch {} };
 // Sites lowered by the anti-SEO checks ("auto" in the menu), and whether those checks are on (Settings)
 // Also: will ai-summary answer (a model set, not off, "only for questions"?), so its spot is kept only when it will come
-let SITES_AUTO = [], SEO_ON = false, AI_ON = { on: false };
-try { const c = JSON.parse(localStorage.getItem("ct-sites-auto") || "null"); if (c && Array.isArray(c.auto)) { SITES_AUTO = c.auto; SEO_ON = !!c.seo; if (c.ai) AI_ON = c.ai; } } catch {}
+// and the ECB currency rates for the answer card (fx)
+let SITES_AUTO = [], SEO_ON = false, AI_ON = { on: false }, FX = null;
+try { const c = JSON.parse(localStorage.getItem("ct-sites-auto") || "null"); if (c && Array.isArray(c.auto)) { SITES_AUTO = c.auto; SEO_ON = !!c.seo; if (c.ai) AI_ON = c.ai; if (c.fx && c.fx.rates) FX = c.fx; } } catch {}
 const takeSites = (j) => {
   if (!j || !j.sites || typeof j.sites !== "object") return;
   SITES = j.sites; saveSites();
   SITES_AUTO = Array.isArray(j.auto) ? j.auto : []; SEO_ON = !!j.seo; AI_ON = j.ai && typeof j.ai === "object" ? j.ai : { on: false };
-  try { localStorage.setItem("ct-sites-auto", JSON.stringify({ auto: SITES_AUTO, seo: SEO_ON, ai: AI_ON })); } catch {}
+  if (j.fx && j.fx.rates) FX = j.fx;
+  try { localStorage.setItem("ct-sites-auto", JSON.stringify({ auto: SITES_AUTO, seo: SEO_ON, ai: AI_ON, fx: FX })); } catch {}
 };
 bridge("sites", {}).then(takeSites).catch(() => {});
 // Only whole-site entries count here (a line for one subdomain is left to degoog's own filter)
@@ -1225,7 +1227,7 @@ const ansPass = () => {
     ansFor = key;
     let q = "", page = 1;
     try { const u = new URL(key); q = (u.searchParams.get("q") || "").trim(); page = Number(u.searchParams.get("page") || 1); } catch {}
-    ansVal = webTab && page <= 1 ? CT.answer(q) : null;
+    ansVal = webTab && page <= 1 ? CT.answer(q, Date.now(), { fx: FX }) : null;
     aiVal = webTab && page <= 1 && !ansVal && aiWanted(q);
     g.querySelectorAll(".ct-ans, .ct-ai").forEach((x) => x.remove());
   }

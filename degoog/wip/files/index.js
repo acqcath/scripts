@@ -223,6 +223,45 @@ const aiSchedule = () => {
   if (_aiTimer.unref) _aiTimer.unref();
 };
 
+// ===== Currency rates: the ECB's euro reference rates (published ~16:00 CET each TARGET working day) =====
+// Checked hourly with no request unless a newer publication is due (the last weekday 16:00 Berlin time after the
+// stored date), then one conditional GET. Kept in fx.json (rates aren't private); the page gets a copy via /sites.
+const ECB_URL = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml";
+export const parseEcb = (xml) => {
+  const t = /<Cube\s+time=['"](\d{4}-\d{2}-\d{2})['"]/.exec(String(xml || ""));
+  const rates = {};
+  for (const m of String(xml || "").matchAll(/<Cube\s+currency=['"]([A-Z]{3})['"]\s+rate=['"]([\d.]+)['"]/g)) { const v = Number(m[2]); if (v > 0 && Number.isFinite(v)) rates[m[1]] = v; }
+  return t && Object.keys(rates).length >= 20 && rates.USD ? { date: t[1], rates } : null;
+};
+// Date (YYYY-MM-DD) of the newest publication that should exist at `now`
+export const ecbDue = (now = Date.now()) => {
+  const berlin = (ms) => { const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Berlin", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hour12: false, weekday: "short" }).formatToParts(new Date(ms)).map((x) => [x.type, x.value])); return p; };
+  for (let ms = now, i = 0; i < 8; i++, ms -= 86400000) {
+    const p = berlin(ms);
+    if (p.weekday === "Sat" || p.weekday === "Sun") continue;
+    if (i === 0 && Number(p.hour) < 16) continue;
+    return `${p.year}-${p.month}-${p.day}`;
+  }
+  return "";
+};
+const fxFile = () => `${DIR}/fx.json`;
+let FX = null;
+export const readFx = () => { if (FX) return FX; try { const j = JSON.parse(fs.readFileSync(fxFile(), "utf8")); FX = j && j.rates ? j : { rates: null }; } catch { FX = { rates: null }; } return FX; };
+export const fxRefresh = async (now = Date.now()) => {
+  const cur = readFx();
+  if (cur.date && cur.date >= ecbDue(now)) return cur;
+  // A holiday leaves the ECB's date behind what's due: an unchanged answer (304) is fine, ask again next hour
+  const r = await net(ECB_URL, { etag: cur.etag || "", timeout: 15000, max: 50000 });
+  if (r.status === 200) { const p = parseEcb(r.text); if (p) { FX = { ...p, etag: r.etag }; try { fs.writeFileSync(fxFile(), JSON.stringify(FX)); } catch {} } }
+  return readFx();
+};
+let _fxTimer = null;
+const fxSchedule = () => {
+  if (_fxTimer) return;
+  _fxTimer = setTimeout(async () => { _fxTimer = null; await fxRefresh(); fxSchedule(); }, readFx().rates ? 3600000 : 30000);
+  if (_fxTimer.unref) _fxTimer.unref();
+};
+
 // ===== Will ai-summary answer? (so the page reserves its spot only when the summary is sure to come) =====
 // Mirrors its slot trigger(): a model is set, it isn't switched off, and "only for questions" (a search ending in
 // "?") if that's on. Read from degoog's plugin-settings.json; only these two yes/no values leave the server.
@@ -743,7 +782,7 @@ export const routes = [
       }
       const sites = sitesFromLists(block, score);
       mirrorTo(sites);
-      return new Response(JSON.stringify({ sites, auto: autoList().filter((d) => sites[d] === "lower"), seo: SEO_ON, ai: aiStatus(data) }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+      return new Response(JSON.stringify({ sites, auto: autoList().filter((d) => sites[d] === "lower"), seo: SEO_ON, ai: aiStatus(data), fx: readFx().rates ? { date: FX.date, rates: FX.rates } : null }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
     },
   },
   {
@@ -842,7 +881,7 @@ export default {
     if (ctx && ctx.dir) DIR = ctx.dir;
     if (ctx && typeof ctx.signProxyUrl === "function") _sign = ctx.signProxyUrl;
     if (ctx && typeof ctx.fetch === "function") _fetch = ctx.fetch;
-    if (!process.env.CT_NO_TIMERS) aiSchedule();
+    if (!process.env.CT_NO_TIMERS) { aiSchedule(); fxSchedule(); }
   },
 
   // Bridge: the page reaches the routes above through degoog's command address (/api/command),

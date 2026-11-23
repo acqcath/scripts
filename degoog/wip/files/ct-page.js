@@ -732,15 +732,39 @@ const pattern = (q) => {
   return null;
 };
 
+// ----- Currency, from the ECB's daily reference rates (the server fetches them once after each publication and the
+// page keeps a copy, so the answer is local and instant). fx = { date: "2026-11-20", rates: { USD: 1.08, ... } } per EUR.
+const CUR = { usd: "USD", "us dollar": "USD", "us dollars": "USD", dollar: "USD", dollars: "USD", "$": "USD", eur: "EUR", euro: "EUR", euros: "EUR", "€": "EUR",
+  gbp: "GBP", pound: "GBP", pounds: "GBP", "british pound": "GBP", "british pounds": "GBP", "£": "GBP", jpy: "JPY", yen: "JPY", "¥": "JPY", cny: "CNY", yuan: "CNY", rmb: "CNY",
+  cad: "CAD", "canadian dollar": "CAD", "canadian dollars": "CAD", aud: "AUD", "australian dollar": "AUD", "australian dollars": "AUD", chf: "CHF", "swiss franc": "CHF", "swiss francs": "CHF",
+  inr: "INR", rupee: "INR", rupees: "INR", "₹": "INR", krw: "KRW", won: "KRW", mxn: "MXN", peso: "MXN", pesos: "MXN", "mexican peso": "MXN", "mexican pesos": "MXN", sek: "SEK", nok: "NOK", dkk: "DKK",
+  pln: "PLN", zloty: "PLN", czk: "CZK", huf: "HUF", ron: "RON", bgn: "BGN", isk: "ISK", try: "TRY", lira: "TRY", brl: "BRL", real: "BRL", reais: "BRL", zar: "ZAR", rand: "ZAR", nzd: "NZD",
+  sgd: "SGD", hkd: "HKD", thb: "THB", baht: "THB", idr: "IDR", rupiah: "IDR", myr: "MYR", ringgit: "MYR", php: "PHP", ils: "ILS", shekel: "ILS", shekels: "ILS" };
+const SYM = { USD: "$", EUR: "€", GBP: "£", JPY: "¥", INR: "₹" };
+const CUR_NAMES = Object.keys(CUR).sort((a, b) => b.length - a.length).map((n) => n.replace(/[$€£¥₹]/g, "\\$&")).join("|");
+const CUR_RE = new RegExp(`^(?:convert\\s+)?(${CUR_NAMES})?\\s*(${NUM})\\s*(${CUR_NAMES})?\\s+(?:to|in|into|=)\\s+(${CUR_NAMES})\\s*\\??$`, "i");
+const money = (v, c) => { const d = c === "JPY" || c === "KRW" || c === "ISK" || c === "HUF" || c === "IDR" ? 0 : 2; const t = v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }); return SYM[c] ? `${SYM[c]}${t}` : `${t} ${c}`; };
+const currency = (q, fx) => {
+  if (!fx || !fx.rates) return null;
+  const m = CUR_RE.exec(String(q).trim().toLowerCase().replace(/\s+/g, " "));
+  if (!m || !(m[1] || m[3])) return null;
+  const a = CUR[m[3] || m[1]], b = CUR[m[4]], v = num(m[2]);
+  const per = (c) => (c === "EUR" ? 1 : fx.rates[c]);
+  if (!a || !b || a === b || !per(a) || !per(b)) return null;
+  const r = (v / per(a)) * per(b), one = per(b) / per(a);
+  const day = fx.date ? new Date(`${fx.date}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }) : "";
+  return { kind: "currency", label: `Currency · ECB rate${day ? ` of ${day}` : ""}`, value: money(r, b), detail: `${money(v, a)} · 1 ${a} = ${one.toLocaleString("en-US", { maximumSignificantDigits: 5 })} ${b}`, copy: plain(Number(r.toFixed(b === "JPY" || b === "KRW" ? 0 : 2))) };
+};
+
 // ----- The one local answer for a search, or null. CMU course numbers are left to the CMU card (network). -----
-const answer = (q, now = Date.now()) => {
+const answer = (q, now = Date.now(), data = {}) => {
   const s = String(q || "").trim();
   if (!s || s.length > 200 || s.startsWith("!")) return null;
   if (/^\d{2}-\d{3}\b/.test(s)) return null;
-  return pattern(s) || convert(s) || percent(s) || dateMath(s, now) || calc(s);
+  return pattern(s) || convert(s) || currency(s, data.fx) || percent(s) || dateMath(s, now) || calc(s);
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, dateLabel, relDate, upsValid, isbnValid, cmuCourse, fmtNum, calc, convert, percent, dateMath, pattern, answer };
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, dateLabel, relDate, upsValid, isbnValid, cmuCourse, fmtNum, calc, convert, percent, dateMath, pattern, currency, answer };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -895,13 +919,15 @@ try { const c = JSON.parse(localStorage.getItem(SITES_KEY) || "null"); if (c && 
 const saveSites = () => { try { localStorage.setItem(SITES_KEY, JSON.stringify(SITES)); } catch {} };
 // Sites lowered by the anti-SEO checks ("auto" in the menu), and whether those checks are on (Settings)
 // Also: will ai-summary answer (a model set, not off, "only for questions"?), so its spot is kept only when it will come
-let SITES_AUTO = [], SEO_ON = false, AI_ON = { on: false };
-try { const c = JSON.parse(localStorage.getItem("ct-sites-auto") || "null"); if (c && Array.isArray(c.auto)) { SITES_AUTO = c.auto; SEO_ON = !!c.seo; if (c.ai) AI_ON = c.ai; } } catch {}
+// and the ECB currency rates for the answer card (fx)
+let SITES_AUTO = [], SEO_ON = false, AI_ON = { on: false }, FX = null;
+try { const c = JSON.parse(localStorage.getItem("ct-sites-auto") || "null"); if (c && Array.isArray(c.auto)) { SITES_AUTO = c.auto; SEO_ON = !!c.seo; if (c.ai) AI_ON = c.ai; if (c.fx && c.fx.rates) FX = c.fx; } } catch {}
 const takeSites = (j) => {
   if (!j || !j.sites || typeof j.sites !== "object") return;
   SITES = j.sites; saveSites();
   SITES_AUTO = Array.isArray(j.auto) ? j.auto : []; SEO_ON = !!j.seo; AI_ON = j.ai && typeof j.ai === "object" ? j.ai : { on: false };
-  try { localStorage.setItem("ct-sites-auto", JSON.stringify({ auto: SITES_AUTO, seo: SEO_ON, ai: AI_ON })); } catch {}
+  if (j.fx && j.fx.rates) FX = j.fx;
+  try { localStorage.setItem("ct-sites-auto", JSON.stringify({ auto: SITES_AUTO, seo: SEO_ON, ai: AI_ON, fx: FX })); } catch {}
 };
 bridge("sites", {}).then(takeSites).catch(() => {});
 // Only whole-site entries count here (a line for one subdomain is left to degoog's own filter)
@@ -1969,7 +1995,7 @@ const ansPass = () => {
     ansFor = key;
     let q = "", page = 1;
     try { const u = new URL(key); q = (u.searchParams.get("q") || "").trim(); page = Number(u.searchParams.get("page") || 1); } catch {}
-    ansVal = webTab && page <= 1 ? CT.answer(q) : null;
+    ansVal = webTab && page <= 1 ? CT.answer(q, Date.now(), { fx: FX }) : null;
     aiVal = webTab && page <= 1 && !ansVal && aiWanted(q);
     g.querySelectorAll(".ct-ans, .ct-ai").forEach((x) => x.remove());
   }

@@ -376,10 +376,34 @@ export const pattern = (q) => {
   return null;
 };
 
+// ----- Currency, from the ECB's daily reference rates (the server fetches them once after each publication and the
+// page keeps a copy, so the answer is local and instant). fx = { date: "2026-11-20", rates: { USD: 1.08, ... } } per EUR.
+const CUR = { usd: "USD", "us dollar": "USD", "us dollars": "USD", dollar: "USD", dollars: "USD", "$": "USD", eur: "EUR", euro: "EUR", euros: "EUR", "€": "EUR",
+  gbp: "GBP", pound: "GBP", pounds: "GBP", "british pound": "GBP", "british pounds": "GBP", "£": "GBP", jpy: "JPY", yen: "JPY", "¥": "JPY", cny: "CNY", yuan: "CNY", rmb: "CNY",
+  cad: "CAD", "canadian dollar": "CAD", "canadian dollars": "CAD", aud: "AUD", "australian dollar": "AUD", "australian dollars": "AUD", chf: "CHF", "swiss franc": "CHF", "swiss francs": "CHF",
+  inr: "INR", rupee: "INR", rupees: "INR", "₹": "INR", krw: "KRW", won: "KRW", mxn: "MXN", peso: "MXN", pesos: "MXN", "mexican peso": "MXN", "mexican pesos": "MXN", sek: "SEK", nok: "NOK", dkk: "DKK",
+  pln: "PLN", zloty: "PLN", czk: "CZK", huf: "HUF", ron: "RON", bgn: "BGN", isk: "ISK", try: "TRY", lira: "TRY", brl: "BRL", real: "BRL", reais: "BRL", zar: "ZAR", rand: "ZAR", nzd: "NZD",
+  sgd: "SGD", hkd: "HKD", thb: "THB", baht: "THB", idr: "IDR", rupiah: "IDR", myr: "MYR", ringgit: "MYR", php: "PHP", ils: "ILS", shekel: "ILS", shekels: "ILS" };
+const SYM = { USD: "$", EUR: "€", GBP: "£", JPY: "¥", INR: "₹" };
+const CUR_NAMES = Object.keys(CUR).sort((a, b) => b.length - a.length).map((n) => n.replace(/[$€£¥₹]/g, "\\$&")).join("|");
+const CUR_RE = new RegExp(`^(?:convert\\s+)?(${CUR_NAMES})?\\s*(${NUM})\\s*(${CUR_NAMES})?\\s+(?:to|in|into|=)\\s+(${CUR_NAMES})\\s*\\??$`, "i");
+const money = (v, c) => { const d = c === "JPY" || c === "KRW" || c === "ISK" || c === "HUF" || c === "IDR" ? 0 : 2; const t = v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }); return SYM[c] ? `${SYM[c]}${t}` : `${t} ${c}`; };
+export const currency = (q, fx) => {
+  if (!fx || !fx.rates) return null;
+  const m = CUR_RE.exec(String(q).trim().toLowerCase().replace(/\s+/g, " "));
+  if (!m || !(m[1] || m[3])) return null;
+  const a = CUR[m[3] || m[1]], b = CUR[m[4]], v = num(m[2]);
+  const per = (c) => (c === "EUR" ? 1 : fx.rates[c]);
+  if (!a || !b || a === b || !per(a) || !per(b)) return null;
+  const r = (v / per(a)) * per(b), one = per(b) / per(a);
+  const day = fx.date ? new Date(`${fx.date}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }) : "";
+  return { kind: "currency", label: `Currency · ECB rate${day ? ` of ${day}` : ""}`, value: money(r, b), detail: `${money(v, a)} · 1 ${a} = ${one.toLocaleString("en-US", { maximumSignificantDigits: 5 })} ${b}`, copy: plain(Number(r.toFixed(b === "JPY" || b === "KRW" ? 0 : 2))) };
+};
+
 // ----- The one local answer for a search, or null. CMU course numbers are left to the CMU card (network). -----
-export const answer = (q, now = Date.now()) => {
+export const answer = (q, now = Date.now(), data = {}) => {
   const s = String(q || "").trim();
   if (!s || s.length > 200 || s.startsWith("!")) return null;
   if (/^\d{2}-\d{3}\b/.test(s)) return null;
-  return pattern(s) || convert(s) || percent(s) || dateMath(s, now) || calc(s);
+  return pattern(s) || convert(s) || currency(s, data.fx) || percent(s) || dateMath(s, now) || calc(s);
 };
