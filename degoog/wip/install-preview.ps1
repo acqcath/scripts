@@ -2177,6 +2177,43 @@ const sportsAnswer = (g, now = Date.now()) => {
   return { kind: "sports", label: g.league || "", live: g.state === "in", status, teams: [g.away, g.home], showScore: g.state !== "pre", detail: [when, rec].filter(Boolean).join(" · "), copy: g.state === "pre" ? "" : `${g.away.abbr} ${g.away.score} – ${g.home.score} ${g.home.abbr}` };
 };
 
+// ----- Knowledge panel (spec 3): which searches ask for one, and whether the results back it up -----
+// Short name-like searches only: no question, task, shopping or command words (those want results or an answer)
+const KP_NOT = /^(?:how|what|whats|why|when|where|who|whos|which|is|are|was|do|does|did|can|could|should|will|define|weather|time|best|top|cheap|buy|download|install|watch|play|login|log|sign|free|near|latest|new)\b|\b(?:vs|versus|or|near me|review|reviews|price|prices|deal|deals|stock|tutorial|login|error|errors|support|setup|fix|not working|lyrics|meaning|tickets|hours|menu|coupon|codes?|app|apk|wallpaper|jobs|careers|salary|today|tonight|score|schedule|news|recipe|pdf|reddit)\b/i;
+const kpQuery = (q) => {
+  const s = String(q || "").trim().replace(/\s+/g, " ");
+  if (s.length < 2 || s.length > 60 || s.split(" ").length > 5) return null;
+  if (!/^[\p{L}\d][\p{L}\d .'&-]*$/u.test(s) || /^[\d .-]+$/.test(s) || KP_NOT.test(s)) return null;
+  // Code-like words (useEffect, 1Z999…) aren't names of things
+  if (/\p{Ll}\p{Lu}/u.test(s) || /\d\p{L}|\p{L}\d/u.test(s)) return null;
+  return s;
+};
+// Titles compared without case, underscores/hyphens or a "(qualifier)"
+const kpNorm = (t) => String(t || "").toLowerCase().replace(/[_-]+/g, " ").replace(/[()]/g, " ").replace(/\s+/g, " ").trim();
+// The panel shows only when a result is that same article: Wikipedia itself (that result is then hidden: the panel
+// replaces it), or the same article on Wikiwand (a Wikipedia mirror) or Britannica (on the user's engines no
+// Wikipedia result came back in 50 recorded searches; Britannica's article is the same evidence that this meaning
+// is the one the results are about). Returns {ok, wiki: [indices of Wikipedia results]}.
+const kpMatch = (title, urls) => {
+  const t = kpNorm(title), wiki = [];
+  let ok = false;
+  if (!t) return { ok, wiki };
+  (urls || []).forEach((h, i) => {
+    let u;
+    try { u = new URL(h); } catch { return; }
+    let path;
+    try { path = decodeURIComponent(u.pathname); } catch { path = u.pathname; }
+    const host = u.hostname.replace(/^www\./, "");
+    let m;
+    if (/^en\.(?:m\.)?wikipedia\.org$/.test(host) && (m = /^\/wiki\/([^/]+)$/.exec(path)) && kpNorm(m[1]) === t) { ok = true; wiki.push(i); }
+    else if (host === "wikiwand.com" && (m = /^\/en\/(?:articles\/)?([^/]+)$/.exec(path)) && kpNorm(m[1]) === t) ok = true;
+    else if (host === "britannica.com" && (m = /^\/(?:topic|biography|place|science|art|technology|event|animal|plant|money|sports|summary)\/([^/]+)/.exec(path)) && kpNorm(m[1]) === t) ok = true;
+  });
+  return { ok, wiki };
+};
+// Phone line: up to 3 facts, short ("Born Dec 13, 1989 · Height 330 m (1,083 ft)"); the page drops what doesn't fit
+const kpLine = (facts) => (facts || []).slice(0, 4).map((f) => `${f.k} ${f.v}`);
+
 // ----- The one local answer for a search, or null. CMU course numbers are left to the CMU card (network). -----
 const answer = (q, now = Date.now(), data = {}) => {
   const s = String(q || "").trim();
@@ -2185,7 +2222,7 @@ const answer = (q, now = Date.now(), data = {}) => {
   return pattern(s) || convert(s) || currency(s, data.fx) || percent(s) || dateMath(s, now) || calc(s);
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, dateLabel, relDate, upsValid, isbnValid, cmuCourse, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, answer };
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, dateLabel, relDate, upsValid, isbnValid, cmuCourse, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, answer };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -2659,7 +2696,7 @@ const early = new Map();
 const ask = (route, key, params) => {
   const e = { key, data: undefined };
   early.set(route, e);
-  bridge(route, params).then((j) => { e.data = j || null; }, () => { e.data = null; });
+  bridge(route, params).then((j) => { e.data = j || null; if (route === "kp") safe("kp", kpPass); }, () => { e.data = null; });
 };
 const ready = (route, key) => { const e = early.get(route); return e && e.key === key ? e.data : undefined; };
 let earlyFor = "";
@@ -2687,6 +2724,8 @@ const earlyStart = () => {
     if (cq && cq.level) ask("cmu", key, { id: cq.id });
     // A team's game (ESPN): short searches made of words only go to this server, which knows the team names
     if (!eq && !wq && !cq && /^[a-z][a-z .'&-]*$/i.test(q) && q.split(/\s+/).length <= 6 && !CT.answer(q, Date.now(), { fx: FX })) ask("sports", key, { q });
+    // Knowledge panel: only the name is sent (this server asks Wikidata/Wikipedia); shown only if the results agree
+    if (!eq && !wq && !cq && kpWanted(q)) ask("kp", key, { q: CT.kpQuery(q) });
     // Top stories: the News search starts now, in parallel, only for a search that looked like news last time
     if (SHOW.news && newsy.has(qHash(q))) {
       const e = { key, data: undefined };
@@ -2902,7 +2941,7 @@ document.addEventListener("click", async (e) => {
   if (!list || pref === "normal") return;
   const rows = [...list.querySelectorAll(".result-item")].filter((x) => siteOf(rowHost(x)) === site);
   if (pref === "hide") rows.forEach((x) => { x.style.display = "none"; x.dataset.ctHide = "1"; });
-  else if (pref === "prefer") list.prepend(...rows);
+  else if (pref === "prefer") { const kpEl = list.querySelector(":scope > .ct-kp"); if (kpEl) kpEl.after(...rows); else list.prepend(...rows); }
   else list.append(...rows);
 }, true);
 
@@ -3534,6 +3573,82 @@ const ansCopy = (e) => {
 document.addEventListener("click", ansCopy);
 document.addEventListener("keydown", ansCopy);
 
+// ===== Knowledge panel (spec 3) =====
+// Asked at page load for short name-like searches that get no other answer, no AI and no plain type/site list.
+// Shown only when the results hold the same article (CT.kpMatch); the Wikipedia result itself is then hidden, and
+// degoog's own Wikipedia card is always hidden (CSS): this replaces it, and it arrived late on phones (sidebar on top).
+// Wide screens: a right column top-aligned with the first result, laid out absolutely beside the list, so it moves
+// nothing even when it arrives after the results. Narrower: a compact card (name, type, one line of facts, More ⌄)
+// at the top of the list, drawn only in the pass that draws the results.
+const KP_WIDE = "(min-width: 1180px)";
+const kpWanted = (q) => {
+  if (!webTab || !CT.kpQuery(q) || bangFor(q) || TYPE_WORDS.test(q) || CT.answer(q, Date.now(), { fx: FX }) || aiWanted(q) || AI_WORDS.test(q)) return false;
+  try { if (CT.namedSites(q, PSL()).size) return false; } catch {}
+  return true;
+};
+let kpKey = "";
+const kpCard = (kp, wide) => {
+  const box = mk("aside", `ct-kp${wide ? " ct-kp-wide" : ""}`);
+  box.setAttribute("aria-label", `About ${kp.name}`);
+  const wiki = `https://en.wikipedia.org/wiki/${encodeURIComponent(kp.title.replace(/ /g, "_"))}`;
+  if (wide && kp.photo) {
+    const ph = mk("div", `ct-kp-photo${kp.type === "person" ? " ct-kp-portrait" : ""}`);
+    const im = new Image(); im.alt = ""; im.decoding = "async"; im.referrerPolicy = "no-referrer";
+    im.onload = () => im.classList.add("ct-on"); im.onerror = () => { ph.style.visibility = "hidden"; };
+    im.src = kp.photo; ph.append(im); box.append(ph);
+  }
+  const head = mk("div", "ct-kp-head");
+  const name = mk("a", "ct-kp-name", kp.name); name.href = wiki; name.rel = "noopener";
+  head.append(name);
+  const type = kp.desc ? kp.desc.charAt(0).toUpperCase() + kp.desc.slice(1) : "";
+  if (type) head.append(mk("div", "ct-kp-type", type));
+  box.append(head);
+  const ext = mk("p", "ct-kp-ext", kp.extract || "");
+  const facts = mk("dl", "ct-kp-facts");
+  for (const f of kp.facts || []) { const r = mk("div", "ct-kp-f"); r.append(mk("dt", "", f.k), mk("dd", "", f.v)); facts.append(r); }
+  // Source line; its "Wikipedia" opens the article (the 2-line description is clamped, so the link lives here)
+  const src = mk("div", "ct-kp-src");
+  const wl = mk("a", "ct-kp-wl", "Wikipedia ↗"); wl.href = wiki; wl.rel = "noopener";
+  src.append(wl, " · Wikidata");
+  if (wide) { if (kp.extract) box.append(ext); if (kp.facts && kp.facts.length) box.append(facts); box.append(src); return box; }
+  // Compact: one line of facts that never wraps (fitLine drops whole facts from the end), More ⌄ opens the rest here
+  const line = mk("div", "ct-kp-line ct-fit ct-fit-drop");
+  for (const t of CT.kpLine(kp.facts)) line.append(mk("span", "ct-it", t));
+  if (line.children.length) box.append(line);
+  const more = mk("div", "ct-kp-more");
+  if (kp.extract) more.append(ext);
+  if (kp.facts && kp.facts.length) more.append(facts);
+  more.append(src);
+  more.hidden = true;
+  const b = mk("button", "ct-kp-open", "More ⌄"); b.type = "button"; b.setAttribute("aria-expanded", "false");
+  box.append(more, b);
+  return box;
+};
+document.addEventListener("click", (e) => {
+  const b = e.target.closest && e.target.closest(".ct-kp-open");
+  if (!b) return;
+  const more = b.parentElement.querySelector(".ct-kp-more"), open = more.hidden;
+  more.hidden = !open; b.textContent = open ? "Less ⌃" : "More ⌄"; b.setAttribute("aria-expanded", String(open));
+});
+const kpPass = () => {
+  const key = searchId(location.href), list = document.getElementById("results-list");
+  if (kpKey !== key) { kpKey = key; document.querySelectorAll(".ct-kp").forEach((x) => x.remove()); }
+  if (!list || !webTab || list.querySelector(":scope > .ct-kp")) return;
+  const d = ready("kp", key), kp = d && d.kp;
+  if (!kp || !kp.title || !kp.name) return;
+  const late = drawnFor === key, wide = !!(window.matchMedia && matchMedia(KP_WIDE).matches);
+  if (late && !wide) return; // on top of the list, after the results are on screen: would push them down
+  const rows = [...list.querySelectorAll(".result-item")];
+  if (!rows.length) return;
+  const m = CT.kpMatch(kp.title, rows.map((r) => r.querySelector("a.result-title")?.href || ""));
+  if (!m.ok) return;
+  if (!late) for (const i of m.wiki) rows[i].dataset.ctKp = "1"; // the panel replaces that result (before paint only)
+  const card = kpCard(kp, wide);
+  list.prepend(card);
+  card.querySelectorAll(".ct-fit").forEach(fitLine);
+  if (fitRO) fitRO.observe(card);
+};
+
 const safe = (name, fn) => { try { fn(); } catch (e) { console.error(`clean-titles ${name}:`, e); } };
 const init = () => {
   safe("query", readQuery);
@@ -3545,6 +3660,7 @@ const init = () => {
   safe("scan", () => scan(document.body));
   safe("skeleton", () => skel(document.body));
   safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools);
+  safe("kp", kpPass);
   safe("drawn", markDrawn);
   // Runs right after degoog inserts results and before the screen updates; only looks inside what was added
   new MutationObserver((muts) => {
@@ -3554,6 +3670,7 @@ const init = () => {
     safe("list", listPass);
     for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { safe("scan", () => scan(n)); safe("skeleton", () => skel(n)); safe("usage", () => noUsage(n)); }
     safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("card", glance);
+    safe("kp", kpPass);
     safe("drawn", markDrawn);
     safe("ai", () => { const g = document.getElementById("at-a-glance"); if (g) aiPass(g, searchId(location.href)); });
   }).observe(document.body, { childList: true, subtree: true });
@@ -4233,6 +4350,8 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .ct-sl-i:hover .ct-sl-t { text-decoration: underline; }
 .ct-sl-d { font-size: 13px; line-height: 18px; color: var(--text-snippet); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 @media (hover: none) { .ct-arr { display: none; } }
+/* Narrow windows with a mouse: arrows stay inside the page (no sideways scroll) */
+@media (max-width: 767px) { .ct-prev { left: 0; } .ct-next { right: 0; } }
 @media (max-width: 767px) {
   .ct-gh { font-size: 18px; line-height: 23px; }
   .ct-ft { font-size: 16px; line-height: 22px; }
@@ -4326,6 +4445,40 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 @media (prefers-reduced-motion: no-preference) { .ct-live-dot { animation: ctLive 1.6s ease-in-out infinite; } .ct-sp-logo img { transition: opacity .3s; } }
 @media (prefers-reduced-motion: reduce) { .ct-sp-logo img { transition: none; } }
 @keyframes ctLive { 50% { opacity: .35; } }
+
+/* Knowledge panel (spec 3). degoog's own Wikipedia card is replaced by it, always (it also came after the results on
+   phones, where the sidebar sits on top). The Wikipedia result the panel stands for is hidden before paint. */
+#results-sidebar > .sidebar-accordion:has(.wiki-card), #results-sidebar > :has(> .wiki-card) { display: none !important; }
+.result-item[data-ct-kp] { display: none !important; }
+.ct-kp { margin: 8px 0 20px; color: var(--text-primary); }
+.ct-kp-name { display: block; font-size: 20px; line-height: 26px; font-weight: 500; color: var(--text-primary) !important; text-decoration: none; overflow-wrap: anywhere; }
+.ct-kp-name:hover { text-decoration: underline; }
+.ct-kp-type { margin-top: 1px; font-size: 13px; line-height: 18px; color: var(--text-secondary); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.ct-kp-line { margin-top: 4px; font-size: 13px; line-height: 18px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; }
+.ct-kp-ext { margin: 10px 0 0; font-size: 14px; line-height: 20px; color: var(--text-snippet); }
+.ct-kp-wl { color: var(--text-link) !important; text-decoration: none; white-space: nowrap; }
+.ct-kp-wl:hover { text-decoration: underline; }
+.ct-kp-facts { margin: 10px 0 0; padding: 0; font-size: 14px; line-height: 20px; }
+.ct-kp-f { display: flex; gap: 6px; padding: 2px 0; }
+.ct-kp-f dt { flex: none; font-weight: 500; color: var(--text-primary); }
+.ct-kp-f dt::after { content: ":"; }
+.ct-kp-f dd { margin: 0; min-width: 0; color: var(--text-snippet); overflow-wrap: anywhere; }
+.ct-kp-src { margin-top: 10px; font-size: 12px; line-height: 16px; color: var(--text-cite); }
+.ct-kp-open { display: inline-flex; align-items: center; min-height: 44px; margin: 0 0 -10px; padding: 0; border: 0; background: none; font: inherit; font-size: 14px; color: var(--text-link); cursor: pointer; }
+.ct-kp-more .ct-kp-ext { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; }
+/* Wide screens: right column, top-aligned with the first result, out of the list's flow (moves nothing) */
+.ct-kp-photo { width: 100%; aspect-ratio: 16 / 9; margin-bottom: 12px; border-radius: 12px; overflow: hidden; background: var(--bg-light); }
+.ct-kp-photo.ct-kp-portrait { float: right; width: 96px; height: 120px; aspect-ratio: auto; margin: 0 0 8px 12px; }
+.ct-kp-photo img { display: block; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .3s; }
+.ct-kp-photo img.ct-on { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .ct-kp-photo img { transition: none; } }
+.ct-kp-wide .ct-kp-ext { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; clear: none; }
+.ct-kp-wide .ct-kp-facts { clear: both; }
+@media (min-width: 1180px) {
+  #results-list:has(> .ct-kp-wide) { position: relative; }
+  .ct-kp-wide { position: absolute; top: 0; left: calc(100% + 40px); width: 320px; margin: 0; }
+}
+@media (max-width: 1179px) { .ct-kp-wide { display: none; } }
 
 '@)
 [IO.File]::WriteAllText("$t\setcss.js", @'
