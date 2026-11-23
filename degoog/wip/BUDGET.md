@@ -1,9 +1,10 @@
 # Run budget (each run reads this and logs to it; Claude in the main chat recalibrates the caps from the user's real usage)
 
-## Caps (from real data, 2026-11-23 ~05:45 UTC; these override the run prompt)
-- Measured: weekly 37% -> 41% and session 40% -> 65% over ~35 min, during which the first run (~25 min of work) and the main planning chat (large context) both ran. Cost per work-minute isn't separable yet, so assume the worst: ~0.12% weekly per minute.
-- Weekly window resets Wednesday 12:00 PM America/New_York. The user keeps 20%, so runs may use up to 80% - 41% = 39% before then. That's about 250 work-minutes total until the reset; count the logged work minutes.
-- Each run: at most 60 work-minutes. At most 2 working runs per 5-hour session window. The user's sessions reset at 4:00 AM ET, then every 5 h. This leaves the user room in their own sessions.
+## Caps (recalibrated 2026-11-23 05:58 UTC from the user's usage page; these override the run prompt)
+- Measured 05:45 -> 05:58 UTC (13 min; this run worked ~6 of them, the main chat ran too): session 69% -> 79%, weekly 42% -> 44%. That's ~0.77% session and ~0.15% weekly per minute, combined. The weekly figure has +-1% rounding, so plan on the worse end: ~0.18% weekly per work-minute.
+- Weekly window resets Wednesday 12:00 PM America/New_York (17:00 UTC). The user keeps 20%, so runs may use up to 80% - 44% = 36% more. That's ~200 more work-minutes, so the weekly cap is 220 logged work-minutes in total since the last reset (including the ~15 already logged before this recalibration).
+- The session limit (resets 4:00 AM ET, then every 5 h) cuts a run off after ~25-30 min when it starts near 70%. That's fine: commit after every item, and the next fire picks it up.
+- Each run: at most 60 work-minutes. At most 2 working runs per 5-hour session window.
 - After the Wednesday reset, the cap is 400 work-minutes per week until the main chat recalibrates.
 
 ## Rule for each run (the schedule fires hourly; most fires should exit in seconds)
