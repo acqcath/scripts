@@ -407,3 +407,23 @@ test("page: Wikidata fact drawn with the results when in hand (pittsburgh popula
   expect(a.document.querySelector("#at-a-glance .ct-ans .ct-ans-l").textContent).toBe("Pittsburgh · population · Wikidata");
   expect(a.errors).toEqual([]);
 });
+
+test("page: CMU card for '15-213' and '15213' (server says the course exists), none for '15-213 malloc lab'", async () => {
+  const c = { course: { name: "Introduction to Computer Systems", units: "12", prereqs: "15-122" }, fces: [{ year: 2026, semester: "spring", instructor: "RAILING, BRIAN", numRespondents: 100, responseRate: "50%", hrsPerWeek: 14.3, rating: [0, 0, 0, 0, 0, 0, 0, 4.3, 4.0], location: "Pittsburgh" }] };
+  for (const q of ["15-213", "15213"]) {
+    const calls = [];
+    const a = await run(q, { engines: 40, calls, bridge: { cmu: { data: { c }, delay: 5 } } });
+    expect(calls.find((x) => x.route === "cmu").params.get("id")).toBe("15-213");
+    const card = a.document.querySelector("#at-a-glance .ct-ans");
+    expect(card.querySelector("a.ct-ans-title").textContent).toBe("15-213 Introduction to Computer Systems");
+    expect([...card.querySelectorAll(".ct-ans-detail")[0].children].map((x) => x.textContent)).toEqual(["12 units", "14.3 hrs/wk", "4.0 ★★★★★", "prereq 15-122"]);
+    expect(card.querySelector(".ct-stars").style.getPropertyValue("--r")).toBe("4");
+    expect(card.querySelectorAll(".ct-fit")[1].textContent).toContain("Spring 2026");
+    expect(card.querySelectorAll(".ct-fit")[1].querySelector(".ct-it").textContent).toBe("Brian Railing 4.3");
+    expect(a.errors).toEqual([]);
+  }
+  const calls = [];
+  const m = await run("15-213 malloc lab", { engines: 40, calls, bridge: { cmu: { data: { c }, delay: 5 } } });
+  expect(calls.some((x) => x.route === "cmu")).toBe(false);
+  expect(m.document.querySelector(".ct-ans")).toBeNull();
+});

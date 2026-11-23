@@ -102,3 +102,18 @@ test("answers: Wikidata facts (query shapes, metric + imperial, as-of, age, dist
   expect(A.wdAnswer(A.wdQuery("distance between pittsburgh and new york"), { label: "Pittsburgh", v: [{ lat: 40.4397, lon: -79.9764 }], b: { label: "New York City", v: [{ lat: 40.7127, lon: -74.0059 }] } }, now)).toMatchObject({ value: "505 km", detail: "314 mi as the crow flies" });
   expect(A.wdAnswer(A.wdQuery("eiffel tower height"), { label: "Eiffel Tower", v: [{ amount: "+330", unit: "Q99999" }] }, now)).toBe(null); // unknown unit: nothing
 });
+
+test("answers: CMU course numbers by CMU Courses' method (2 recent fall/spring semesters, weighted, Pittsburgh, no 0% rows)", () => {
+  const r = (year, semester, instructor, n, hrs, t, c, extra = {}) => ({ year, semester, instructor, numRespondents: n, responseRate: "50%", hrsPerWeek: hrs, rating: [0, 0, 0, 0, 0, 0, 0, t, c], location: "Pittsburgh, Pennsylvania", ...extra });
+  const rows = [r(2026, "spring", "RAILING, BRIAN", 100, 14, 4.4, 4.1), r(2026, "spring", "GIBBONS, PHILLIP", 80, 15, 4.2, 3.9), r(2026, "spring", "GIBBONS, PHILLIP", 80, 15, 4.2, 3.9), r(2025, "fall", "RAILING, BRIAN", 120, 13, 4.2, 4.0), r(2025, "summer", "X, Y", 10, 30, 1, 1), r(2025, "spring", "OLD, PROF", 100, 20, 2, 2), r(2025, "fall", "QATAR, PROF", 20, 10, 5, 5, { location: "Doha, Qatar" }), r(2025, "fall", "ZERO, RESP", 50, 10, 1, 1, { responseRate: "0%" })];
+  const g = A.cmuAgg(rows);
+  expect(g.n).toBe(300); // duplicate merged; summer, older semester, Qatar and 0% rows left out
+  expect(g.hrs).toBeCloseTo((14 * 100 + 15 * 80 + 13 * 120) / 300, 6);
+  expect(g.sem).toBe("Spring 2026");
+  expect(g.profs.map((p) => [p.full, p.last])).toEqual([["Brian Railing", "Railing"], ["Phillip Gibbons", "Gibbons"]]);
+  const a = A.cmuAnswer({ id: "15-213", level: true, prof: false }, { name: "Introduction to Computer Systems", units: "12", prereqs: "15-122 and (21-127 or 15-151)" }, rows);
+  expect(a).toMatchObject({ title: "15-213 Introduction to Computer Systems", href: "https://cmucourses.com/course/15-213", parts: ["12 units", "13.9 hrs/wk", { stars: 4 }, "prereq 15-122 +2"], sem: "Spring 2026" });
+  expect(a.profs[0]).toEqual({ full: "Brian Railing", last: "Railing", r: "4.3" });
+  expect(A.cmuAnswer({ id: "15-213", level: false }, { name: "x" }, rows)).toBe(null); // "15-213 malloc lab": no card
+  expect(A.cmuAnswer({ id: "15-213", level: true }, { name: "Intro" }, []).parts).toEqual([]); // no evaluations: just the course
+});

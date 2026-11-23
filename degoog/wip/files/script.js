@@ -493,6 +493,9 @@ const earlyStart = () => {
     // Facts (Wikidata): only the fact asked and the subject's name are sent
     const wq = !eq && !CT.answer(q, Date.now(), { fx: FX }) && CT.wdQuery(q);
     if (wq) ask("wd", key, { f: wq.fact, s: wq.s, ...(wq.s2 ? { s2: wq.s2 } : {}) });
+    // CMU course card: "15-213" (and "15213", which the server answers only if that course exists: it's also a ZIP)
+    const cq = cmuQ(q);
+    if (cq && cq.level) ask("cmu", key, { id: cq.id });
     // Top stories: the News search starts now, in parallel, only for a search that looked like news last time
     if (SHOW.news && newsy.has(qHash(q))) {
       const e = { key, data: undefined };
@@ -1151,6 +1154,8 @@ const groups = () => {
 // search: in place before the results, nothing reserved, nothing late. While it's there, every other panel in the
 // area (AI summary, math-slot...) is hidden by CSS (one answer per search; patterns and sums come first).
 let ansFor = null, ansVal = null, aiVal = false;
+// A course number, bare digits allowed here (the server knows whether that course exists)
+const cmuQ = (q) => { const m = /^(\d{2})-?(\d{3})\b/.exec(String(q || "").trim()); return m ? CT.cmuCourse(q, new Set([`${m[1]}-${m[2]}`])) : null; };
 // AI summary only where the wording asks for judgement or explanation (spec: best / vs / why / explain / compare);
 // facts and how-tos get results (a snippet later). A search that names a site or a type gets a plain list, no AI.
 const AI_WORDS = /^(?:why|how (?:does|do|did|is|are|can|come)|explain|what(?:'s| is| are) the (?:difference|best|point)|difference between|should i|is it worth)\b|\b(?:vs\.?|versus|compared? to|comparison|best|pros and cons|worth it|better than|or)\b/i;
@@ -1224,8 +1229,37 @@ const ansCard = (a) => {
     box.append(v);
   }
   if (a.detail) box.append(mk("div", "ct-ans-detail", a.detail));
+  if (a.kind === "cmu") {
+    // Facts line: "12 units · 14.3 hrs/wk · 4.0 ★★★★☆ · prereq 15-122"; people line: "Spring 2026 · Railing 4.3 · +N"
+    const facts = mk("div", "ct-ans-detail ct-fit ct-fit-drop");
+    a.parts.forEach((p) => {
+      if (typeof p === "string") { facts.append(mk("span", "ct-it", p)); return; }
+      const r = mk("span", "ct-it ct-rating", `${p.stars.toFixed(1)} `);
+      const st = mk("span", "ct-stars", "★★★★★");
+      st.style.setProperty("--r", String(p.stars));
+      st.setAttribute("aria-label", `${p.stars.toFixed(1)} out of 5`);
+      r.append(st);
+      facts.append(r);
+    });
+    const people = mk("div", "ct-ans-detail ct-fit");
+    if (a.sem) people.append(mk("span", "", a.sem));
+    for (const p of a.profs) { const it = mk("span", "ct-it"); it.append(mk("span", "ct-fn", `${p.full.slice(0, p.full.length - p.last.length)}`), `${p.last} ${p.r}`); people.append(it); }
+    people.append(mk("span", "ct-plus"));
+    if (a.prof) box.append(people, facts); else box.append(facts, people);
+  }
   return box;
 };
+// One line, items never cut (re-measured when the width changes): people that don't fit fold into "+N"; mixed
+// facts (units, hours, rating, prereq) that don't fit are dropped whole from the end, never a bare "+N"
+const fitLine = (line) => {
+  const its = [...line.querySelectorAll(".ct-it")], more = line.querySelector(".ct-plus");
+  if (!its.length) return;
+  its.forEach((x) => { x.hidden = false; });
+  if (more) more.hidden = true;
+  let hid = 0;
+  while (line.scrollWidth > line.clientWidth + 1 && hid < its.length - 1) { its[its.length - 1 - hid].hidden = true; hid++; if (more) { more.hidden = false; more.textContent = `+${hid}`; } }
+};
+const fitRO = typeof ResizeObserver === "function" ? new ResizeObserver((es) => es.forEach((e) => e.target.querySelectorAll(".ct-fit").forEach(fitLine))) : null;
 const ansPass = () => {
   const g = document.getElementById("at-a-glance");
   if (!g) return;
@@ -1243,14 +1277,18 @@ const ansPass = () => {
   if (!ansVal && !aiVal && drawnFor !== key && document.querySelector("#results-list .result-item")) {
     let q = "";
     try { q = new URL(key).searchParams.get("q") || ""; } catch {}
-    const j = ready("eol", key), w = ready("wd", key);
+    const j = ready("eol", key), w = ready("wd", key), cm = ready("cmu", key);
     if (j && j.cycles) ansVal = CT.eolAnswer(CT.eolQuery(q), j.cycles);
     else if (w && w.d) ansVal = CT.wdAnswer(CT.wdQuery(q), w.d);
+    else if (cm && cm.c) ansVal = CT.cmuAnswer(cmuQ(q), cm.c.course, cm.c.fces);
   }
   aiPass(g, key);
   if (!ansVal || g.querySelector(".ct-ans")) return;
   g.style.display = "";
-  g.prepend(ansCard(ansVal));
+  const card = ansCard(ansVal);
+  g.prepend(card);
+  card.querySelectorAll(".ct-fit").forEach(fitLine);
+  if (fitRO) fitRO.observe(card);
 };
 // Tap (or Enter) on an instant answer copies it; "Copied" shows in its label line for a moment (same line, no shift)
 const ansCopy = (e) => {

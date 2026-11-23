@@ -541,6 +541,58 @@ export const wdAnswer = (w, d, now = Date.now()) => {
   return null;
 };
 
+// ----- CMU course card (CMU Courses' numbers: ScottyLabs course-tool fce.ts aggregateFCEs + user.ts defaults) -----
+// Drop 0% response rate, fall + spring only, Pittsburgh only, exact-duplicate rows merged, the 2 most recent counted
+// semesters, means weighted by respondents. rating[7] = teaching, rating[8] = course (0-based).
+const SEM = { spring: 1, summer: 2, fall: 3 };
+const pct = (x) => { const n = parseFloat(String(x ?? "").replace("%", "")); return Number.isFinite(n) ? n : 0; };
+const prettyName = (n) => { const m = /^\s*([^,]+),\s*(.+)$/.exec(String(n || "")); const t = (x) => x.toLowerCase().replace(/(^|[\s'-])(\p{L})/gu, (a, b, c) => b + c.toUpperCase()); return m ? { full: `${t(m[2])} ${t(m[1])}`, last: t(m[1]) } : { full: t(String(n || "").trim()), last: t(String(n || "").trim().split(" ").pop() || "") }; };
+export const cmuAgg = (rows) => {
+  const seen = new Set();
+  const ok = (Array.isArray(rows) ? rows : []).filter((r) => {
+    if (!r || !Array.isArray(r.rating) || r.rating.length < 9) return false;
+    const sem = String(r.semester || "").toLowerCase();
+    if (sem !== "fall" && sem !== "spring") return false;
+    if (pct(r.responseRate) <= 0 || !(Number(r.numRespondents) > 0)) return false;
+    if (r.location && !/pittsburgh/i.test(String(r.location))) return false;
+    const k = JSON.stringify(r);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  const key = (r) => Number(r.year) * 10 + SEM[String(r.semester).toLowerCase()];
+  const sems = [...new Set(ok.map(key))].sort((a, b) => b - a).slice(0, 2);
+  const use = ok.filter((r) => sems.includes(key(r)));
+  if (!use.length) return null;
+  const wmean = (rs, f) => { let a = 0, n = 0; for (const r of rs) { const v = Number(f(r)), w = Number(r.numRespondents); if (Number.isFinite(v) && w > 0) { a += v * w; n += w; } } return n ? a / n : null; };
+  const latest = use.filter((r) => key(r) === sems[0]);
+  const profs = [];
+  for (const r of latest) for (const raw of String(r.instructor || "").split(/;|\band\b/)) {
+    const nm = raw.trim();
+    if (!nm || profs.some((p) => p.raw === nm)) continue;
+    const mine = use.filter((x) => String(x.instructor || "").includes(nm));
+    profs.push({ raw: nm, ...prettyName(nm), rating: wmean(mine, (x) => x.rating[7]) });
+  }
+  profs.sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
+  const s0 = latest[0];
+  return { hrs: wmean(use, (r) => r.hrsPerWeek), teach: wmean(use, (r) => r.rating[7]), course: wmean(use, (r) => r.rating[8]), n: use.reduce((a, r) => a + Number(r.numRespondents), 0), sem: `${String(s0.semester).replace(/^./, (c) => c.toUpperCase())} ${s0.year}`, profs };
+};
+const one = (x) => (x == null ? "" : (Math.round(x * 10) / 10).toFixed(1));
+// c: cmuCourse(q) result; course: {courseID, name, units, prereqs}; fces: rows
+export const cmuAnswer = (c, course, fces) => {
+  if (!c || !c.level || !course || !course.name) return null;
+  const agg = cmuAgg(fces);
+  const ids = String(course.prereqs || "").match(/\b\d{2}-?\d{3}\b/g) || [];
+  const pre = [...new Set(ids.map((x) => (x.includes("-") ? x : `${x.slice(0, 2)}-${x.slice(2)}`)))];
+  const parts = [];
+  if (course.units != null && String(course.units).trim()) parts.push(`${String(course.units).trim()} units`);
+  if (agg && agg.hrs != null) parts.push(`${one(agg.hrs)} hrs/wk`);
+  if (agg && agg.course != null) parts.push({ stars: Math.round(agg.course * 10) / 10 });
+  if (pre.length) parts.push(`prereq ${pre[0]}${pre.length > 1 ? ` +${pre.length - 1}` : ""}`);
+  const profs = agg ? agg.profs.map((p) => ({ full: p.full, last: p.last, r: one(p.rating) })) : [];
+  return { kind: "cmu", label: "CMU Courses", title: `${c.id} ${course.name}`, href: `https://cmucourses.com/course/${c.id}`, parts, sem: agg ? agg.sem : "", profs, prof: !!c.prof, copy: "" };
+};
+
 // ----- The one local answer for a search, or null. CMU course numbers are left to the CMU card (network). -----
 export const answer = (q, now = Date.now(), data = {}) => {
   const s = String(q || "").trim();

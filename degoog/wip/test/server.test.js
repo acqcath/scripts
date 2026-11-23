@@ -250,3 +250,27 @@ test("server: Wikidata lookup sends only the subject, picks the current preferre
   expect(urls.length).toBe(2);
   expect(await srv.wdFor("shoe size", "pittsburgh")).toBe(null);
 });
+
+test("server: CMU course data cached in the plugin folder until the next semester; missing course -> null", async () => {
+  const srv = await import("../files/index.js");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ct-cmu-"));
+  const urls = [];
+  srv._setDegoog(null, dir);
+  srv.default.init({ id: "clean-titles", dir, fetch: async (u) => {
+    urls.push(u);
+    if (u.endsWith("/course/15-213")) return new Response(JSON.stringify({ course: { courseID: "15-213", name: "Introduction to Computer Systems", units: 12, prereqString: "15-122" } }));
+    if (u.includes("/fces?courseID=15-213")) return new Response(JSON.stringify([{ year: 2026, semester: "spring", instructor: "RAILING, BRIAN", numRespondents: 100, responseRate: "50%", hrsPerWeek: 14, rating: [0, 0, 0, 0, 0, 0, 0, 4.4, 4.1], location: "Pittsburgh", extra: "x" }]));
+    return new Response("not found", { status: 404 });
+  } });
+  const now = Date.parse("2026-11-23T10:00:00Z");
+  const v = await srv.cmuFor("15-213", now);
+  expect(v.course).toEqual({ name: "Introduction to Computer Systems", units: "12", prereqs: "15-122" });
+  expect(v.fces[0].extra).toBeUndefined();
+  expect(urls.length).toBe(2);
+  expect(fs.existsSync(path.join(dir, "cmu-15-213.json"))).toBe(true);
+  await srv.cmuFor("15-213", now + 30 * 86400000); // same semester: no request
+  expect(urls.length).toBe(2);
+  expect(await srv.cmuFor("15-999", now)).toBe(null); // the ZIP-code case: no such course
+  const r = await (await srv.routes.find((x) => x.path === "/cmu").handler(new Request("http://l/cmu?id=15213"))).json();
+  expect(r.c.course.name).toBe("Introduction to Computer Systems");
+});

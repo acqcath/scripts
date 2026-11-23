@@ -897,6 +897,58 @@ const wdAnswer = (w, d, now = Date.now()) => {
   return null;
 };
 
+// ----- CMU course card (CMU Courses' numbers: ScottyLabs course-tool fce.ts aggregateFCEs + user.ts defaults) -----
+// Drop 0% response rate, fall + spring only, Pittsburgh only, exact-duplicate rows merged, the 2 most recent counted
+// semesters, means weighted by respondents. rating[7] = teaching, rating[8] = course (0-based).
+const SEM = { spring: 1, summer: 2, fall: 3 };
+const pct = (x) => { const n = parseFloat(String(x ?? "").replace("%", "")); return Number.isFinite(n) ? n : 0; };
+const prettyName = (n) => { const m = /^\s*([^,]+),\s*(.+)$/.exec(String(n || "")); const t = (x) => x.toLowerCase().replace(/(^|[\s'-])(\p{L})/gu, (a, b, c) => b + c.toUpperCase()); return m ? { full: `${t(m[2])} ${t(m[1])}`, last: t(m[1]) } : { full: t(String(n || "").trim()), last: t(String(n || "").trim().split(" ").pop() || "") }; };
+const cmuAgg = (rows) => {
+  const seen = new Set();
+  const ok = (Array.isArray(rows) ? rows : []).filter((r) => {
+    if (!r || !Array.isArray(r.rating) || r.rating.length < 9) return false;
+    const sem = String(r.semester || "").toLowerCase();
+    if (sem !== "fall" && sem !== "spring") return false;
+    if (pct(r.responseRate) <= 0 || !(Number(r.numRespondents) > 0)) return false;
+    if (r.location && !/pittsburgh/i.test(String(r.location))) return false;
+    const k = JSON.stringify(r);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  const key = (r) => Number(r.year) * 10 + SEM[String(r.semester).toLowerCase()];
+  const sems = [...new Set(ok.map(key))].sort((a, b) => b - a).slice(0, 2);
+  const use = ok.filter((r) => sems.includes(key(r)));
+  if (!use.length) return null;
+  const wmean = (rs, f) => { let a = 0, n = 0; for (const r of rs) { const v = Number(f(r)), w = Number(r.numRespondents); if (Number.isFinite(v) && w > 0) { a += v * w; n += w; } } return n ? a / n : null; };
+  const latest = use.filter((r) => key(r) === sems[0]);
+  const profs = [];
+  for (const r of latest) for (const raw of String(r.instructor || "").split(/;|\band\b/)) {
+    const nm = raw.trim();
+    if (!nm || profs.some((p) => p.raw === nm)) continue;
+    const mine = use.filter((x) => String(x.instructor || "").includes(nm));
+    profs.push({ raw: nm, ...prettyName(nm), rating: wmean(mine, (x) => x.rating[7]) });
+  }
+  profs.sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
+  const s0 = latest[0];
+  return { hrs: wmean(use, (r) => r.hrsPerWeek), teach: wmean(use, (r) => r.rating[7]), course: wmean(use, (r) => r.rating[8]), n: use.reduce((a, r) => a + Number(r.numRespondents), 0), sem: `${String(s0.semester).replace(/^./, (c) => c.toUpperCase())} ${s0.year}`, profs };
+};
+const one = (x) => (x == null ? "" : (Math.round(x * 10) / 10).toFixed(1));
+// c: cmuCourse(q) result; course: {courseID, name, units, prereqs}; fces: rows
+const cmuAnswer = (c, course, fces) => {
+  if (!c || !c.level || !course || !course.name) return null;
+  const agg = cmuAgg(fces);
+  const ids = String(course.prereqs || "").match(/\b\d{2}-?\d{3}\b/g) || [];
+  const pre = [...new Set(ids.map((x) => (x.includes("-") ? x : `${x.slice(0, 2)}-${x.slice(2)}`)))];
+  const parts = [];
+  if (course.units != null && String(course.units).trim()) parts.push(`${String(course.units).trim()} units`);
+  if (agg && agg.hrs != null) parts.push(`${one(agg.hrs)} hrs/wk`);
+  if (agg && agg.course != null) parts.push({ stars: Math.round(agg.course * 10) / 10 });
+  if (pre.length) parts.push(`prereq ${pre[0]}${pre.length > 1 ? ` +${pre.length - 1}` : ""}`);
+  const profs = agg ? agg.profs.map((p) => ({ full: p.full, last: p.last, r: one(p.rating) })) : [];
+  return { kind: "cmu", label: "CMU Courses", title: `${c.id} ${course.name}`, href: `https://cmucourses.com/course/${c.id}`, parts, sem: agg ? agg.sem : "", profs, prof: !!c.prof, copy: "" };
+};
+
 // ----- The one local answer for a search, or null. CMU course numbers are left to the CMU card (network). -----
 const answer = (q, now = Date.now(), data = {}) => {
   const s = String(q || "").trim();
@@ -905,7 +957,7 @@ const answer = (q, now = Date.now(), data = {}) => {
   return pattern(s) || convert(s) || currency(s, data.fx) || percent(s) || dateMath(s, now) || calc(s);
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, dateLabel, relDate, upsValid, isbnValid, cmuCourse, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, answer };
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, dateLabel, relDate, upsValid, isbnValid, cmuCourse, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, answer };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -1402,6 +1454,9 @@ const earlyStart = () => {
     // Facts (Wikidata): only the fact asked and the subject's name are sent
     const wq = !eq && !CT.answer(q, Date.now(), { fx: FX }) && CT.wdQuery(q);
     if (wq) ask("wd", key, { f: wq.fact, s: wq.s, ...(wq.s2 ? { s2: wq.s2 } : {}) });
+    // CMU course card: "15-213" (and "15213", which the server answers only if that course exists: it's also a ZIP)
+    const cq = cmuQ(q);
+    if (cq && cq.level) ask("cmu", key, { id: cq.id });
     // Top stories: the News search starts now, in parallel, only for a search that looked like news last time
     if (SHOW.news && newsy.has(qHash(q))) {
       const e = { key, data: undefined };
@@ -2060,6 +2115,8 @@ const groups = () => {
 // search: in place before the results, nothing reserved, nothing late. While it's there, every other panel in the
 // area (AI summary, math-slot...) is hidden by CSS (one answer per search; patterns and sums come first).
 let ansFor = null, ansVal = null, aiVal = false;
+// A course number, bare digits allowed here (the server knows whether that course exists)
+const cmuQ = (q) => { const m = /^(\d{2})-?(\d{3})\b/.exec(String(q || "").trim()); return m ? CT.cmuCourse(q, new Set([`${m[1]}-${m[2]}`])) : null; };
 // AI summary only where the wording asks for judgement or explanation (spec: best / vs / why / explain / compare);
 // facts and how-tos get results (a snippet later). A search that names a site or a type gets a plain list, no AI.
 const AI_WORDS = /^(?:why|how (?:does|do|did|is|are|can|come)|explain|what(?:'s| is| are) the (?:difference|best|point)|difference between|should i|is it worth)\b|\b(?:vs\.?|versus|compared? to|comparison|best|pros and cons|worth it|better than|or)\b/i;
@@ -2133,8 +2190,37 @@ const ansCard = (a) => {
     box.append(v);
   }
   if (a.detail) box.append(mk("div", "ct-ans-detail", a.detail));
+  if (a.kind === "cmu") {
+    // Facts line: "12 units · 14.3 hrs/wk · 4.0 ★★★★☆ · prereq 15-122"; people line: "Spring 2026 · Railing 4.3 · +N"
+    const facts = mk("div", "ct-ans-detail ct-fit ct-fit-drop");
+    a.parts.forEach((p) => {
+      if (typeof p === "string") { facts.append(mk("span", "ct-it", p)); return; }
+      const r = mk("span", "ct-it ct-rating", `${p.stars.toFixed(1)} `);
+      const st = mk("span", "ct-stars", "★★★★★");
+      st.style.setProperty("--r", String(p.stars));
+      st.setAttribute("aria-label", `${p.stars.toFixed(1)} out of 5`);
+      r.append(st);
+      facts.append(r);
+    });
+    const people = mk("div", "ct-ans-detail ct-fit");
+    if (a.sem) people.append(mk("span", "", a.sem));
+    for (const p of a.profs) { const it = mk("span", "ct-it"); it.append(mk("span", "ct-fn", `${p.full.slice(0, p.full.length - p.last.length)}`), `${p.last} ${p.r}`); people.append(it); }
+    people.append(mk("span", "ct-plus"));
+    if (a.prof) box.append(people, facts); else box.append(facts, people);
+  }
   return box;
 };
+// One line, items never cut (re-measured when the width changes): people that don't fit fold into "+N"; mixed
+// facts (units, hours, rating, prereq) that don't fit are dropped whole from the end, never a bare "+N"
+const fitLine = (line) => {
+  const its = [...line.querySelectorAll(".ct-it")], more = line.querySelector(".ct-plus");
+  if (!its.length) return;
+  its.forEach((x) => { x.hidden = false; });
+  if (more) more.hidden = true;
+  let hid = 0;
+  while (line.scrollWidth > line.clientWidth + 1 && hid < its.length - 1) { its[its.length - 1 - hid].hidden = true; hid++; if (more) { more.hidden = false; more.textContent = `+${hid}`; } }
+};
+const fitRO = typeof ResizeObserver === "function" ? new ResizeObserver((es) => es.forEach((e) => e.target.querySelectorAll(".ct-fit").forEach(fitLine))) : null;
 const ansPass = () => {
   const g = document.getElementById("at-a-glance");
   if (!g) return;
@@ -2152,14 +2238,18 @@ const ansPass = () => {
   if (!ansVal && !aiVal && drawnFor !== key && document.querySelector("#results-list .result-item")) {
     let q = "";
     try { q = new URL(key).searchParams.get("q") || ""; } catch {}
-    const j = ready("eol", key), w = ready("wd", key);
+    const j = ready("eol", key), w = ready("wd", key), cm = ready("cmu", key);
     if (j && j.cycles) ansVal = CT.eolAnswer(CT.eolQuery(q), j.cycles);
     else if (w && w.d) ansVal = CT.wdAnswer(CT.wdQuery(q), w.d);
+    else if (cm && cm.c) ansVal = CT.cmuAnswer(cmuQ(q), cm.c.course, cm.c.fces);
   }
   aiPass(g, key);
   if (!ansVal || g.querySelector(".ct-ans")) return;
   g.style.display = "";
-  g.prepend(ansCard(ansVal));
+  const card = ansCard(ansVal);
+  g.prepend(card);
+  card.querySelectorAll(".ct-fit").forEach(fitLine);
+  if (fitRO) fitRO.observe(card);
 };
 // Tap (or Enter) on an instant answer copies it; "Copied" shows in its label line for a moment (same line, no shift)
 const ansCopy = (e) => {

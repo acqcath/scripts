@@ -655,3 +655,10 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 #at-a-glance.ct-ai-opened > .ct-ai-panel .glance-ai-head, #at-a-glance.ct-ai-opened > .ct-ai-panel .glance-ai-chat:not([hidden]), #at-a-glance.ct-ai-opened > .ct-ai-panel .glance-ai-collapse:not([hidden]) { display: revert !important; }
 @media (prefers-reduced-motion: no-preference) { .ct-ai-line { animation: ctPulse 1.4s ease-in-out infinite; } }
 @keyframes ctPulse { 50% { opacity: .5; } }
+
+/* CMU card details: amber stars filled to the exact rating; people line folds into "+N"; phones show last names */
+.ct-rating { white-space: nowrap; }
+.ct-stars { --r: 0; letter-spacing: 1px; background: linear-gradient(90deg, #f5b301 calc(var(--r) / 5 * 100%), var(--bg-light) 0); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.ct-fit > * + *::before { content: " · "; }
+.ct-fit > [hidden] { display: none; }
+@media (max-width: 767px) { .ct-fn { display: none; } }

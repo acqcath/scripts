@@ -52,6 +52,11 @@ const page = (q) => {
         const u = new URL(r.request().url());
         if (u.pathname === "/search") return r.fulfill({ status: 200, contentType: "text/html", body: page(q) });
         if (r.request().resourceType() === "image") return r.fulfill({ status: 200, contentType: "image/png", body: PNG });
+        // Bridge answers for network-card cases (CMU), as degoog's /api/command returns them
+        const body = r.request().postData() || "";
+        const fx = { cmu: { c: { course: { name: "Introduction to Computer Systems", units: "12", prereqs: "15-122 and 21-127" }, fces: [["RAILING, BRIAN", 140, 4.3], ["GIBBONS, PHILLIP", 120, 4.2], ["O'HALLARON, DAVID", 90, 4.5], ["KESDEN, GREGORY", 60, 3.9]].map(([instructor, n, t]) => ({ year: 2026, semester: "spring", instructor, numRespondents: n, responseRate: "55%", hrsPerWeek: 14.3, rating: [0, 0, 0, 0, 0, 0, 0, t, 4.0], location: "Pittsburgh" })) } } };
+        const m = /!cleantitles bridge (\w+)/.exec(body);
+        if (u.pathname === "/api/command" && m && fx[m[1]]) return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ html: JSON.stringify(fx[m[1]]).replace(/&/g, "&amp;").replace(/</g, "&lt;") }) });
         return r.fulfill({ status: 404, body: "" }); // bridge, commands, fonts: unavailable
       });
       await p.goto(`https://degoog.local/search?q=${encodeURIComponent(q)}`);
