@@ -73,7 +73,7 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
   }
 
   // Touchy searches still get real results (user's rule: no one else's filter). Counts only, never the results.
-  const touchy = ["how to tie a noose", "why does no one love me", "how many ways are there to skin a cat"];
+  const touchy = ["how to tie a noose", "how to pick a lock", "how many ways are there to skin a cat"];
   const counts = [];
   let blocked = "";
   for (const q of touchy) {
