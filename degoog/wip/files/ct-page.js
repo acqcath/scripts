@@ -3139,3 +3139,25 @@ else init();
   const go = () => setTimeout(send, 4000); // after the first search usually finished
   if (document.readyState === "complete") go(); else addEventListener("load", go, { once: true });
 })();
+
+// ===== DuckDuckGo on, once (measured on this server: 9-10 results in ~600 ms, while every search already waits
+// for Startpage, so it adds results without adding time). degoog keeps engine switches in this browser's IndexedDB
+// ("degoog" / "settings" / "engines"); this flips DuckDuckGo's web engine on one time per browser and never again,
+// so switching it off later sticks.
+(() => {
+  try { if (localStorage.getItem("ct-ddg-on")) return; } catch { return; }
+  try {
+    const open = indexedDB.open("degoog");
+    open.onsuccess = () => {
+      const db = open.result;
+      if (!db.objectStoreNames.contains("settings")) return;
+      const tx = db.transaction("settings", "readwrite"), st = tx.objectStore("settings"), get = st.get("engines");
+      get.onsuccess = () => {
+        const m = get.result && typeof get.result === "object" ? { ...get.result } : null;
+        const id = m && Object.keys(m).find((k) => /(?:^|-)duckduckgo(?:-engine)?$/i.test(k));
+        if (id && m[id] !== true) { m[id] = true; st.put(m, "engines"); }
+        try { localStorage.setItem("ct-ddg-on", "1"); } catch {}
+      };
+    };
+  } catch {}
+})();
