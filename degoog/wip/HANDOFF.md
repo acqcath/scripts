@@ -1,3 +1,11 @@
+## STANDING RULES FOR EVERY RUN (user, 2026-11-23; read before anything else)
+- Least effort for the user: every step they must do is ONE copy-paste command, ready to run, with what it prints and what to paste back. Never "record it like before" or "push the branch" without the exact command.
+- Never write files to the user's Desktop. Saves go to Downloads.
+- No content/"safety" filtering by topic. Relevance decides: off-topic junk/porn may move down or out; relevant results always show.
+- Look and layout matter as much as function: check spacing (tight inside an item, equal between equals, more around groups), alignment to one column, and placement of controls; screenshot at 390 and 1280 before saying a visual change is done.
+- Time estimates: count installer round trips, not just coding minutes. Each change that needs a live check = one user round trip (~5-10 min of their time plus waiting). Say the range and what would stretch it. Today's miss: "30-40 min" for 4 FAILs became ~80 min because it took 2 more rounds (no live network here) and the scope grew (snippet, look pass, header, tabs) without a new estimate. Re-estimate every time the scope grows.
+- Why things got forgotten today: rules the user stated live lived only in the chat, and each run starts fresh from these notes. Any rule the user states goes into this section in the same turn.
+
 # clean-titles v50: build notes (branch v50-wip)
 
 **Read PLAN.md first: its work order overrides the "Next" section below. M1 (morning preview) comes first.**
