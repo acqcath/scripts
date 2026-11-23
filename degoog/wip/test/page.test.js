@@ -570,3 +570,25 @@ test("page: Quick view opens under the result on tap (recipe: facts, 8 ingredien
   expect(r2.visible[1].querySelector(".ct-qv").textContent).toBe("No quick view for this page");
   expect(r.errors.concat(r2.errors)).toEqual([]);
 });
+
+test("page: recipe search: stars + time on the source line from this browser's copy before paint; others asked after and kept for next time", async () => {
+  const qh = (q) => { let h = 2166136261; for (const c of String(q).trim().toLowerCase()) h = Math.imul(h ^ c.codePointAt(0), 16777619); return (h >>> 0).toString(36); };
+  const res = REC.searches.find((x) => x.q === "chocolate chip cookie recipe" && !x.type).results;
+  const first = res[0].url;
+  const store = { "ct-qvs": JSON.stringify({ [qh(first)]: ["4.9 ★ · 1 hr 15 min", Date.now()] }) };
+  const calls = [];
+  const r = await run("chocolate chip cookie recipe", { engines: 0, store, calls, bridge: { qvs: { data: { s: { [res[1].url]: "4.7 ★ · 40 min" } }, delay: 1 } } });
+  const lines = [...r.document.querySelectorAll(".ct-stars-l")].map((x) => x.textContent);
+  expect(lines).toEqual(["4.9 ★ · 1 hr 15 min"]);
+  await new Promise((res2) => setTimeout(res2, 30));
+  const c = calls.find((x) => x.route === "qvs");
+  expect(c).toBeTruthy();
+  expect(r.document.querySelectorAll(".ct-stars-l").length).toBe(1); // nothing added after paint
+  expect(JSON.parse(r.win.localStorage.getItem("ct-qvs"))[qh(res[1].url)][0]).toBe("4.7 ★ · 40 min");
+  // Not a recipe/review search: nothing asked
+  const calls2 = [];
+  await run("how to reset airpods", { engines: 0, calls: calls2 });
+  await new Promise((res2) => setTimeout(res2, 10));
+  expect(calls2.some((x) => x.route === "qvs")).toBe(false);
+  expect(r.errors).toEqual([]);
+});

@@ -2566,6 +2566,37 @@ document.addEventListener("click", async (e) => {
   if (v && v.facts.some(([k, x]) => k === "Access" && x === "Paywall") && cite && !el.querySelector(".result-url-row .ct-paywall:not(.ct-pdf)")) cite.after(mk("span", "ct-paywall", "Paywall"));
 }, true);
 
+// Inline "4.8 ★ · 45 min" on the source line of first-screen results for recipe and review searches (spec 11).
+// Drawn before paint from this browser's copy (ct-qvs, 12 h); results not in it are asked for after the results are
+// drawn (server reads their pages, skipping sites that block it) and kept for the next visit: never inserted late.
+const QVS_KEY = "ct-qvs";
+const qvs = (() => { let m = {}; try { const c = JSON.parse(localStorage.getItem(QVS_KEY) || "{}"); if (c && typeof c === "object") m = c; } catch {} const now = Date.now(); for (const k of Object.keys(m)) if (!(now - m[k][1] < 432e5)) delete m[k]; return m; })();
+const starsWanted = (q) => CT.shapeOf(q) === "recipe" || /\b(?:reviews?|rating|ratings|rated)\b/i.test(q);
+let starsKey = "";
+const starsPass = () => {
+  const key = searchId(location.href), list = document.getElementById("results-list");
+  if (!webTab || !list || starsKey === key || drawnFor === key) return;
+  const rows = [...list.querySelectorAll(".result-item")].filter((x) => x.style.display !== "none" && !x.classList.contains("ct-grouped")).slice(0, 6);
+  if (!rows.length) return;
+  starsKey = key;
+  let page = 1;
+  try { page = Number(new URL(key).searchParams.get("page") || 1); } catch {}
+  if (page > 1 || !starsWanted(curQ())) return;
+  const ask = [];
+  for (const el of rows) {
+    const a = el.querySelector("a.result-title"), u = (el.dataset.resultUrl || (a && a.href) || "");
+    const c = u && qvs[qHash(u)], cite = el.querySelector(".result-cite");
+    if (c && cite) { const t = mk("span", "ct-paywall ct-stars-l", c[0]); (el.querySelector(".result-url-row .ct-pdf, .result-url-row .ct-paywall, .result-url-row .ct-date") || cite).after(t); }
+    else if (u && !c) ask.push(u);
+  }
+  if (ask.length) setTimeout(() => bridge("qvs", {}, JSON.stringify({ u: ask })).then((j) => {
+    if (!j || !j.s || typeof j.s !== "object") return;
+    for (const [u, t] of Object.entries(j.s)) if (typeof t === "string" && t.length < 60) qvs[qHash(u)] = [t, Date.now()];
+    const ks = Object.keys(qvs); if (ks.length > 500) ks.sort((a, b) => qvs[a][1] - qvs[b][1]).slice(0, ks.length - 500).forEach((k) => delete qvs[k]);
+    try { localStorage.setItem(QVS_KEY, JSON.stringify(qvs)); } catch {}
+  }).catch(() => {}), 0);
+};
+
 // ===== Knowledge panel (spec 3) =====
 // Asked at page load for short name-like searches that get no other answer, no AI and no plain type/site list.
 // Shown only when the results hold the same article (CT.kpMatch); the Wikipedia result itself is then hidden, and
@@ -2653,7 +2684,7 @@ const init = () => {
   safe("scan", () => scan(document.body));
   safe("skeleton", () => skel(document.body));
   safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools);
-  safe("kp", kpPass); safe("only", onlyPass);
+  safe("kp", kpPass); safe("only", onlyPass); safe("stars", starsPass);
   safe("drawn", markDrawn);
   // Runs right after degoog inserts results and before the screen updates; only looks inside what was added
   new MutationObserver((muts) => {
@@ -2663,7 +2694,7 @@ const init = () => {
     safe("list", listPass);
     for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { safe("scan", () => scan(n)); safe("skeleton", () => skel(n)); safe("usage", () => noUsage(n)); }
     safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("card", glance);
-    safe("kp", kpPass); safe("only", onlyPass);
+    safe("kp", kpPass); safe("only", onlyPass); safe("stars", starsPass);
     safe("drawn", markDrawn);
     safe("ai", () => { const g = document.getElementById("at-a-glance"); if (g) aiPass(g, searchId(location.href)); });
   }).observe(document.body, { childList: true, subtree: true });

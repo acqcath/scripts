@@ -652,6 +652,39 @@ export const qvFor = async (u, check = publicUrl) => {
   return v;
 };
 
+// Inline stars + time for first-screen recipe/review results (spec 11): "4.8 ★ · 45 min" from the same quick view.
+// Asked by the page after the results are drawn, kept by the page for the next visit (never inserted late).
+// Per-domain success counts (qv-domains.json: domain -> {ok, fail}) skip sites that block servers.
+export const starLine = (v) => {
+  if (!v) return "";
+  const f = Object.fromEntries(v.facts);
+  const r = f.Rating ? f.Rating.replace(/\s*\(.*\)$/, "") : "";
+  return [r, v.kind === "recipe" ? f["Total time"] || "" : ""].filter(Boolean).join(" · ");
+};
+let _qd = null;
+const qvDomains = () => { if (!_qd) { try { _qd = JSON.parse(fs.readFileSync(`${DIR}/qv-domains.json`, "utf8")) || {}; } catch { _qd = {}; } } return _qd; };
+export const qvBlocked = (d) => { const c = qvDomains()[d]; return !!c && c.fail >= 3 && !c.ok; };
+let _qdT = 0;
+const qvCount = (d, ok) => {
+  const m = qvDomains(), c = m[d] || (m[d] = { ok: 0, fail: 0 });
+  if (ok) c.ok++; else c.fail++;
+  const ks = Object.keys(m); if (ks.length > 2000) delete m[ks[0]];
+  clearTimeout(_qdT); _qdT = setTimeout(() => { try { fs.writeFileSync(`${DIR}/qv-domains.json`, JSON.stringify(m)); } catch {} }, 2000);
+};
+export const starsFor = async (urls, check = publicUrl) => {
+  const out = {};
+  await Promise.all([...new Set(urls)].slice(0, 6).map(async (u) => {
+    let d = "";
+    try { d = new URL(u).hostname.replace(/^www\./, ""); } catch { return; }
+    if (qvBlocked(d)) return;
+    const v = await qvFor(u, check);
+    qvCount(d, !!v);
+    const line = starLine(v);
+    if (line) out[u] = line;
+  }));
+  return out;
+};
+
 // ===== Sports (ESPN's public site API): a team's live, last or next game =====
 // Team names come from ESPN's team lists (fetched once a day, only when a short search could be a team), so the
 // search itself never leaves this server; a match costs one schedule request (RAM 60 s while live, else 10 min).
@@ -1256,6 +1289,15 @@ export const routes = [
     async handler(req) {
       const u = (new URL(req.url).searchParams.get("u") || "").slice(0, 2000);
       return new Response(JSON.stringify({ v: u ? await qvFor(u) : null }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+    },
+  },
+  {
+    method: "post",
+    path: "/qvs",
+    async handler(req) {
+      let u = [];
+      try { const j = await req.json(); if (Array.isArray(j.u)) u = j.u.filter((x) => typeof x === "string" && x.length < 2000); } catch {}
+      return new Response(JSON.stringify({ s: await starsFor(u) }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
     },
   },
   {
