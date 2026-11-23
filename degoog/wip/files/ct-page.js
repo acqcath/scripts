@@ -352,8 +352,17 @@ const doiPublisher = (url) => { try { const u = new URL(url); if (!/^(?:dx\.)?do
 // Stray spaces the engines leave where they bolded the search words: "slang ?" "( crazy )" " shit " "Schrödinger 's".
 // Spaces go before , . ; : ! ? ) ] % and 's / n't, after ( [, and inside a quote pair ("…" “…” ‘…’). Straight
 // double quotes are fixed only when they pair up (even count), so a stray inch mark is never touched.
-const tidyText = (s) => {
-  let t = String(s || "");
+// One clean-up for every title and description, so no result looks broken next to the others: entities the engine
+// left encoded (&amp;), stray spaces around punctuation (below), runs of the same mark ("!!!!", ">>>>>>", five of
+// the same emoji) shortened to one, "..." as one ellipsis. Works on one text piece at a time (a description keeps its
+// bold words), so it never trims ends; tidyTitle also drops separators left dangling at a title's ends.
+const tidyText = (s0) => {
+  let t = String(s0 || "")
+    .replace(/&(?:amp|#38);/g, "&").replace(/&(?:quot|#34);/g, '"').replace(/&(?:#39|apos);/g, "'").replace(/&(?:nbsp|#160);/g, " ").replace(/&(?:lt|#60);/g, "<").replace(/&(?:gt|#62);/g, ">")
+    .replace(/([!?.,:;~*=_>#<-])\1{3,}/g, (m, c) => (c === "." ? "…" : c === "!" || c === "?" ? c : ""))
+    .replace(/(\p{Extended_Pictographic}\uFE0F?)(?:\s*\1){2,}/gu, "$1")
+    .replace(/\.\.\./g, "…")
+    .replace(/[ \t]{2,}/g, " ");
   if (!/\s[,.;:!?)\]%’”]|[(\[“‘]\s|\s'(?:s|t|re|ve|ll|d|m)\b|\sn't\b|"/.test(t)) return t;
   t = t.replace(/(\S)\s+([,;:!?)\]%]+)(?=\s|$|["”’])/g, (m, a, b) => (/\d/.test(a) && b[0] === ":" ? m : `${a}${b}`))
     .replace(/(\S)\s+(\.)(?=\s|$|["”’])/g, "$1$2")
@@ -477,27 +486,7 @@ const topicOf = (rel, words) => {
   const titled = new Set([...dt].filter(([t, n]) => n >= 2 && topic.has(t)).map(([t]) => t));
   return (r) => { const hits = [...new Set(topicToks(`${r.title} ${r.snippet || ""}`))].filter((t) => topic.has(t)); return hits.length >= 2 && hits.some((t) => titled.has(t)); };
 };
-
-// ===== Shouting text: an ALL-CAPS title reads as yelling next to normal ones =====
-// Title-cased when most of its letters are capitals (12+ letters, 3+ words); short words stay lower inside a title,
-// tokens with digits or 2-letter ones (US, UK, AI) stay as they are.
-const SMALL = new Set("a an and as at but by for from in into nor of on or per the to vs via with".split(" "));
-const calmCaps = (t) => {
-  const s = String(t || "");
-  const letters = s.match(/\p{L}/gu) || [];
-  const upper = letters.filter((c) => c !== c.toLowerCase()).length;
-  if (letters.length < 12 || upper / letters.length < 0.85 || s.trim().split(/\s+/).length < 3) return s;
-  let first = true;
-  return s.replace(/[\p{L}\p{N}][\p{L}\p{N}'’]*/gu, (w, i) => {
-    const after = s.slice(0, i).trimEnd();
-    const start = first || /[:—–\-|?!.]$/.test(after);
-    first = false;
-    if (/\d/.test(w) || w.length <= 2 && !SMALL.has(w.toLowerCase())) return w;
-    const lw = w.toLowerCase();
-    if (!start && SMALL.has(lw)) return lw;
-    return lw[0].toUpperCase() + lw.slice(1);
-  });
-};
+const tidyTitle = (t) => tidyText(t).replace(/^[\s|·•:,;–—-]+|[\s|·•:,;–—-]+$/g, "");
 
 // ===== Answer card, local part (no network): math, units incl. cooking, tip / percent, date math, patterns =====
 // answer(q, now) -> null, or { kind, label, value | title + href, detail, copy, swatch? }. Pure: the page draws it in
@@ -1285,7 +1274,7 @@ const featuredSnippet = (q, results) => {
   return null;
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, related, topicOf, calmCaps, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippet };
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, related, topicOf, tidyTitle, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippet };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -1720,7 +1709,7 @@ const row = (el) => {
   let u = null;
   try { u = new URL(a.href); } catch {}
   // Engines leave spaces where they bolded the search words ("slang ?", "\" shit \""): core tidyText, every tab
-  const out = CT.calmCaps(CT.tidyText(cleanTitle(text, a.href) || text.replace(/\s+/g, " ").trim()));
+  const out = CT.tidyTitle(cleanTitle(text, a.href) || text.replace(/\s+/g, " ").trim());
   if (out && out !== text.replace(/\s+/g, " ").trim()) { a.title = text.trim(); a.textContent = out; }
   // Link line: just the site name, like Google on phones (the full address shows on hover)
   const cite = el.querySelector(".result-cite");
@@ -1784,7 +1773,7 @@ const card = (el, isImage) => {
   const raw = (src && src.textContent || "").trim();
   const host = raw.toLowerCase().replace(/^www\./, "");
   const text = t && t.textContent || "";
-  if (t && !t.dataset.ctTidy) { t.dataset.ctTidy = "1"; const x = CT.tidyText(text.replace(/\s+/g, " ").trim()); if (x !== text.trim()) t.textContent = x; }
+  if (t && !t.dataset.ctTidy) { t.dataset.ctTidy = "1"; const x = CT.tidyTitle(text.replace(/\s+/g, " ").trim()); if (x !== text.trim()) t.textContent = x; }
   if (!isImage) return;
   if (aiImg(host)) { el.style.display = "none"; el.dataset.ctAi = "1"; return; }
   if (src && host !== raw) src.textContent = host;
