@@ -475,3 +475,24 @@ export const topicOf = (rel, words) => {
   const titled = new Set([...dt].filter(([t, n]) => n >= 2 && topic.has(t)).map(([t]) => t));
   return (r) => { const hits = [...new Set(topicToks(`${r.title} ${r.snippet || ""}`))].filter((t) => topic.has(t)); return hits.length >= 2 && hits.some((t) => titled.has(t)); };
 };
+
+// ===== Shouting text: an ALL-CAPS title reads as yelling next to normal ones =====
+// Title-cased when most of its letters are capitals (12+ letters, 3+ words); short words stay lower inside a title,
+// tokens with digits or 2-letter ones (US, UK, AI) stay as they are.
+const SMALL = new Set("a an and as at but by for from in into nor of on or per the to vs via with".split(" "));
+export const calmCaps = (t) => {
+  const s = String(t || "");
+  const letters = s.match(/\p{L}/gu) || [];
+  const upper = letters.filter((c) => c !== c.toLowerCase()).length;
+  if (letters.length < 12 || upper / letters.length < 0.85 || s.trim().split(/\s+/).length < 3) return s;
+  let first = true;
+  return s.replace(/[\p{L}\p{N}][\p{L}\p{N}'’]*/gu, (w, i) => {
+    const after = s.slice(0, i).trimEnd();
+    const start = first || /[:—–\-|?!.]$/.test(after);
+    first = false;
+    if (/\d/.test(w) || w.length <= 2 && !SMALL.has(w.toLowerCase())) return w;
+    const lw = w.toLowerCase();
+    if (!start && SMALL.has(lw)) return lw;
+    return lw[0].toUpperCase() + lw.slice(1);
+  });
+};

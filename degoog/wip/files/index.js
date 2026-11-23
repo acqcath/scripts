@@ -79,9 +79,11 @@ let DIR = "/app/data/plugins/clean-titles";
 export const PAGE_FILE = "/app/src/public/themes/degoog-theme/layout.html";
 export const pagePartMissing = (html, exists = (p) => fs.existsSync(p)) => {
   if (typeof html !== "string") return false; // can't read it: say nothing rather than guess
-  if (!html.includes('<script type="module" id="ct-inline">')) return true;
   const m = /<script defer src="\/public\/ct\/(psl\.[0-9a-f]+\.js)" id="ct-psl"><\/script>/.exec(html);
-  return !m || !exists(`/app/src/public/ct/${m[1]}`);
+  if (!m || !exists(`/app/src/public/ct/${m[1]}`)) return true;
+  if (html.includes('<script type="module" id="ct-inline">')) return false; // older installs: page script inline
+  const c = /<script type="module" src="\/public\/ct\/(ct\.[0-9a-f]+\.js)" id="ct-inline"><\/script>/.exec(html);
+  return !c || !exists(`/app/src/public/ct/${c[1]}`);
 };
 let _pageHtml; try { _pageHtml = fs.readFileSync(PAGE_FILE, "utf8"); } catch {}
 export const PAGE_MISSING = pagePartMissing(_pageHtml);

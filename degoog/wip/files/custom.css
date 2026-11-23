@@ -795,3 +795,8 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .ct-grp, #ct-qa, #ct-related { margin: 24px 0 !important; }
 :is(.ct-grp, #ct-qa, #ct-related) + :is(.ct-grp, #ct-qa, #ct-related) { margin-top: 12px !important; }
 .ct-gh, #ct-qa h3, #ct-related h3 { margin: 0 0 12px !important; }
+
+/* Line breaks that read well: titles that wrap split into even lines (no lone "Vu" on a second line), descriptions
+   avoid a single word on their last line where the browser can (Chromium "pretty"; others keep normal wrapping). */
+.result-item .result-title, .ct-ct, .ct-ans-text, .ct-ans-title, .ct-gh, #ct-qa summary, .ct-sl-t, .ct-kp :is(h2, h3), .ct-sc .ct-ct { text-wrap: balance; }
+.result-snippet, .ct-ans-text, .ct-ai-text, .ct-kp p { text-wrap: pretty; }
