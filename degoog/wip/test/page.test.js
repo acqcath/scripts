@@ -336,3 +336,49 @@ test("page: local answer card is in the panel area in the same pass as the resul
   expect(g.querySelector(".ct-ans").classList.contains("ct-copied")).toBe(true);
   expect(errors).toEqual([]);
 });
+
+test("page: AI spot kept at its final size before the results on AI-worded searches; ai-summary's panel laid over it; failure says so in place", async () => {
+  const store = { "ct-sites-auto": JSON.stringify({ auto: [], seo: false, ai: { on: true } }) };
+  const { document, fire, errors } = await run("why is the sky blue", { store });
+  const g = document.getElementById("at-a-glance");
+  expect(g.firstElementChild.className).toBe("ct-ai");
+  expect(g.querySelectorAll(".ct-ai .ct-ai-line").length).toBe(3);
+  expect(g.querySelector(".ct-ai-label").textContent).toBe("✦ AI summary");
+  // degoog places the panel after the results: first panel clears the area (search-utils _placeGlancePanel)
+  const panel = () => { const w = document.createElement("div"); w.className = "results-slot-panel degoog-panel"; w.setAttribute("data-slot-order", "0"); w.innerHTML = '<div class="results-slot-panel-body"><div class="glance-ai" data-stream="1"><div class="glance-ai-summary-wrap"><div class="glance-ai-body glance-ai-body--clamped"><div class="glance-ai-stream" data-state="pending"></div></div><button class="glance-ai-expand">Read more</button></div></div></div>'; return w; };
+  g.innerHTML = "";
+  const w = panel();
+  g.append(w);
+  fire([w]);
+  expect([...g.children].some((c) => c.classList.contains("ct-ai"))).toBe(true);
+  expect(w.classList.contains("ct-ai-panel")).toBe(true);
+  expect(w.style.display).toBe("");
+  // degoog's sweep at the end removes what it didn't place (our spot): put back in the same pass
+  g.querySelector(".ct-ai").remove();
+  fire([]);
+  expect([...g.children].some((c) => c.classList.contains("ct-ai"))).toBe(true);
+  // The answer fails: same spot says so
+  w.querySelector(".glance-ai-stream").dataset.state = "error";
+  fire([]);
+  expect(g.querySelector(".ct-ai").classList.contains("ct-ai-fail")).toBe(true);
+  expect(errors).toEqual([]);
+  // A how-to search: no spot, and ai-summary's panel is never drawn
+  const h = await run("how to reset airpods", { store });
+  const hg = h.document.getElementById("at-a-glance");
+  expect(hg.querySelector(".ct-ai")).toBeNull();
+  const w2 = panel();
+  hg.append(w2);
+  h.fire([w2]);
+  expect(w2.style.display).toBe("none");
+  // ai-summary not set up: nothing reserved even on an AI-worded search
+  const off = await run("why is the sky blue");
+  expect(off.document.querySelector(".ct-ai")).toBeNull();
+  // ⌄ opens it (user's tap): ai-summary's own read-more is pressed
+  const o = await run("iphone 16 vs iphone 17", { store });
+  const og = o.document.getElementById("at-a-glance");
+  const w3 = panel(); let pressed = 0; w3.querySelector(".glance-ai-expand").addEventListener("click", () => pressed++);
+  og.append(w3); o.fire([w3]);
+  og.querySelector(".ct-ai-more").dispatchEvent(new o.win.MouseEvent("click", { bubbles: true }));
+  expect(pressed).toBe(1);
+  expect(og.classList.contains("ct-ai-opened")).toBe(true);
+});

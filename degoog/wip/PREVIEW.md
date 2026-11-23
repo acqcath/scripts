@@ -43,6 +43,9 @@ The Images tab hides pictures from AI-image sites (laylavish's AI blocklist, che
 ## Instant answers (M3, first part)
 A small answer at the top for searches that are a sum, a conversion or a paste: `12 x 350`, `5 mi in km`, `2 cups flour in grams`, `20% tip on 85`, `days until christmas`, a UPS number, an ISBN, a DOI, `CVE-2021-44228`, `#ff8800`, `pip requests`, `facebook/react`, `UA 123`. Tap the answer to copy it ("Copied" shows in its label line). While it shows, other panels (AI summary, math-slot) stay hidden, so there's one answer per search. Once v50 ships you can turn math-slot off: this replaces it without calling api.mathjs.org.
 
+## AI summary spot (M3)
+AI summaries now show only for searches that ask for judgement or an explanation (`why is the sky blue`, `iphone 16 vs iphone 17`, `best laptop 2026`), in a fixed 3-line spot under "✦ AI summary" that's there before the results, so nothing moves when the summary arrives. Tap ⌄ for the whole answer and the follow-up chat. If ai-summary fails, the spot says "AI summary unavailable". Other searches (facts, how-tos) no longer get an AI box that pops in late.
+
 ## AI summary cache
 The installer now lets ai-summary keep its answers as long as degoog keeps search results (12 hours) instead of 2 minutes, so a repeated search gets its summary at once. Look for the line "AI summary cache: … (OK)" while it installs; a NOTICE line there means ai-summary changed and nothing was touched.
 

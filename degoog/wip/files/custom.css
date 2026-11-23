@@ -119,7 +119,7 @@ html:root { --ct-desc-pc: 15px; --ct-desc-phone: 13.5px; }
 }
 
 /* Summary box */
-#at-a-glance > * {
+#at-a-glance > :not(.ct-ans, .ct-ai, .ct-ai-panel) {
   margin: 16px 0 0 -16px !important;
   background: rgba(49, 50, 68, 0.85) !important;
   border: none !important; border-radius: 12px !important;
@@ -148,7 +148,7 @@ html:root { --ct-desc-pc: 15px; --ct-desc-phone: 13.5px; }
 /* Phones: panel on top (degoog default), proper spacing, summary card below it */
 @media (max-width: 767px) {
   .sidebar-accordion .degoog-accordion-body { padding-top: 16px !important; }
-  #at-a-glance > * { margin: 12px 0 12px 0 !important; }
+  #at-a-glance > :not(.ct-ans, .ct-ai, .ct-ai-panel) { margin: 12px 0 12px 0 !important; }
 }
 
 @media (min-width: 768px) {
@@ -260,7 +260,7 @@ html:root { --ct-desc-pc: 15px; --ct-desc-phone: 13.5px; }
 .result-item .result-thumbnail-wrap { width: 92px !important; height: 92px !important; border-radius: 8px !important; overflow: hidden !important; }
 .result-item .result-thumbnail-wrap img { width: 100% !important; height: 100% !important; object-fit: cover !important; }
 /* AI summary "Read more": filled grey pill, centred, no blue outline */
-#at-a-glance :is(button, a):is([class*="more" i], [class*="expand" i]):not([hidden]) { border: 0 !important; outline: 0 !important; background: var(--bg-light) !important; color: var(--text-primary) !important; border-radius: 999px !important; width: auto !important; margin-inline: auto !important; padding: 8px 20px !important; display: flex !important; }
+#at-a-glance :is(button, a):is([class*="more" i], [class*="expand" i]):not([hidden], .ct-ai-more) { border: 0 !important; outline: 0 !important; background: var(--bg-light) !important; color: var(--text-primary) !important; border-radius: 999px !important; width: auto !important; margin-inline: auto !important; padding: 8px 20px !important; display: flex !important; }
 
 /* Science: shared look, plus Scholar's green source line */
 #results-page:is(:has(.results-tab.active[data-type="tab:engine:science"]), :not(:has(.results-tab.active)):has(.result-item:is([data-result-url*="doi.org/"], [data-result-url*="openalex.org/"], [data-result-url*="semanticscholar.org/"], [data-result-url*="ncbi.nlm.nih.gov/"], [data-result-url*="arxiv.org/"], [data-result-url*="researchhub.com/"]))) {
@@ -611,7 +611,7 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 /* ===== Answer card (local answers): a rich result, not a box. Gray label line -> 24px answer (or 18px blue title)
    -> one gray detail line. Same layout on PC and phone. ===== */
 #at-a-glance:has(> .ct-ans) > :not(.ct-ans) { display: none !important; }
-.ct-ans { position: relative; margin: 0 0 24px; padding: 2px 0; cursor: default; border-radius: 8px; }
+.ct-ans { position: relative; margin: 16px 0 8px; padding: 2px 0; cursor: default; border-radius: 8px; }
 .ct-ans[data-copy] { cursor: copy; }
 .ct-ans:focus-visible { outline: 2px solid var(--text-link); outline-offset: 4px; }
 .ct-ans-label { position: relative; font-size: 13px; line-height: 18px; color: var(--text-secondary); white-space: nowrap; }
@@ -626,3 +626,32 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .ct-ans-detail { margin-top: 2px; font-size: 13px; line-height: 18px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; font-variant-numeric: tabular-nums; }
 @media (hover: hover) { .ct-ans[data-copy]:hover .ct-ans-label::after { content: "⧉"; margin-left: 6px; font-size: 12px; color: var(--text-secondary); } }
 @media (max-width: 767px) { .ct-ans-title { min-height: 44px; display: flex; align-items: center; } }
+
+/* ===== AI summary spot: fixed size from before the results are drawn (label 18 + 4 + 3 lines of 24 + ⌄ line 28) =====
+   ai-summary's panel stays degoog's child of #at-a-glance and is laid over the spot's 3 lines (takes no room). */
+#at-a-glance:has(> .ct-ai) { position: relative; display: flex; flex-direction: column; }
+#at-a-glance > .ct-ai { order: -1; position: relative; height: 122px; margin: 16px 0 8px; overflow: hidden; }
+.ct-ai-label { font-size: 13px; line-height: 18px; color: var(--text-secondary); white-space: nowrap; }
+.ct-ai-text { position: relative; display: flex; flex-direction: column; justify-content: space-around; height: 72px; margin-top: 4px; }
+.ct-ai-line { display: block; height: 10px; border-radius: 5px; background: var(--bg-light); }
+.ct-ai-line:nth-of-type(3) { width: 60%; }
+.ct-ai-err { display: none; position: absolute; inset: 0; font-size: 15px; line-height: 24px; color: var(--text-secondary); background: var(--bg); }
+.ct-ai-more { display: block; width: auto; margin: 0; border-radius: 0; height: 28px; min-width: 44px; padding: 0; border: 0; background: none; color: var(--text-link); font-size: 18px; line-height: 28px; text-align: left; cursor: pointer; }
+.ct-ai-more:focus-visible { outline: 2px solid var(--text-link); outline-offset: 2px; }
+.ct-ai.ct-ai-fail .ct-ai-err { display: block; }
+.ct-ai.ct-ai-fail .ct-ai-more { visibility: hidden; }
+/* The panel over the 3 lines: its own title, sources row, skeleton, buttons and chat hidden until opened */
+#at-a-glance > .ct-ai-panel { position: absolute; left: 0; right: 0; top: 38px; /* spot's margin 16 + label 18 + 4 */ height: 72px; margin: 0 !important; padding: 0 !important; overflow: hidden; border: 0 !important; background: none !important; box-shadow: none !important; z-index: 1; }
+#at-a-glance > .ct-ai-panel .results-slot-panel-title, #at-a-glance > .ct-ai-panel .glance-ai-head, #at-a-glance > .ct-ai-panel .glance-ai-rail, #at-a-glance > .ct-ai-panel .glance-ai-expand, #at-a-glance > .ct-ai-panel .glance-ai-collapse, #at-a-glance > .ct-ai-panel .glance-ai-chat, #at-a-glance > .ct-ai-panel .glance-ai-skeleton, #at-a-glance > .ct-ai-panel .glance-ai-writing, #at-a-glance > .ct-ai-panel .glance-ai-thinking-stream, #at-a-glance > .ct-ai-panel .glance-ai-thinking-label { display: none !important; }
+#at-a-glance > .ct-ai-panel .results-slot-panel-body, #at-a-glance > .ct-ai-panel .glance-ai, #at-a-glance > .ct-ai-panel .glance-ai-summary-wrap { margin: 0 !important; padding: 0 !important; border: 0 !important; background: none !important; }
+#at-a-glance > .ct-ai-panel .glance-ai-body { min-height: 0 !important; max-height: none !important; height: 72px; overflow: hidden; -webkit-mask-image: none; mask-image: none; }
+#at-a-glance > .ct-ai-panel .glance-ai-stream, #at-a-glance > .ct-ai-panel .glance-ai-stream * { font-size: 15px !important; line-height: 24px !important; margin-top: 0 !important; margin-bottom: 0 !important; }
+#at-a-glance > .ct-ai-panel .glance-ai-stream:not([data-state="pending"]) { min-height: 72px; background: var(--bg); }
+#at-a-glance > .ct-ai-panel:has(.glance-ai-stream[data-state="error"]) { visibility: hidden; }
+/* Opened with ⌄ (your tap): ai-summary's own panel at its own size, follow-up chat included; the spot steps aside */
+#at-a-glance.ct-ai-opened > .ct-ai { display: none; }
+#at-a-glance.ct-ai-opened > .ct-ai-panel { position: static; order: -1; height: auto; overflow: visible; }
+#at-a-glance.ct-ai-opened > .ct-ai-panel .glance-ai-body { height: auto; }
+#at-a-glance.ct-ai-opened > .ct-ai-panel .glance-ai-head, #at-a-glance.ct-ai-opened > .ct-ai-panel .glance-ai-chat:not([hidden]), #at-a-glance.ct-ai-opened > .ct-ai-panel .glance-ai-collapse:not([hidden]) { display: revert !important; }
+@media (prefers-reduced-motion: no-preference) { .ct-ai-line { animation: ctPulse 1.4s ease-in-out infinite; } }
+@keyframes ctPulse { 50% { opacity: .5; } }
