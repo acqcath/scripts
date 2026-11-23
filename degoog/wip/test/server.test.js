@@ -294,3 +294,38 @@ test("server: sports: team names from ESPN's lists (search stays here), live > r
   expect(g).toMatchObject({ state: "post", detail: "Final", home: { abbr: "PIT", score: "24", winner: true, record: "7-3" }, away: { abbr: "CLE", score: "17", winner: false } });
   expect(g.home.logo.startsWith("/api/proxy/image?url=")).toBe(true);
 });
+
+test("server: knowledge panel data: type from P31, facts per type with labels, as-of, metric + imperial, signed photo", async () => {
+  const srv = await import("../files/index.js");
+  const snak = (value, extra = {}) => ({ rank: "normal", mainsnak: { snaktype: "value", datavalue: { value } }, ...extra });
+  const item = (id) => snak({ "entity-type": "item", id });
+  const eiffel = { claims: { P31: [item("Q12518")], P131: [item("Q90")], P2048: [snak({ amount: "+330", unit: "http://www.wikidata.org/entity/Q11573" })], P1619: [snak({ time: "+1889-03-31T00:00:00Z", precision: 11 })], P84: [item("Q20882")], P18: [snak("Tour Eiffel Wikimedia Commons.jpg")] }, sitelinks: { enwiki: { title: "Eiffel Tower" } } };
+  const plan = srv.kpPlan(eiffel);
+  expect(plan.type).toBe("structure");
+  expect(plan.title).toBe("Eiffel Tower");
+  expect(plan.rows.map((r) => [r.k, srv.kpText(r, { Q90: "Paris", Q20882: "Stephen Sauvestre" })])).toEqual([["Location", "Paris"], ["Height", "330 m (1,083 ft)"], ["Opened", "Mar 31, 1889"], ["Architect", "Stephen Sauvestre"]]);
+  const pgh = { claims: { P31: [item("Q1093829")], P17: [item("Q30")], P1082: [snak({ amount: "+300000" }, { qualifiers: { P585: [{ datavalue: { value: { time: "+2010-04-01T00:00:00Z" } } }] } }), snak({ amount: "+302971" }, { qualifiers: { P585: [{ datavalue: { value: { time: "+2020-04-01T00:00:00Z" } } }] } })], P2046: [snak({ amount: "+151.1", unit: "http://www.wikidata.org/entity/Q712226" })] }, sitelinks: { enwiki: { title: "Pittsburgh" } } };
+  const p2 = srv.kpPlan(pgh);
+  expect(p2.rows.map((r) => srv.kpText(r, { Q30: "United States" }))).toEqual(["United States", "302,971 (2020)", "151.1 km² (58.3 sq mi)"]);
+  expect(srv.kpPlan({ claims: { P31: [item("Q999999")] } }).rows).toEqual([]);
+  // Whole lookup with a fake network: 4 requests on the first search, none on the next
+  const urls = [];
+  srv.default.init({ id: "clean-titles", signProxyUrl: (u) => `/api/proxy/image?url=${encodeURIComponent(u)}&sig=s`, fetch: async (u) => {
+    urls.push(u);
+    const q = new URL(u);
+    if (q.hostname === "en.wikipedia.org") return new Response(JSON.stringify({ description: "tower in Paris", extract: "The Eiffel Tower is a wrought-iron lattice tower on the Champ de Mars in Paris, France." }));
+    const a = q.searchParams.get("action");
+    if (a === "wbsearchentities") return new Response(JSON.stringify({ search: [{ id: "Q243", label: "Eiffel Tower", description: "tower in Paris, France" }] }));
+    if (a === "wbgetentities" && q.searchParams.get("ids") === "Q243") return new Response(JSON.stringify({ entities: { Q243: eiffel } }));
+    if (a === "wbgetentities") return new Response(JSON.stringify({ entities: { Q90: { labels: { en: { value: "Paris" } } }, Q20882: { labels: { en: { value: "Stephen Sauvestre" } } } } }));
+    return new Response("", { status: 404 });
+  } });
+  const kp = await srv.kpFor("eiffel tower");
+  expect(kp).toMatchObject({ qid: "Q243", title: "Eiffel Tower", name: "Eiffel Tower", type: "structure", desc: "tower in Paris, France" });
+  expect(kp.facts[0]).toEqual({ k: "Location", v: "Paris" });
+  expect(kp.extract.startsWith("The Eiffel Tower")).toBe(true);
+  expect(kp.photo.startsWith("/api/proxy/image?url=")).toBe(true);
+  expect(urls.length).toBe(4);
+  await srv.kpFor("Eiffel Tower");
+  expect(urls.length).toBe(4);
+});

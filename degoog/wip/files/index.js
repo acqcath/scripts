@@ -320,6 +320,7 @@ const wdValue = (c) => {
   if (v && typeof v === "object" && "time" in v) return { time: v.time, prec: v.precision };
   if (v && typeof v === "object" && "latitude" in v) return { lat: v.latitude, lon: v.longitude };
   if (v && typeof v === "object" && v["entity-type"] === "item") return { id: v.id };
+  if (typeof v === "string") return v;
   return null;
 };
 const wdOne = async (name, prop) => {
@@ -379,6 +380,86 @@ export const cmuFor = async (id, now = Date.now()) => {
   const e = { t: now, v };
   _cmu.set(id, e);
   if (v) try { fs.writeFileSync(file, JSON.stringify(e)); } catch {}
+  return v;
+};
+
+// ===== Knowledge panel data (Wikidata + Wikipedia), server part =====
+// Asked at page load for entity-like searches; the page shows it only when the results include the same Wikipedia
+// article (spec 3). Facts per type from the item's own "instance of" (P31) values, no subclass walking.
+const KP_TYPES = [
+  ["person", ["Q5"], [["Born", "P569"], ["Died", "P570"], ["Occupation", "P106", 2]]],
+  ["place", ["Q515", "Q1093829", "Q5119", "Q486972", "Q1549591", "Q3957", "Q532", "Q6256", "Q35657", "Q15284"], [["Country", "P17"], ["Population", "P1082"], ["Area", "P2046"]]],
+  ["company", ["Q4830453", "Q6881511", "Q783794", "Q891723", "Q43229", "Q167037"], [["Founded", "P571"], ["CEO", "P169"], ["Headquarters", "P159"], ["Founders", "P112", 2]]],
+  ["structure", ["Q41176", "Q811979", "Q12518", "Q12280", "Q570116", "Q2319498", "Q839954"], [["Location", "P131"], ["Height", "P2048"], ["Opened", "P1619"], ["Built", "P571"], ["Architect", "P84"]]],
+  ["film", ["Q11424", "Q5398426"], [["Released", "P577"], ["Director", "P57"], ["Running time", "P2047"]]],
+  ["language", ["Q9143"], [["Designed by", "P287"], ["First appeared", "P571"], ["Latest version", "P348"]]],
+  ["animal", ["Q16521"], [["Conservation status", "P141"]]],
+];
+// entity JSON (wbgetentities) -> {type, rows: [{k, prop, vals: [wdValue...], max}], image, title}
+export const kpPlan = (ent) => {
+  const cl = (ent && ent.claims) || {};
+  const p31 = wdBest(cl.P31).map(wdValue).filter((v) => v && v.id).map((v) => v.id);
+  const t = KP_TYPES.find(([, ids]) => p31.some((x) => ids.includes(x)));
+  const rows = [];
+  for (const [k, prop, max = 1] of t ? t[2] : []) {
+    const vals = wdBest(cl[prop]).map(wdValue).filter(Boolean).slice(0, max);
+    if (vals.length) rows.push({ k, prop, vals, max });
+  }
+  const img = wdBest(cl.P18).map((c) => c.mainsnak.datavalue.value).find((x) => typeof x === "string");
+  const title = ent && ent.sitelinks && ent.sitelinks.enwiki && ent.sitelinks.enwiki.title;
+  return { type: t ? t[0] : "", rows, image: img || "", title: title || "" };
+};
+const UNIT_NAME = { Q11573: ["m", 1], Q712226: ["km²", 1], Q25343: ["m²", 1e-6], Q7727: ["min", 1], Q174728: ["cm", 1] };
+// One fact's text (labels: {Qid: name}); dates as written, "as of" for population, imperial next to metric
+export const kpText = (row, labels) => row.vals.map((v) => {
+  if (v.id) return labels[v.id] || "";
+  if (v.time) { const m = /^([+-]\d+)-(\d{2})-(\d{2})/.exec(v.time); if (!m) return ""; const y = Number(m[1]); if (v.prec <= 9 || m[2] === "00") return String(y); const d = new Date(Date.UTC(2000, +m[2] - 1, +m[3] || 1)); return v.prec === 10 || m[3] === "00" ? `${d.toLocaleDateString("en-US", { month: "short", timeZone: "UTC" })} ${y}` : `${d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}, ${y}`; }
+  if (v.amount != null) {
+    const n = Number(v.amount);
+    if (!Number.isFinite(n)) return "";
+    if (row.prop === "P1082") return `${Math.round(n).toLocaleString("en-US")}${v.asOf ? ` (${String(v.asOf).slice(1, 5)})` : ""}`;
+    const u = UNIT_NAME[v.unit];
+    if (row.prop === "P2048" && u && u[0] === "m") return `${n.toLocaleString("en-US")} m (${Math.round(n / 0.3048).toLocaleString("en-US")} ft)`;
+    if (row.prop === "P2046" && u) { const km2 = u[0] === "km²" ? n : n * u[1]; return `${km2.toLocaleString("en-US", { maximumFractionDigits: 1 })} km² (${(km2 / 2.589988).toLocaleString("en-US", { maximumFractionDigits: 1 })} sq mi)`; }
+    if (row.prop === "P2047" && u && u[0] === "min") return `${n} min`;
+    return u ? `${n.toLocaleString("en-US")} ${u[0]}` : n.toLocaleString("en-US");
+  }
+  if (typeof v === "string") return v;
+  return "";
+}).filter(Boolean).join(", ");
+const _kp = new Map();
+export const kpFor = async (q) => {
+  const name = String(q || "").trim().slice(0, 80);
+  if (name.length < 2) return null;
+  const key = createHash("sha256").update(`kp\n${name.toLowerCase()}`).digest("hex").slice(0, 24);
+  const hit = _kp.get(key);
+  if (hit && Date.now() - hit.t < TTL) return hit.v;
+  let v = null;
+  try {
+    const s = await wdGet({ action: "wbsearchentities", search: name, language: "en", uselang: "en", type: "item", limit: "1" });
+    const h = s && Array.isArray(s.search) && s.search[0];
+    const e = h && h.id && await wdGet({ action: "wbgetentities", ids: h.id, props: "claims|sitelinks", sitefilter: "enwiki" });
+    const ent = e && e.entities && e.entities[h.id];
+    if (ent) {
+      const plan = kpPlan(ent);
+      if (plan.title) {
+        const ids = [...new Set(plan.rows.flatMap((r) => r.vals.filter((x) => x.id).map((x) => x.id)))].slice(0, 20);
+        const [lab, sum] = await Promise.all([
+          ids.length ? wdGet({ action: "wbgetentities", ids: ids.join("|"), props: "labels", languages: "en" }) : null,
+          net(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(plan.title.replace(/ /g, "_"))}`, { timeout: 3000, max: 200000, accept: "application/json", headers: WD_UA }),
+        ]);
+        const labels = {};
+        for (const id of ids) { const l = lab && lab.entities && lab.entities[id] && lab.entities[id].labels && lab.entities[id].labels.en; if (l) labels[id] = l.value; }
+        let sj = null;
+        try { sj = sum.status === 200 ? JSON.parse(sum.text) : null; } catch {}
+        const facts = plan.rows.map((r) => ({ k: r.k, v: kpText(r, labels) })).filter((f) => f.v);
+        const photo = plan.image ? `https://commons.wikimedia.org/w/index.php?title=Special:FilePath/${encodeURIComponent(plan.image)}&width=330` : sj && sj.thumbnail && sj.thumbnail.source || "";
+        v = { qid: h.id, title: plan.title, name: h.label || plan.title, type: plan.type, desc: h.description || (sj && sj.description) || "", extract: sj && typeof sj.extract === "string" ? sj.extract : "", facts, photo: photo && _sign ? _sign(photo) : "" };
+      }
+    }
+  } catch { v = null; }
+  if (_kp.size > 1000) _kp.clear();
+  _kp.set(key, { t: v ? Date.now() : Date.now() - TTL + 600000, v });
   return v;
 };
 
@@ -976,6 +1057,14 @@ export const routes = [
       const u = new URL(req.url).searchParams;
       const d = await wdFor(u.get("f") || "", u.get("s") || "", u.get("s2") || "");
       return new Response(JSON.stringify({ d }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+    },
+  },
+  {
+    method: "get",
+    path: "/kp",
+    async handler(req) {
+      const q = (new URL(req.url).searchParams.get("q") || "").slice(0, 100);
+      return new Response(JSON.stringify({ kp: await kpFor(q) }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
     },
   },
   {
