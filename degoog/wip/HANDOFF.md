@@ -27,6 +27,15 @@ The spec is the user's handoff text (they paste it into each new chat). These no
   - getDesc text append (iPhone video descriptions are ruled out: check this is phone-gated; PC only)
 - v49 installer does one-time downloads (words/pairs/names) inside the installer. The spec says no one-time setup in the installer, so move these to the plugin's lazy init.
 
+## Real data from the user's server (recorded 2026-11-23)
+- degoog/wip/rec/ct-recordings.json.gz holds 54 real searches through their degoog: 50 web, plus images for eiffel tower and golden gate bridge, and news for steelers and nvidia. Fields: title, url, snippet, sources, publishedAt, thumbnail, imageUrl, duration, plus engine timings.
+  - It also has their real page HTML (`page`), their real compiled CSS (`css`: theme style.css, /api/plugins/styles.css, fontawesome) for headless screenshots, non-secret server settings, and the installed plugins.
+  - Use these for every "real search" test. Never invent results.
+- Settings confirmed: streamingEnabled = false (progressive rendering is off: results render once). domainBlock/Score/Replace are enabled, as is infiniteScroll.
+- Static files: the page loads /public/themes/degoog-theme/style.css?v=1.2.0, so degoog serves /public/* statically from /app/src/public. Ship the PSL as /public/ct/psl.<hash>.js there (written by the installer and the server plugin), loaded with defer.
+- ai-summary is installed as plugins/degoog-org-official-extensions-ai-summary. `const SHORT_TTL_MS = 2 * 60 * 1000;` appears exactly once (plus 2 uses). Patch only the const line.
+- Installed plugins: clean-titles, ai-summary, define, math-slot, time, weather.
+
 ## Done
 - files/core.js: pslParse, regDomain, docKey, titleKey, dedupe (+arXiv PDF/HTML/vN alts), capSites, namedSites, cleanSnippet, relDate, upsValid, isbnValid, cmuCourse.
 - test/core.test.js: 12 tests pass (`cd degoog/wip && bun test`).
