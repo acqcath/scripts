@@ -439,20 +439,21 @@ export const tabLow = (tab, host, title, seen) => {
   return false;
 };
 
-// ===== Relevance: how much of the search a result is about (same rule for every topic) =====
-// The search's words (3+ letters, common words dropped, plural folded); a search that is only an identifier
-// (15213, an ISBN, a DOI) uses its digit runs. matchShare = share of those words found in the result's title,
-// address and description: 0 = the result is about something else.
+// ===== Relevance (one rule for every topic; no lists, nothing to train or maintain) =====
+// A result has to show it's about the search: it contains one of the search's words (title, address or
+// description), or 2+ engines returned it (they agree), or the search is an identifier (15213, an ISBN, a tracking
+// number: every word has a digit) and the result is in the engines' top 3 (they look identifiers up directly).
 const REL_STOP = new Set("the and for with from what whats how who whos why when where which this that these those are was were you your can does did will about into than then there many much".split(" "));
-const relStem = (w) => (w.length > 4 ? w.replace(/(?:es|s)$/, "") : w);
-export const relWords = (q) => {
-  const s = String(q || "").toLowerCase();
-  const ws = [...new Set((s.match(/[\p{L}][\p{L}\p{N}']*/gu) || []).map((w) => w.replace(/'s$/, "")).filter((w) => w.length >= 3 && !REL_STOP.has(w)).map(relStem))];
-  return ws.length ? ws : [...new Set(s.match(/\d{4,}/g) || [])];
-};
+// "15-213", "10.1038" are one token (digit groups joined); words match by shared start (love / loves / lover)
+const relToks = (t) => String(t || "").toLowerCase().replace(/(\d)[-.\/](?=\d)/g, "$1").split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+export const relWords = (q) => [...new Set(relToks(q).filter((w) => (/\p{L}/u.test(w) ? w.length >= 3 && !REL_STOP.has(w) : w.length >= 4)))];
+export const relIdent = (q) => { const t = relToks(q); return t.length > 0 && t.every((w) => /\d/.test(w)); };
+const relHit = (w, t) => t === w || (w.length >= 4 && t.length >= 4 && (t.startsWith(w) || w.startsWith(t)));
 export const matchShare = (words, text) => {
   if (!words.length) return 1;
-  const t = ` ${String(text || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ")} `;
-  const toks = new Set(t.split(" ").filter(Boolean).map(relStem));
-  return words.filter((w) => toks.has(w) || (/^\d+$/.test(w) && t.includes(w))).length / words.length;
+  const toks = [...new Set(relToks(text))];
+  return words.filter((w) => toks.some((t) => relHit(w, t))).length / words.length;
 };
+// A search made mostly of common words (a quote, "why does no one love me") can't be judged by its words: no check
+export const relJudgeable = (q) => { const t = relToks(q); return t.length > 0 && relWords(q).length * 2 >= t.length; };
+export const related = (words, ident, text, engines, pos) => matchShare(words, text) > 0 || engines >= 2 || (ident && pos < 3);

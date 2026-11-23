@@ -139,20 +139,13 @@ const cleanTitle = (raw, href) => {
   }
 };
 
-// Explicit results, by relevance like everything else (degoog: private and uncensored; better than Google's
-// on/off SafeSearch). An explicit result shows when the search asks for that kind of thing or when it matches at
-// least half of the search's words; an explicit result about something else entirely (porn spam on "15213", rule34
-// pages on a typo) is hidden. Same rule on every tab. Nothing else is ever hidden for its topic.
-const ADULT_HOST = /(porn|xvideos|xnxx|xhamster|redtube|youporn|spankbang|eporner|onlyfans|fansly|chaturbate|stripchat|camsoda|bongacams|livejasmin|rule34|r34|paheal|scrollx|gelbooru|danbooru|e621|nhentai|hentai|motherless|txxx|brazzers|bangbros|realitykings|erome|thothub|fapello|nudostar|xxx)|(^|[.-])(sex|nsfw|nudes?|escorts?)([.-]|$)/i;
-const ADULT_TEXT = /\b(xxx|nsfw|hentai|milfs?|blowjobs?|cumshots?|creampies?|gangbangs?|deepthroat|(?:free|hd|amateur) porn|porn (?:videos?|clips?|pics?|tube|stars?)|sex (?:videos?|tapes?|cams?|chat)|camgirls?|onlyfans leaks?|nudes? leak(?:ed|s)?)\b/i;
-const WANTS_ADULT = /\b(porn\w*|sex\w*|nude\w*|naked|nsfw|xxx|hentai|onlyfans|erotic\w*|milfs?|boobs?|tits?|pussy|dick|cock|fap\w*|r34|rule ?34|lewd)\b/i;
-let href = "", wantsAdult = false, webTab = true, wantsDict = true, qWords = [];
+let href = "", webTab = true, wantsDict = true, qWords = [], qIdent = false;
 // Dictionary pages only when the search is about a word (Bing adds them for words like "under" or "fix")
 const DICT = /(^|\.)(merriam-webster\.com|thefreedictionary\.com|dictionary\.cambridge\.org|dictionary\.com|collinsdictionary\.com|oxfordlearnersdictionaries\.com|vocabulary\.com|wordreference\.com|yourdictionary\.com|wiktionary\.org|urbandictionary\.com)$/i;
 const readQuery = () => {
   if (location.href === href) return;
   href = location.href;
-  try { wantsAdult = WANTS_ADULT.test(new URL(href).searchParams.get("q") || ""); } catch { wantsAdult = false; }
+  try { qIdent = CT.relIdent(new URL(href).searchParams.get("q") || ""); } catch { qIdent = false; }
   try { webTab = !new URL(href).searchParams.get("type"); } catch { webTab = true; }
   try { qWords = CT.relWords(new URL(href).searchParams.get("q") || ""); } catch { qWords = []; }
   try {
@@ -160,16 +153,13 @@ const readQuery = () => {
     wantsDict = q.split(/\s+/).length <= 2 || /\b(define|definition|meaning|means?|synonyms?|antonyms?|pronounc\w*|spell\w*|dictionary|word|etymology|slang)\b/i.test(q);
   } catch { wantsDict = true; }
 };
-const adult = (host, text, snip = "") => !wantsAdult && (ADULT_HOST.test(host) || ADULT_TEXT.test(text)) && CT.matchShare(qWords, `${host} ${text} ${snip}`) < 0.5;
-// Results the page never shows: adult ones the search didn't ask for, dictionary pages for non-word searches
+// Results the page never shows: dictionary pages for non-word searches (Bing adds them for words like "under")
 const junk = (el) => {
   const a = el.querySelector("a.result-title");
   if (!a) return false;
   let h = "";
   try { h = new URL(a.href).hostname; } catch {}
-  // Adult subreddits count like adult sites (reddit.com/r/rule34 is reddit.com by host)
-  const sub = (/(?:^|\.)reddit\.com$/.test(h) && (/^\/r\/([\w-]+)/.exec((() => { try { return new URL(a.href).pathname; } catch { return ""; } })()) || [])[1]) || "";
-  return adult(/^(?:rule34|nsfw\w*|gonewild\w*|hentai\w*|porn\w*|r34\w*|nsfw_gif|realgirls|holdthemoan)$/i.test(sub) ? `${h} rule34` : h, a.textContent || "", el.querySelector(".result-snippet")?.textContent || "") || (!wantsDict && DICT.test(h.replace(/^www\./, "")));
+  return !wantsDict && DICT.test(h.replace(/^www\./, ""));
 };
 
 // ===== List pass (Web tab): dedupe -> site prefs -> 2 per site with folds, planned by core.js before paint =====
@@ -228,10 +218,51 @@ const tabPass = () => {
     if (TP.titles.has(`${h}|${t}`)) { el.style.display = "none"; el.dataset.ctDup = "1"; continue; }
     TP.titles.add(`${h}|${t}`);
     // Off-kind for this tab, or about something else entirely (no word of the search anywhere in it): moves down
-    if (CT.tabLow(tab, h, a.textContent, TP.seen) || CT.matchShare(qWords, `${h} ${a.textContent} ${el.querySelector(".result-snippet")?.textContent || ""}`) === 0) low.push(el);
+    if (CT.tabLow(tab, h, a.textContent, TP.seen)) low.push(el);
   }
   const last = fresh[fresh.length - 1];
   if (low.length && low.length < fresh.length) { let at = last; for (const el of low) { if (el !== at) at.after(el); at = el; } }
+};
+// Relevance, one rule for every topic and tab (core related): a result that shows no sign of being about the
+// search (none of its words, one engine only, not an identifier lookup's top 3) goes to the end of the batch it came
+// in, folded under "N unrelated results ⌄" (one tap shows them). Decided before paint; nothing is filtered by topic.
+const relPlanned = new WeakSet();
+let RP = { key: "", n: 0 };
+const relPass = () => {
+  const list = document.getElementById("results-list");
+  if (!list) return;
+  const fresh = [...list.querySelectorAll(":scope > .result-item")].filter((el) => !relPlanned.has(el));
+  if (!fresh.length) return;
+  const key = searchId(location.href);
+  if (RP.key !== key) RP = { key, n: 0 };
+  // Words of the corrected search too, when degoog searched a typo fix ("Showing results for …")
+  const words = [...new Set([...qWords, ...CT.relWords(document.querySelector("#ct-fix a")?.textContent || "")])];
+  let q0 = "";
+  try { q0 = new URL(location.href).searchParams.get("q") || ""; } catch {}
+  if (!CT.relJudgeable(q0)) { fresh.forEach((el) => relPlanned.add(el)); return; }
+  const out = [];
+  for (const el of fresh) {
+    relPlanned.add(el);
+    if (el.style.display === "none" || el.classList.contains("ct-grouped")) continue;
+    const pos = RP.n++;
+    const a = el.querySelector("a.result-title");
+    if (!a || el.nextElementSibling?.classList.contains("ct-fold")) continue; // a fold's anchor stays put
+    const text = `${el.dataset.resultUrl || a.href} ${a.textContent} ${el.querySelector(".result-snippet")?.textContent || ""}`;
+    if (!CT.related(words, qIdent, text, el.querySelectorAll(".result-engine-tag").length, pos)) out.push(el);
+  }
+  const shown = fresh.filter((el) => !out.includes(el) && el.style.display !== "none" && !el.classList.contains("ct-grouped"));
+  if (!out.length || !shown.length) return;
+  for (const el of out) { el.style.display = "none"; el.dataset.ctUnrel = "1"; }
+  const row = mk("div", "ct-fold");
+  const b = mk("button", "ct-fold-b", `${out.length} unrelated result${out.length > 1 ? "s" : ""}`);
+  b.type = "button";
+  b.setAttribute("aria-expanded", "false");
+  b.append(mk("span", "ct-chev", "⌄"));
+  row.append(b);
+  const last = fresh[fresh.length - 1];
+  last.after(row);
+  row.after(...out);
+  b.addEventListener("click", () => { for (const el of out) { el.style.display = ""; delete el.dataset.ctUnrel; fadeIn(el); } row.remove(); }, { once: true });
 };
 const listPass = () => {
   if (!webTab) return;
@@ -292,7 +323,7 @@ const foldPass = () => {
   LP.pend = [];
   for (const f of pend) {
     const els = f.els.filter((el) => el.isConnected && !el.classList.contains("ct-grouped"));
-    if (!els.length || !f.after.isConnected || f.after.classList.contains("ct-grouped")) continue;
+    if (!els.length || !f.after.isConnected || f.after.classList.contains("ct-grouped") || f.after.dataset.ctUnrel) continue;
     const row = mk("div", "ct-fold");
     const b = mk("button", "ct-fold-b", `${els.length} more from ${f.site}`);
     b.type = "button";
@@ -459,7 +490,6 @@ const card = (el, isImage) => {
   const raw = (src && src.textContent || "").trim();
   const host = raw.toLowerCase().replace(/^www\./, "");
   const text = t && t.textContent || "";
-  if (adult(host, text)) { el.style.display = "none"; return; }
   if (t && !t.dataset.ctTidy) { t.dataset.ctTidy = "1"; const x = CT.tidyText(text.replace(/\s+/g, " ").trim()); if (x !== text.trim()) t.textContent = x; }
   if (!isImage) return;
   if (aiImg(host)) { el.style.display = "none"; el.dataset.ctAi = "1"; return; }
@@ -1781,6 +1811,7 @@ const init = () => {
   safe("answer", ansPass);
   safe("list", listPass);
   safe("tabs", tabPass);
+  safe("rel", relPass);
   safe("scan", () => scan(document.body));
   safe("skeleton", () => skel(document.body));
   safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools);
@@ -1793,6 +1824,7 @@ const init = () => {
     safe("answer", ansPass);
     safe("list", listPass);
     safe("tabs", tabPass);
+    safe("rel", relPass);
     for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { safe("scan", () => scan(n)); safe("skeleton", () => skel(n)); safe("usage", () => noUsage(n)); }
     safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("card", glance);
     safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass);
