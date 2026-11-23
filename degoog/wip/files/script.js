@@ -680,7 +680,11 @@ const siteItems = (el) => {
   }
   menu.prepend(seg);
   if (cur === "lower" && SITES_AUTO.includes(siteOf(host))) seg.after(mk("div", "ct-seg-note", "Lowered automatically (SEO signs). Your choice here wins."));
-  // Archived copy (spec 10): nothing is asked until you tap it
+  // Quick view (spec 11) and archived copy (spec 10): nothing is asked until you tap them
+  const qv = mk("button", "degoog-menu-item ct-arch ct-qv-b", "Quick view");
+  qv.type = "button";
+  qv.setAttribute("role", "menuitem");
+  menu.append(qv);
   const ar = mk("button", "degoog-menu-item ct-arch", "Open archived copy");
   ar.type = "button";
   ar.setAttribute("role", "menuitem");
@@ -689,7 +693,7 @@ const siteItems = (el) => {
 // Tap: a new tab opens at once (so the browser allows it) and goes to the copy the server found: archive.today first
 // for paywalled sites, else the Wayback Machine, else Ghostarchive; none -> archive.today's save page
 document.addEventListener("click", async (e) => {
-  const b = e.target.closest && e.target.closest(".ct-arch");
+  const b = e.target.closest && e.target.closest(".ct-arch:not(.ct-qv-b)");
   if (!b) return;
   e.preventDefault();
   e.stopPropagation();
@@ -759,7 +763,7 @@ document.addEventListener("click", async (e) => {
   if (!list || pref === "normal") return;
   const rows = [...list.querySelectorAll(".result-item")].filter((x) => siteOf(rowHost(x)) === site);
   if (pref === "hide") rows.forEach((x) => { x.style.display = "none"; x.dataset.ctHide = "1"; });
-  else if (pref === "prefer") { const kpEl = list.querySelector(":scope > .ct-kp"); if (kpEl) kpEl.after(...rows); else list.prepend(...rows); }
+  else if (pref === "prefer") { const kpEl = [...list.children].find((x) => x.classList.contains("ct-kp")); if (kpEl) kpEl.after(...rows); else list.prepend(...rows); }
   else list.append(...rows);
 }, true);
 
@@ -1440,9 +1444,63 @@ const onlyPass = () => {
   u.searchParams.set("q", CT.onlyQuery(q, d));
   u.searchParams.delete("page");
   a.href = u.pathname + u.search;
-  const kpEl = list.querySelector(":scope > .ct-kp");
+  const kpEl = [...list.children].find((x) => x.classList.contains("ct-kp"));
   if (kpEl) kpEl.after(a); else list.prepend(a);
 };
+
+// ===== Quick view (spec 11): your tap opens it under the result (it grows: your action), tap again to close =====
+const QV_SHOW = { ingredients: 8, steps: 3, questions: 3 };
+const qvBox = (v) => {
+  const box = mk("div", "ct-qv");
+  if (!v) { box.append(mk("div", "ct-qv-none", "No quick view for this page")); return box; }
+  const facts = v.facts.filter(([k]) => k !== "Access").map(([k, x]) => (k === "Rating" || k === "Total time" || k === "Time" ? x : `${k} ${x}`));
+  if (facts.length) box.append(mk("div", "ct-qv-facts", facts.join(" · ")));
+  for (const l of v.lists) {
+    if (l.para) { box.append(mk("p", "ct-qv-p", l.items[0])); continue; }
+    const n = QV_SHOW[l.label] || 3;
+    const ul = mk(l.ordered ? "ol" : "ul", `ct-qv-list${l.qa ? " ct-qv-qa" : ""}`);
+    l.items.forEach((t, i) => {
+      const li = mk("li");
+      if (l.qa) { const [q, ...a] = t.split("\n"); li.append(mk("div", "ct-qv-q", q), mk("div", "ct-qv-a", a.join(" "))); } else li.textContent = t;
+      if (i >= n) li.hidden = true;
+      ul.append(li);
+    });
+    box.append(ul);
+    if (l.items.length > n) {
+      const more = mk("button", "ct-qv-more", `${l.items.length - n} more ${l.label} ⌄`);
+      more.type = "button";
+      more.onclick = () => { ul.querySelectorAll("li[hidden]").forEach((x) => { x.hidden = false; }); more.remove(); };
+      box.append(more);
+    }
+  }
+  v.text.slice(0, 3).forEach((t) => box.append(mk("p", "ct-qv-p", t)));
+  return box;
+};
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest && e.target.closest(".ct-qv-b");
+  if (!b) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const el = b.closest(".result-item");
+  const a = el && el.querySelector("a.result-title");
+  const body = el && el.querySelector(".result-body");
+  const u = (el && el.dataset.resultUrl) || (a && a.href) || "";
+  const menu = b.closest(".result-actions-menu");
+  if (menu) menu.hidden = true;
+  if (!u || !body) return;
+  const open = [...body.children].find((x) => x.classList.contains("ct-qv"));
+  if (open) { open.remove(); b.textContent = "Quick view"; return; }
+  const box = mk("div", "ct-qv"); box.append(mk("div", "ct-qv-none", "Loading quick view…"));
+  body.append(box);
+  b.textContent = "Close quick view";
+  const j = await bridge("qv", { u }).catch(() => null);
+  if (!box.isConnected) return;
+  const v = j && j.v && Array.isArray(j.v.facts) && Array.isArray(j.v.lists) && Array.isArray(j.v.text) ? j.v : null;
+  box.replaceWith(qvBox(v));
+  // The page says it's for subscribers (isAccessibleForFree: false): the Paywall word joins the source line
+  const cite = el.querySelector(".result-cite");
+  if (v && v.facts.some(([k, x]) => k === "Access" && x === "Paywall") && cite && !el.querySelector(".result-url-row .ct-paywall:not(.ct-pdf)")) cite.after(mk("span", "ct-paywall", "Paywall"));
+}, true);
 
 // ===== Knowledge panel (spec 3) =====
 // Asked at page load for short name-like searches that get no other answer, no AI and no plain type/site list.
@@ -1504,7 +1562,7 @@ document.addEventListener("click", (e) => {
 const kpPass = () => {
   const key = searchId(location.href), list = document.getElementById("results-list");
   if (kpKey !== key) { kpKey = key; document.querySelectorAll(".ct-kp").forEach((x) => x.remove()); }
-  if (!list || !webTab || list.querySelector(":scope > .ct-kp")) return;
+  if (!list || !webTab || [...list.children].find((x) => x.classList.contains("ct-kp"))) return;
   const d = ready("kp", key), kp = d && d.kp;
   if (!kp || !kp.title || !kp.name) return;
   const late = drawnFor === key, wide = !!(window.matchMedia && matchMedia(KP_WIDE).matches);

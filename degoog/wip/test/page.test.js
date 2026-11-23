@@ -513,7 +513,7 @@ test("page: 'Open archived copy' in each result's menu asks the server only on t
   const wsj = items.find((el) => /(^|\.)wsj\.com$/.test(new URL(el.querySelector("a.result-title").href).hostname));
   const opened = [];
   r.win.open = () => { const w = { closed: false, document: { body: {} }, location: { replace: (u) => opened.push(u) } }; return w; };
-  wsj.querySelector(".ct-arch").click();
+  wsj.querySelector(".ct-arch:not(.ct-qv-b)").click();
   await new Promise((res) => setTimeout(res, 30));
   const c = calls.find((x) => x.route === "arch");
   expect(c.params.get("u")).toBe(wsj.querySelector("a.result-title").href);
@@ -542,4 +542,31 @@ test("page: images row for a search you opened the Images tab for (real 'golden 
   const c = [];
   await run("golden gate bridge", { engines: 0, imgCalls: c, images: { delay: 0 } });
   expect(c.length).toBe(0);
+});
+
+test("page: Quick view opens under the result on tap (recipe: facts, 8 ingredients + 'N more', 3 steps), closes on a second tap", async () => {
+  const calls = [];
+  const v = { kind: "recipe", title: "Cookies", facts: [["Rating", "4.9 ★ (3,120)"], ["Total time", "1 hr 15 min"], ["Serves", "24"]], lists: [{ label: "ingredients", items: Array.from({ length: 11 }, (_, i) => `item ${i + 1}`) }, { label: "steps", items: ["a", "b", "c", "d"], ordered: true }], text: [] };
+  const r = await run("chocolate chip cookie recipe", { engines: 0, calls, bridge: { qv: { data: { v }, delay: 5 } } });
+  expect(calls.some((c) => c.route === "qv")).toBe(false);
+  const el = r.visible[0];
+  el.querySelector(".ct-qv-b").click();
+  await new Promise((res) => setTimeout(res, 30));
+  expect(calls.find((c) => c.route === "qv").params.get("u")).toBe(el.querySelector("a.result-title").href);
+  const box = el.querySelector(".result-body > .ct-qv");
+  expect(box.querySelector(".ct-qv-facts").textContent).toBe("4.9 ★ (3,120) · 1 hr 15 min · Serves 24");
+  const [ing, st] = box.querySelectorAll(".ct-qv-list");
+  expect([...ing.children].filter((x) => !x.hidden).length).toBe(8);
+  expect(box.querySelector(".ct-qv-more").textContent).toBe("3 more ingredients ⌄");
+  expect(st.tagName).toBe("OL");
+  box.querySelector(".ct-qv-more").click();
+  expect([...ing.children].filter((x) => !x.hidden).length).toBe(11);
+  el.querySelector(".ct-qv-b").click();
+  expect(el.querySelectorAll(".ct-qv").length).toBe(0);
+  // A page with nothing readable says so
+  const r2 = await run("chocolate chip cookie recipe", { engines: 0, bridge: { qv: { data: { v: null }, delay: 1 } } });
+  r2.visible[1].querySelector(".ct-qv-b").click();
+  await new Promise((res) => setTimeout(res, 20));
+  expect(r2.visible[1].querySelector(".ct-qv").textContent).toBe("No quick view for this page");
+  expect(r.errors.concat(r2.errors)).toEqual([]);
 });
