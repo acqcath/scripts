@@ -26,6 +26,9 @@ Biggest visible wins and the base for everything else:
 5. Check: replay the 54 recorded searches in jsdom (count merges and folds per search), plus headless Chrome at 390 and 1280 on 5 cases (react useEffect cleanup, attention is all you need pdf, how to reset airpods, best mechanical keyboard reddit, apple support). Layout shift must be 0.
 6. Write degoog/wip/PREVIEW.md: what changed, what to look at, and how to roll back. Keep it short; the user reads it in the morning.
 
+## After M1
+Go straight on to M2 with no pause. After each milestone, update install-preview.ps1 and PREVIEW.md, so the user's morning preview includes whatever is finished by then, not just M1.
+
 ## M2: Sites control + anti-SEO
 Replace Rank/Block with Prefer/Normal/Lower/Hide (menu + Settings, one list), then anti-SEO auto-Lower, the paywall tag, and the images-only blocklist.
 
