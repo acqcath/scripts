@@ -81,6 +81,7 @@ The spec is the user's handoff text (they paste it into each new chat). These no
 - Site prefs come from `window.CT_DATA.sites` ({domain: "prefer"|"lower"|"hide"}), compiled into the inline block by the server. Not built yet: until then every site is Normal.
 - PSL is read from `window.CT_PSL` (string), set by /public/ct/psl.<hash>.js loaded with defer before the module (defer and module scripts run in document order).
 ## Next
+- **M1 is done** (2026-11-23 06:05 UTC): install-preview.ps1 + PREVIEW.md are on the branch. Now M2 (PLAN.md).
 - Step 3, part 2 (after-paint items still open):
   - Measure live how often /fix and /qs are in hand before results arrive (engine cache hits come back fast). If "Showing results for" is often dropped while the search really was changed, show it from the server's answer: the interceptor knows the fix before the engines run.
   - Rank higher / Rank lower menu click moves rows: user-initiated, so allowed; it gets replaced by Prefer/Normal/Lower/Hide in M2.
