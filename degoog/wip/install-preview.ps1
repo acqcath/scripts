@@ -76,6 +76,21 @@ export const sitesFromLists = (block = "", score = "") => {
 };
 let DIR = "/app/data/plugins/clean-titles";
 
+// ===== Page part check: a degoog image update replaces /app/src (layout.html + /public/ct), and this plugin can't
+// write it back (degoog runs as uid 1000 via su-exec in entrypoint.sh; /app/src belongs to root). So it says so at the
+// top of its Settings entry and in the log, read once at start (degoog restarts on image updates anyway)
+export const PAGE_FILE = "/app/src/public/themes/degoog-theme/layout.html";
+export const pagePartMissing = (html, exists = (p) => fs.existsSync(p)) => {
+  if (typeof html !== "string") return false; // can't read it: say nothing rather than guess
+  if (!html.includes('<script type="module" id="ct-inline">')) return true;
+  const m = /<script defer src="\/public\/ct\/(psl\.[0-9a-f]+\.js)" id="ct-psl"><\/script>/.exec(html);
+  return !m || !exists(`/app/src/public/ct/${m[1]}`);
+};
+let _pageHtml; try { _pageHtml = fs.readFileSync(PAGE_FILE, "utf8"); } catch {}
+export const PAGE_MISSING = pagePartMissing(_pageHtml);
+_pageHtml = undefined;
+if (PAGE_MISSING) console.warn("[clean-titles] the page part is missing (a degoog update replaced it): run the installer again");
+
 // ===== Sites in Settings: the same Prefer / Normal / Lower / Hide list as each result's menu =====
 // degoog's own block and score lists stay the one truth (degoog filters with them on the server, every tab). The
 // "Sites" setting is a view of them: refreshed from the lists (each page load and at start), and when you save
@@ -1434,7 +1449,7 @@ export const routes = [
 export default {
   isClientExposed: false,
   name: "Clean Titles & HD Thumbnails",
-  description: "Google-style result titles, and sharper news and video thumbnails.",
+  description: (PAGE_MISSING ? "Run the installer again: a degoog update removed this plugin's page part, so it is off on the results page until then. " : "") + "Google-style result titles, and sharper news and video thumbnails.",
   trigger: "cleantitles",
   aliases: ["ct"],
   settingsSchema: [
