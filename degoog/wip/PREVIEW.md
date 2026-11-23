@@ -65,7 +65,9 @@ Searches that clearly want pictures (`… photos`, `… wallpaper`, `… logo`, 
 ## !deepl (M5)
 `!deepl guten Morgen` opens DeepL with the text (to English); `!deepl de good morning` translates to German.
 
-## Smaller changes (M5)
+## Smaller changes (M5/M6)
+The installer no longer downloads anything itself: if the typo fixer's word lists or Wikipedia names are ever missing, the plugin fetches them on its own a minute or two after degoog starts (you already have them, so nothing changes for you).
+No site icons next to results any more (spec), and every new feature has its own switch in Settings → Clean Titles (all on).
 Bing suggestions back off from 1 minute (doubling, up to an hour) when Bing stops answering, instead of a flat hour.
 
 ## Other meanings (M5)

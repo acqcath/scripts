@@ -833,7 +833,7 @@ const isName = (w) => NAMES.has(w) || (learned.cap && learned.cap[w] || 0) >= 2;
 // Settings > Clean Titles > "Learn from my search results" (off: nothing about your searches is stored or used)
 let LEARN = false;
 // Settings > Clean Titles: which of Sitelinks / Discussions / Videos / Top stories to show (all on unless turned off)
-let SHOW = { sl: true, forum: true, video: true, news: true };
+let SHOW = { sl: true, forum: true, video: true, news: true, ans: true, kp: true, img: true, qv: true, arch: true, mean: true, stars: true, plain: true, pw: true };
 const EMPTY = () => ({ w: {}, b: {}, keep: {}, fix: {}, cap: {} });
 const readLearned = () => { try { learned = Object.assign(EMPTY(), JSON.parse(fs.readFileSync(`${DIR}/learned.json`, "utf8"))); } catch { learned = EMPTY(); } };
 const PAIRS = new Map();
@@ -853,6 +853,27 @@ const save = () => {
     fs.renameSync(`${DIR}/learned.json.tmp`, `${DIR}/learned.json`);
   } catch {}
 };
+// Typo fixer data, fetched by the plugin itself the first time it's missing (spec: no one-time setup in the
+// installer): SymSpell's English words and word pairs, then names from Wikipedia's article titles, made by
+// names.js (shipped next to this file) in its own bun process so degoog never waits on it. Retried a day later
+// if a download fails. Nothing about searches is sent anywhere.
+const SYMSPELL = "https://raw.githubusercontent.com/wolfgarbe/SymSpell/master/SymSpell";
+const DATA_FILES = [["words.txt", `${SYMSPELL}/frequency_dictionary_en_82_765.txt`, 50000], ["pairs.txt", `${SYMSPELL}/frequency_bigramdictionary_en_243_342.txt`, 200000]];
+const hasFile = (f) => { try { return fs.statSync(`${DIR}/${f}`).size > 0; } catch { return false; } };
+let _dataRun = null;
+export const ensureData = (spawn = (cmd) => Bun.spawn(cmd, { stdout: "ignore", stderr: "ignore" })) => (_dataRun ||= (async () => {
+  let got = false;
+  for (const [f, url, minLines] of DATA_FILES) {
+    if (hasFile(f)) continue;
+    const r = await net(url, { timeout: 120000, max: 20_000_000, accept: "text/plain" });
+    if (r.status === 200 && r.text.split("\n").length >= minLines) { try { fs.writeFileSync(`${DIR}/${f}.tmp`, r.text); fs.renameSync(`${DIR}/${f}.tmp`, `${DIR}/${f}`); got = true; } catch {} }
+  }
+  if (got) { loaded = false; WORDS.clear(); PAIRS.clear(); TOTAL = 0; PTOTAL = 0; } // read again on next use
+  if (hasFile("words.txt") && !hasFile("names.txt") && hasFile("names.js")) { try { await spawn(["bun", `${DIR}/names.js`]).exited; loaded = false; NAMES.clear(); } catch {} }
+  const ok = DATA_FILES.every(([f]) => hasFile(f));
+  if (!ok) setTimeout(() => { _dataRun = null; }, 86400000).unref?.();
+  return ok;
+})());
 const load = () => {
   if (loaded) return;
   loaded = true;
@@ -1421,6 +1442,15 @@ export default {
     { key: "showDiscussions", label: "Discussions and forums", type: "toggle", default: true, description: "Reddit, Stack Overflow and forum threads from your results in one box." },
     { key: "showVideos", label: "Videos", type: "toggle", default: true, description: "Video results as a row of cards." },
     { key: "showTopStories", label: "Top stories", type: "toggle", default: true, description: "Fresh news cards when your results look like news (one extra News search)." },
+    { key: "showAnswers", label: "Instant answers", type: "toggle", default: true, description: "One answer above the results: sums, conversions, currency, tracking numbers, versions, facts, CMU courses, scores." },
+    { key: "showKnowledge", label: "Knowledge panel", type: "toggle", default: true, description: "About a person, place or thing, when your results include its encyclopedia article (replaces degoog's Wikipedia card)." },
+    { key: "showMeanings", label: "Other meanings", type: "toggle", default: true, description: "A line offering a word's other meanings when all your results are about one of them." },
+    { key: "showImagesRow", label: "Images row", type: "toggle", default: true, description: "A row of pictures for searches that clearly want them (one extra Images search, usually from degoog's cache)." },
+    { key: "plainLists", label: "Plain lists for type and site searches", type: "toggle", default: true, description: "Searches naming a type (pdf, reddit, recipe…) or a site get a plain list, official docs first for programming." },
+    { key: "showPaywall", label: "Paywall tag", type: "toggle", default: true, description: "The word \"Paywall\" on results from subscription sites." },
+    { key: "showQuickView", label: "Quick view", type: "toggle", default: true, description: "In each result's menu: the page's recipe, steps, facts or first paragraphs, read by your server when you tap." },
+    { key: "showStars", label: "Ratings on recipe and review results", type: "toggle", default: true, description: "Rating and time on the first results' source line (your server reads those pages after the results are drawn)." },
+    { key: "showArchive", label: "Archived copy", type: "toggle", default: true, description: "In each result's menu: open a saved copy (archive.today, Wayback Machine, Ghostarchive), looked up when you tap." },
     { key: "sites", label: "Sites", type: "list", addLabel: "Add a site", description: "Prefer: moved up, no 2-per-site limit. Lower: moved down. Hide: never shown. Same list as Prefer / Normal / Lower / Hide in each result's menu, kept in degoog's own block and score lists.", itemSchema: [{ key: "site", label: "Site", type: "text", placeholder: "example.com" }, { key: "choice", label: "Choice", type: "select", options: ["prefer", "normal", "lower", "hide"], optionLabels: ["Prefer", "Normal", "Lower", "Hide"], default: "prefer" }] },
     { key: "autoLower", label: "Lower SEO junk automatically", type: "toggle", default: true, description: "Sites that show copy, SEO-bait, stale \"best 20XX\" or AI-written signs on most searches they're in (at least 5) are set to Lower, marked auto in the result menu. Only Lower, never Hide, and your own choice for a site always wins. Keeps only site names and two counts." },
     { key: "learnFromResults", label: "Learn from my search results", type: "toggle", description: "Off: the typo fixer stores and uses nothing about your searches. On: it remembers words and names from your result titles, plus the Did you mean fixes you tap or turn down (kept on this server only)." },
@@ -1429,7 +1459,7 @@ export default {
     sitesFromSettings(s ? s.sites : undefined);
     SEO_ON = !(s && (s.autoLower === false || s.autoLower === "false"));
     const off = (k) => !!s && (s[k] === false || s[k] === "false");
-    SHOW = { sl: !off("showSitelinks"), forum: !off("showDiscussions"), video: !off("showVideos"), news: !off("showTopStories") };
+    SHOW = { sl: !off("showSitelinks"), forum: !off("showDiscussions"), video: !off("showVideos"), news: !off("showTopStories"), ans: !off("showAnswers"), kp: !off("showKnowledge"), img: !off("showImagesRow"), qv: !off("showQuickView"), arch: !off("showArchive"), mean: !off("showMeanings"), stars: !off("showStars"), plain: !off("plainLists"), pw: !off("showPaywall") };
     const on = !!s && (s.learnFromResults === true || s.learnFromResults === "true");
     if (on === LEARN) return;
     LEARN = on;
@@ -1443,7 +1473,7 @@ export default {
     if (ctx && ctx.dir) DIR = ctx.dir;
     if (ctx && typeof ctx.signProxyUrl === "function") _sign = ctx.signProxyUrl;
     if (ctx && typeof ctx.fetch === "function") _fetch = ctx.fetch;
-    if (!process.env.CT_NO_TIMERS) { aiSchedule(); fxSchedule(); }
+    if (!process.env.CT_NO_TIMERS) { aiSchedule(); fxSchedule(); const t = setTimeout(() => ensureData(), 90000); if (t.unref) t.unref(); }
   },
 
   // Bridge: the page reaches the routes above through degoog's command address (/api/command),
@@ -1567,6 +1597,8 @@ const docKey = (raw) => {
   if (ax) return `arxiv:${ax.id}`;
   // *.react.dev language mirrors (es.react.dev, zh-hans.react.dev) are react.dev
   if (/\.react\.dev$/.test(h)) h = "react.dev";
+  // NeurIPS proceedings: the old nips.cc hosts and the PDF of a /paper/<id>-<slug> page are one paper (proceedings copy)
+  if (/^(?:papers|proceedings)\.(?:neurips|nips)\.cc$/.test(h)) { const m = /^\/paper\/(\d+)-[^/]*?(?:\.pdf)?$/i.exec(u.pathname); if (m) return `neurips:${m[1]}`; }
   let segs = path0.split("/").filter(Boolean);
   if (LOCALE_SITES.test(h)) {
     segs = segs.filter((s, i) => !(i < 2 && LOCALE_SEG.test(s) && !/^(kb|api|docs|en)$/i.test(s) || (i < 2 && /^(en|kb)$/i.test(s))));
@@ -2615,7 +2647,7 @@ const sameSearch = (k) => searchId(location.href) === searchId(k);
 // Same-shape results (spec 8): the search names a type of result (pdf, reddit, docs, recipe, video…) or a site to
 // filter by: a plain list of that type, with no boxes, rows, panels, People also ask or AI on top.
 const curQ = () => { try { return (new URL(location.href).searchParams.get("q") || "").trim(); } catch { return ""; } };
-const shaped = (q = curQ()) => !!(CT.shapeOf(q) || CT.filterSite(q) || /(?:^|\s)site:\S/i.test(q));
+const shaped = (q = curQ()) => SHOW.plain !== false && !!(CT.shapeOf(q) || CT.filterSite(q) || /(?:^|\s)site:\S/i.test(q));
 
 
 // clean-titles: ONE pass per new result, run before the browser draws it (no timers, no re-scans).
@@ -2749,6 +2781,7 @@ const listPass = () => {
     let q = "";
     try { q = new URL(location.href).searchParams.get("q") || ""; } catch {}
     LP = { key, first: fresh[0], ctx: CT.listCtx(q, PSL(), sitePrefs()), pend: [] };
+    if (SHOW.plain === false) LP.ctx.docs = null; // "official docs first" is part of the plain-lists switch
   }
   const items = [];
   for (const el of fresh) {
@@ -2916,7 +2949,7 @@ const row = (el) => {
     if (label && cite) { const d = mk("span", "ct-date", label); d.dataset.raw = dRaw; cite.after(d); }
   }
   // "Paywall": a word on the source line, drawn with the result (core PAYWALL_SITES)
-  if (cite && u && CT.paywalled(u.hostname, PSL())) { const t = mk("span", "ct-paywall", "Paywall"); (el.querySelector(".result-url-row .ct-date") || cite).after(t); }
+  if (cite && u && SHOW.pw !== false && CT.paywalled(u.hostname, PSL())) { const t = mk("span", "ct-paywall", "Paywall"); (el.querySelector(".result-url-row .ct-date") || cite).after(t); }
   // "PDF" on the source line for PDF files (any search), like the Paywall word
   if (cite && u && (/\.pdf$/i.test(u.pathname) || /(^|\.)arxiv\.org$/.test(u.hostname) && /^\/pdf\//.test(u.pathname))) { const t = mk("span", "ct-paywall ct-pdf", "PDF"); (el.querySelector(".result-url-row .ct-paywall, .result-url-row .ct-date") || cite).after(t); }
   const img = el.querySelector(".result-thumbnail-wrap img");
@@ -3063,21 +3096,21 @@ const earlyStart = () => {
   if (webTab && Number(u.searchParams.get("page") || 1) <= 1 && !q.startsWith("!")) {
     ask("qs", key, { q });
     // Versions / support (endoflife.date): only the product name is sent; drawn with the results if in hand by then
-    const eq = CT.eolQuery(q);
+    const eq = SHOW.ans !== false && CT.eolQuery(q);
     if (eq) ask("eol", key, { p: eq.slug });
     // Facts (Wikidata): only the fact asked and the subject's name are sent
-    const wq = !eq && !CT.answer(q, Date.now(), { fx: FX }) && CT.wdQuery(q);
+    const wq = SHOW.ans !== false && !eq && !CT.answer(q, Date.now(), { fx: FX }) && CT.wdQuery(q);
     if (wq) ask("wd", key, { f: wq.fact, s: wq.s, ...(wq.s2 ? { s2: wq.s2 } : {}) });
     // CMU course card: "15-213" (and "15213", which the server answers only if that course exists: it's also a ZIP)
-    const cq = cmuQ(q);
+    const cq = SHOW.ans !== false && cmuQ(q);
     if (cq && cq.level) ask("cmu", key, { id: cq.id });
     // A team's game (ESPN): short searches made of words only go to this server, which knows the team names
-    if (!eq && !wq && !cq && /^[a-z][a-z .'&-]*$/i.test(q) && q.split(/\s+/).length <= 6 && !CT.answer(q, Date.now(), { fx: FX })) ask("sports", key, { q });
+    if (SHOW.ans !== false && !eq && !wq && !cq && /^[a-z][a-z .'&-]*$/i.test(q) && q.split(/\s+/).length <= 6 && !CT.answer(q, Date.now(), { fx: FX })) ask("sports", key, { q });
     // Knowledge panel: only the name is sent (this server asks Wikidata/Wikipedia); shown only if the results agree
-    if (!eq && !wq && !cq && kpWanted(q)) ask("kp", key, { q: CT.kpQuery(q) });
+    if (!eq && !wq && !cq && (SHOW.kp !== false || SHOW.mean !== false) && kpWanted(q)) ask("kp", key, { q: CT.kpQuery(q) });
     // Images row (spec 12): the image search starts now, in parallel, for clearly visual searches: picture words, or
     // a search you opened the Images tab for in the last 12 h (degoog still has that image search cached)
-    if (!shaped(q) && (CT.visualQ(q) || visualSeen.has(qHash(q)))) {
+    if (SHOW.img !== false && !shaped(q) && (CT.visualQ(q) || visualSeen.has(qHash(q)))) {
       const e = { key, data: undefined };
       early.set("img", e);
       fetch(`/api/search?q=${encodeURIComponent(q)}&type=images`).then((x) => (x.ok ? x.json() : null))
@@ -3246,14 +3279,18 @@ const siteItems = (el) => {
   menu.prepend(seg);
   if (cur === "lower" && SITES_AUTO.includes(siteOf(host))) seg.after(mk("div", "ct-seg-note", "Lowered automatically (SEO signs). Your choice here wins."));
   // Quick view (spec 11) and archived copy (spec 10): nothing is asked until you tap them
-  const qv = mk("button", "degoog-menu-item ct-arch ct-qv-b", "Quick view");
-  qv.type = "button";
-  qv.setAttribute("role", "menuitem");
-  menu.append(qv);
-  const ar = mk("button", "degoog-menu-item ct-arch", "Open archived copy");
-  ar.type = "button";
-  ar.setAttribute("role", "menuitem");
-  menu.append(ar);
+  if (SHOW.qv !== false) {
+    const qv = mk("button", "degoog-menu-item ct-arch ct-qv-b", "Quick view");
+    qv.type = "button";
+    qv.setAttribute("role", "menuitem");
+    menu.append(qv);
+  }
+  if (SHOW.arch !== false) {
+    const ar = mk("button", "degoog-menu-item ct-arch", "Open archived copy");
+    ar.type = "button";
+    ar.setAttribute("role", "menuitem");
+    menu.append(ar);
+  }
 };
 // Tap: a new tab opens at once (so the browser allows it) and goes to the copy the server found: archive.today first
 // for paywalled sites, else the Wayback Machine, else Ghostarchive; none -> archive.today's save page
@@ -3676,7 +3713,7 @@ let G = { key: "" };
 // the results (v49 waited for the server, which could rebuild the list after it was on screen): the last answer is
 // kept in this browser (switch values only), and a change applies from the next page load. Missing = on.
 const SHOW_KEY = "ct-show";
-let SHOW = { sl: true, forum: true, video: true, news: true };
+let SHOW = { sl: true, forum: true, video: true, news: true, ans: true, kp: true, img: true, qv: true, arch: true, mean: true, stars: true, plain: true, pw: true };
 try { const c = JSON.parse(localStorage.getItem(SHOW_KEY) || "null"); if (c && typeof c === "object") SHOW = { ...SHOW, ...c }; } catch {}
 bridge("prefs", {}).then((j) => { if (j && typeof j === "object") try { localStorage.setItem(SHOW_KEY, JSON.stringify(j)); } catch {} }).catch(() => {});
 const used = (el) => el.classList.contains("ct-grouped");
@@ -3952,7 +3989,7 @@ const ansPass = () => {
     ansFor = key;
     let q = "", page = 1;
     try { const u = new URL(key); q = (u.searchParams.get("q") || "").trim(); page = Number(u.searchParams.get("page") || 1); } catch {}
-    ansVal = webTab && page <= 1 ? CT.answer(q, Date.now(), { fx: FX }) : null;
+    ansVal = webTab && page <= 1 && SHOW.ans !== false ? CT.answer(q, Date.now(), { fx: FX }) : null;
     aiVal = webTab && page <= 1 && !ansVal && aiWanted(q);
     g.querySelectorAll(".ct-ans, .ct-ai").forEach((x) => x.remove());
   }
@@ -4018,8 +4055,15 @@ const QV_SHOW = { ingredients: 8, steps: 3, questions: 3 };
 const qvBox = (v) => {
   const box = mk("div", "ct-qv");
   if (!v) { box.append(mk("div", "ct-qv-none", "No quick view for this page")); return box; }
-  const facts = v.facts.filter(([k]) => k !== "Access").map(([k, x]) => (k === "Rating" || k === "Total time" || k === "Time" ? x : `${k} ${x}`));
-  if (facts.length) box.append(mk("div", "ct-qv-facts", facts.join(" · ")));
+  // Headline rating: number then 5 amber stars filled to the exact value (design system), count after
+  const fl = mk("div", "ct-qv-facts ct-fit ct-fit-drop");
+  for (const [k, x] of v.facts) {
+    if (k === "Access") continue;
+    const m = k === "Rating" && /^(\d+(?:\.\d)?) ★(.*)$/.exec(x);
+    if (m) { const it = mk("span", "ct-it ct-rating", `${m[1]} `); const st = mk("span", "ct-stars", "★★★★★"); st.style.setProperty("--r", m[1]); st.setAttribute("aria-label", `${m[1]} out of 5`); it.append(st); if (m[2].trim()) it.append(m[2]); fl.append(it); continue; }
+    fl.append(mk("span", "ct-it", k === "Total time" || k === "Time" ? x : `${k} ${x}`));
+  }
+  if (fl.children.length) box.append(fl);
   for (const l of v.lists) {
     if (l.para) { box.append(mk("p", "ct-qv-p", l.items[0])); continue; }
     const n = QV_SHOW[l.label] || 3;
@@ -4061,7 +4105,10 @@ document.addEventListener("click", async (e) => {
   const j = await bridge("qv", { u }).catch(() => null);
   if (!box.isConnected) return;
   const v = j && j.v && Array.isArray(j.v.facts) && Array.isArray(j.v.lists) && Array.isArray(j.v.text) ? j.v : null;
-  box.replaceWith(qvBox(v));
+  const nb = qvBox(v);
+  box.replaceWith(nb);
+  nb.querySelectorAll(".ct-fit").forEach(fitLine);
+  if (fitRO) fitRO.observe(nb);
   // The page says it's for subscribers (isAccessibleForFree: false): the Paywall word joins the source line
   const cite = el.querySelector(".result-cite");
   if (v && v.facts.some(([k, x]) => k === "Access" && x === "Paywall") && cite && !el.querySelector(".result-url-row .ct-paywall:not(.ct-pdf)")) cite.after(mk("span", "ct-paywall", "Paywall"));
@@ -4076,7 +4123,7 @@ const starsWanted = (q) => CT.shapeOf(q) === "recipe" || /\b(?:reviews?|rating|r
 let starsKey = "";
 const starsPass = () => {
   const key = searchId(location.href), list = document.getElementById("results-list");
-  if (!webTab || !list || starsKey === key || drawnFor === key) return;
+  if (!webTab || !list || SHOW.stars === false || starsKey === key || drawnFor === key) return;
   const rows = [...list.querySelectorAll(".result-item")].filter((x) => x.style.display !== "none" && !x.classList.contains("ct-grouped")).slice(0, 6);
   if (!rows.length) return;
   starsKey = key;
@@ -4087,7 +4134,12 @@ const starsPass = () => {
   for (const el of rows) {
     const a = el.querySelector("a.result-title"), u = (el.dataset.resultUrl || (a && a.href) || "");
     const c = u && qvs[qHash(u)], cite = el.querySelector(".result-cite");
-    if (c && cite) { const t = mk("span", "ct-paywall ct-stars-l", c[0]); (el.querySelector(".result-url-row .ct-pdf, .result-url-row .ct-paywall, .result-url-row .ct-date") || cite).after(t); }
+    if (c && cite) {
+      const t = mk("span", "ct-paywall ct-stars-l");
+      const m = /^(\d+(?:\.\d)?) ★(.*)$/.exec(c[0]);
+      if (m) { t.append(`${m[1]} `); const st = mk("span", "ct-stars", "★★★★★"); st.style.setProperty("--r", m[1]); st.setAttribute("aria-label", `${m[1]} out of 5`); t.append(st, m[2]); } else t.textContent = c[0];
+      (el.querySelector(".result-url-row .ct-pdf, .result-url-row .ct-paywall, .result-url-row .ct-date") || cite).after(t);
+    }
     else if (u && !c) ask.push(u);
   }
   if (ask.length) setTimeout(() => bridge("qvs", {}, JSON.stringify({ u: ask })).then((j) => {
@@ -4103,7 +4155,7 @@ const starsPass = () => {
 let meanKey = "";
 const meanPass = () => {
   const key = searchId(location.href), list = document.getElementById("results-list");
-  if (!webTab || !list || meanKey === key || drawnFor === key) return;
+  if (!webTab || !list || SHOW.mean === false || meanKey === key || drawnFor === key) return;
   const rows = [...list.querySelectorAll(".result-item")].filter((x) => x.style.display !== "none");
   if (!rows.length) return;
   meanKey = key;
@@ -4180,7 +4232,7 @@ document.addEventListener("click", (e) => {
 const kpPass = () => {
   const key = searchId(location.href), list = document.getElementById("results-list");
   if (kpKey !== key) { kpKey = key; document.querySelectorAll(".ct-kp").forEach((x) => x.remove()); }
-  if (!list || !webTab || [...list.children].find((x) => x.classList.contains("ct-kp"))) return;
+  if (!list || !webTab || SHOW.kp === false || [...list.children].find((x) => x.classList.contains("ct-kp"))) return;
   const d = ready("kp", key), kp = d && d.kp;
   if (!kp || !kp.title || !kp.name) return;
   const late = drawnFor === key, wide = !!(window.matchMedia && matchMedia(KP_WIDE).matches);
@@ -4227,12 +4279,7 @@ else init();
 '@)
 $c = docker ps -q | Where-Object { (docker inspect $_ --format '{{range .Mounts}}{{.Destination}} {{end}}') -match '/app/data' }
 docker cp "$t\index.js" "${c}:/app/data/plugins/clean-titles/index.js"; docker exec $c rm -f /app/data/plugins/clean-titles/reports.json
-# English word list for the typo fixer (82,765 words with how common each is; downloaded once)
-if (-not (docker exec $c sh -c 'test -s /app/data/plugins/clean-titles/words.txt && echo y')) { Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/wolfgarbe/SymSpell/master/SymSpell/frequency_dictionary_en_82_765.txt' -OutFile "$t\words.txt"; docker cp "$t\words.txt" "${c}:/app/data/plugins/clean-titles/words.txt" }
-# Common English word pairs for the typo fixer ("how to", "the weather"; downloaded once)
-if (-not (docker exec $c sh -c 'test -s /app/data/plugins/clean-titles/pairs.txt && echo y')) { Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/wolfgarbe/SymSpell/master/SymSpell/frequency_bigramdictionary_en_243_342.txt' -OutFile "$t\pairs.txt"; docker cp "$t\pairs.txt" "${c}:/app/data/plugins/clean-titles/pairs.txt" }
-# Names from Wikipedia's article titles for the typo fixer (made once: a big download, takes a few minutes)
-if (-not (docker exec $c sh -c 'test -s /app/data/plugins/clean-titles/names.txt && echo y')) {
+# Typo fixer data (word lists, Wikipedia names) is fetched by the plugin itself the first time; names.js is its helper
 [IO.File]::WriteAllText("$t\names.js", @'
 // Names from Wikipedia's article titles: words that aren't in the English word list but appear in 3+ titles
 // ("Asura Scans", "OpenAI Five"), or are a one-word title written like a name (PuTTY, NASA, iPhone, R2-D2)
@@ -4275,8 +4322,7 @@ fs.writeFileSync(`${DIR}/names.txt`, [...out].join("\n"));
 fs.rmSync(GZ, { force: true });
 console.log(`Wikipedia names: ${out.size} saved`);
 '@)
-docker cp "$t\names.js" "${c}:/tmp/ct-names.js"; docker exec $c bun /tmp/ct-names.js; docker exec $c rm -f /tmp/ct-names.js /tmp/ct-titles.gz
-}
+docker cp "$t\names.js" "${c}:/app/data/plugins/clean-titles/names.js"
 
 # Plugin page code goes inside degoog's page itself: no separate file, so no content blocker can stop it
 [IO.File]::WriteAllText("$t\inline.js", @'
@@ -5047,7 +5093,7 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 /* Quick view: opened under the result by your tap; text only */
 .ct-qv { margin-top: 10px; padding: 12px 14px; border-radius: 12px; background: rgba(49, 50, 68, .45); font-size: 14px; line-height: 20px; color: var(--text-snippet); }
 .ct-qv-none { color: var(--text-secondary); }
-.ct-qv-facts { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.ct-qv-facts { color: var(--text-primary); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; }
 .ct-qv-list { margin: 8px 0 0; padding-left: 20px; }
 .ct-qv-list li + li { margin-top: 2px; }
 .ct-qv-qa { list-style: none; padding: 0; }
@@ -5063,6 +5109,11 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .ct-mean-a { display: inline-flex; align-items: center; min-height: 32px; color: var(--text-link) !important; text-decoration: none; }
 .ct-mean-a:hover { text-decoration: underline; }
 .ct-mean-dot { white-space: pre; }
+
+/* Design system: no site icons or favicons anywhere (results, Discussions, Videos, Top stories) */
+.result-item :is(.result-favicon, .result-favicon-missing, .result-favicon-fallback), .ct-fav { display: none !important; }
+/* Menu lines are tap targets: 44px on phones */
+@media (max-width: 767px) { .ct-arch, .ct-seg-b { min-height: 44px; } }
 
 '@)
 [IO.File]::WriteAllText("$t\setcss.js", @'
