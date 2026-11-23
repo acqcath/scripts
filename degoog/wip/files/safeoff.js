@@ -51,16 +51,24 @@ for (const code of sx) {
 //   cutting a healthy answer. Measured worst cases on this server: Bing 674 ms, Startpage 625 ms (60 searches each),
 //   Brave News 1,029 ms. A blocked first try retried with curl ("curl-fallback") takes about two normal requests,
 //   ~1.3 s for the web engines, so 2 s keeps those and caps a bad case at 2 s instead of degoog's default 10 s.
+<<<<<<< HEAD
 // - outgoing client: the engine's own setting is kept (the user picked what works); unset -> "curl-fallback".
 //   Brave always "curl-impersonate": measured on the user's server, Brave returned 0 results with curl-fallback
 //   (it turns away anything that doesn't look like a browser).
+=======
+// - outgoing client "curl-fallback" (plain fetch, retried with curl when a site answers 403/429/5xx)
+>>>>>>> origin/main
 const SPECIAL = /(?:^|-)(?:wikipedia|reddit|hacker-news|lemmy|the-guardian|internet-archive|wikimedia-commons|openverse|nasa-images|immich)$/i;
 const tuned = [];
 for (const d of dirs) {
   const id = d.toLowerCase().endsWith("-engine") ? d.toLowerCase() : `${d.toLowerCase()}-engine`;
   const key = Object.keys(store).find((k) => k.toLowerCase() === id) || id;
   const cur = store[key] && typeof store[key] === "object" ? store[key] : {};
+<<<<<<< HEAD
   const want = { score: SPECIAL.test(d) ? "0.25" : "1", timeoutMs: "2000", outgoingTransport: /(?:^|-)brave(?:-|$)/i.test(d) ? "curl-impersonate" : String(cur.outgoingTransport || "curl-fallback") };
+=======
+  const want = { score: SPECIAL.test(d) ? "0.25" : "1", timeoutMs: "2000", outgoingTransport: "curl-fallback" };
+>>>>>>> origin/main
   const diff = Object.entries(want).filter(([k, v]) => String(cur[k] ?? "") !== v);
   if (!diff.length) continue;
   store[key] = { ...cur, ...want };
