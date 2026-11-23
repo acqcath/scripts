@@ -441,6 +441,24 @@ const tabLow = (tab, host, title, seen) => {
   return false;
 };
 
+// ===== Relevance: how much of the search a result is about (same rule for every topic) =====
+// The search's words (3+ letters, common words dropped, plural folded); a search that is only an identifier
+// (15213, an ISBN, a DOI) uses its digit runs. matchShare = share of those words found in the result's title,
+// address and description: 0 = the result is about something else.
+const REL_STOP = new Set("the and for with from what whats how who whos why when where which this that these those are was were you your can does did will about into than then there many much".split(" "));
+const relStem = (w) => (w.length > 4 ? w.replace(/(?:es|s)$/, "") : w);
+const relWords = (q) => {
+  const s = String(q || "").toLowerCase();
+  const ws = [...new Set((s.match(/[\p{L}][\p{L}\p{N}']*/gu) || []).map((w) => w.replace(/'s$/, "")).filter((w) => w.length >= 3 && !REL_STOP.has(w)).map(relStem))];
+  return ws.length ? ws : [...new Set(s.match(/\d{4,}/g) || [])];
+};
+const matchShare = (words, text) => {
+  if (!words.length) return 1;
+  const t = ` ${String(text || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ")} `;
+  const toks = new Set(t.split(" ").filter(Boolean).map(relStem));
+  return words.filter((w) => toks.has(w) || (/^\d+$/.test(w) && t.includes(w))).length / words.length;
+};
+
 // ===== Answer card, local part (no network): math, units incl. cooking, tip / percent, date math, patterns =====
 // answer(q, now) -> null, or { kind, label, value | title + href, detail, copy, swatch? }. Pure: the page draws it in
 // the same pass that starts the search, so it never arrives late and needs no reserved space.
@@ -1227,7 +1245,7 @@ const featuredSnippet = (q, results) => {
   return null;
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippet };
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, matchShare, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippet };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -1370,10 +1388,10 @@ const cleanTitle = (raw, href) => {
   }
 };
 
-// Adult results by relevance (user's rule, 2026-11-23: anything may show if it's really about the search; no one
-// else's filter). Web: shown when the search asks for that kind of thing, or when the result is about the search
-// itself (every word of the search in its title or address). Specialised tabs (News, Science, Forums, Images,
-// Videos) are meant to be about one kind of thing, so there they show only when the search asks for it.
+// Explicit results, by relevance like everything else (degoog: private and uncensored; better than Google's
+// on/off SafeSearch). An explicit result shows when the search asks for that kind of thing or when it matches at
+// least half of the search's words; an explicit result about something else entirely (porn spam on "15213", rule34
+// pages on a typo) is hidden. Same rule on every tab. Nothing else is ever hidden for its topic.
 const ADULT_HOST = /(porn|xvideos|xnxx|xhamster|redtube|youporn|spankbang|eporner|onlyfans|fansly|chaturbate|stripchat|camsoda|bongacams|livejasmin|rule34|r34|paheal|scrollx|gelbooru|danbooru|e621|nhentai|hentai|motherless|txxx|brazzers|bangbros|realitykings|erome|thothub|fapello|nudostar|xxx)|(^|[.-])(sex|nsfw|nudes?|escorts?)([.-]|$)/i;
 const ADULT_TEXT = /\b(xxx|nsfw|hentai|milfs?|blowjobs?|cumshots?|creampies?|gangbangs?|deepthroat|(?:free|hd|amateur) porn|porn (?:videos?|clips?|pics?|tube|stars?)|sex (?:videos?|tapes?|cams?|chat)|camgirls?|onlyfans leaks?|nudes? leak(?:ed|s)?)\b/i;
 const WANTS_ADULT = /\b(porn\w*|sex\w*|nude\w*|naked|nsfw|xxx|hentai|onlyfans|erotic\w*|milfs?|boobs?|tits?|pussy|dick|cock|fap\w*|r34|rule ?34|lewd)\b/i;
@@ -1385,14 +1403,13 @@ const readQuery = () => {
   href = location.href;
   try { wantsAdult = WANTS_ADULT.test(new URL(href).searchParams.get("q") || ""); } catch { wantsAdult = false; }
   try { webTab = !new URL(href).searchParams.get("type"); } catch { webTab = true; }
-  try { qWords = [...new Set((new URL(href).searchParams.get("q") || "").toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 3 && !/^(?:the|and|for|with|from|what|how|who|why|when|where|this|that|are|was|you|your)$/.test(w)))]; } catch { qWords = []; }
+  try { qWords = CT.relWords(new URL(href).searchParams.get("q") || ""); } catch { qWords = []; }
   try {
     const q = (new URL(href).searchParams.get("q") || "").trim();
     wantsDict = q.split(/\s+/).length <= 2 || /\b(define|definition|meaning|means?|synonyms?|antonyms?|pronounc\w*|spell\w*|dictionary|word|etymology|slang)\b/i.test(q);
   } catch { wantsDict = true; }
 };
-const aboutSearch = (host, text) => { if (!qWords.length) return false; const t = `${host} ${text}`.toLowerCase(); return qWords.every((w) => t.includes(w)); };
-const adult = (host, text) => !wantsAdult && (ADULT_HOST.test(host) || ADULT_TEXT.test(text)) && !(webTab && aboutSearch(host, text));
+const adult = (host, text, snip = "") => !wantsAdult && (ADULT_HOST.test(host) || ADULT_TEXT.test(text)) && CT.matchShare(qWords, `${host} ${text} ${snip}`) < 0.5;
 // Results the page never shows: adult ones the search didn't ask for, dictionary pages for non-word searches
 const junk = (el) => {
   const a = el.querySelector("a.result-title");
@@ -1401,7 +1418,7 @@ const junk = (el) => {
   try { h = new URL(a.href).hostname; } catch {}
   // Adult subreddits count like adult sites (reddit.com/r/rule34 is reddit.com by host)
   const sub = (/(?:^|\.)reddit\.com$/.test(h) && (/^\/r\/([\w-]+)/.exec((() => { try { return new URL(a.href).pathname; } catch { return ""; } })()) || [])[1]) || "";
-  return adult(/^(?:rule34|nsfw\w*|gonewild\w*|hentai\w*|porn\w*|r34\w*|nsfw_gif|realgirls|holdthemoan)$/i.test(sub) ? `${h} rule34` : h, a.textContent || "") || (!wantsDict && DICT.test(h.replace(/^www\./, "")));
+  return adult(/^(?:rule34|nsfw\w*|gonewild\w*|hentai\w*|porn\w*|r34\w*|nsfw_gif|realgirls|holdthemoan)$/i.test(sub) ? `${h} rule34` : h, a.textContent || "", el.querySelector(".result-snippet")?.textContent || "") || (!wantsDict && DICT.test(h.replace(/^www\./, "")));
 };
 
 // ===== List pass (Web tab): dedupe -> site prefs -> 2 per site with folds, planned by core.js before paint =====
@@ -1459,7 +1476,8 @@ const tabPass = () => {
     const t = (a.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
     if (TP.titles.has(`${h}|${t}`)) { el.style.display = "none"; el.dataset.ctDup = "1"; continue; }
     TP.titles.add(`${h}|${t}`);
-    if (CT.tabLow(tab, h, a.textContent, TP.seen)) low.push(el);
+    // Off-kind for this tab, or about something else entirely (no word of the search anywhere in it): moves down
+    if (CT.tabLow(tab, h, a.textContent, TP.seen) || CT.matchShare(qWords, `${h} ${a.textContent} ${el.querySelector(".result-snippet")?.textContent || ""}`) === 0) low.push(el);
   }
   const last = fresh[fresh.length - 1];
   if (low.length && low.length < fresh.length) { let at = last; for (const el of low) { if (el !== at) at.after(el); at = el; } }
