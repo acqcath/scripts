@@ -95,6 +95,8 @@ export const docKey = (raw) => {
   if (ax) return `arxiv:${ax.id}`;
   // *.react.dev language mirrors (es.react.dev, zh-hans.react.dev) are react.dev
   if (/\.react\.dev$/.test(h)) h = "react.dev";
+  // NeurIPS proceedings: the old nips.cc hosts and the PDF of a /paper/<id>-<slug> page are one paper (proceedings copy)
+  if (/^(?:papers|proceedings)\.(?:neurips|nips)\.cc$/.test(h)) { const m = /^\/paper\/(\d+)-[^/]*?(?:\.pdf)?$/i.exec(u.pathname); if (m) return `neurips:${m[1]}`; }
   let segs = path0.split("/").filter(Boolean);
   if (LOCALE_SITES.test(h)) {
     segs = segs.filter((s, i) => !(i < 2 && LOCALE_SEG.test(s) && !/^(kb|api|docs|en)$/i.test(s) || (i < 2 && /^(en|kb)$/i.test(s))));
