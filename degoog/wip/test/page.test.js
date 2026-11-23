@@ -29,13 +29,16 @@ const run = async (q, opts = {}) => {
   if (opts.sites) win.CT_DATA = { sites: opts.sites };
   win.fetch = async () => new win.Response("{}", { status: 404 }); // the server is not here: every bridge call fails
   win.IntersectionObserver = class { observe() {} unobserve() {} };
+  const errors = [];
+  win.console.error = (...a) => errors.push(a.join(" "));
+  win.console.warn = (...a) => errors.push(a.join(" "));
   win.eval(`const __PLUGIN_ID__="clean-titles";\n${CODE}`);
   const res = REC.searches.find((x) => x.q === q && !x.type || x.q === q && x.type === "web").results;
   document.getElementById("results-list").innerHTML = res.map((r, i) => render(TPL, ctx(r, i))).join("");
   await new Promise((r) => setTimeout(r, 30));
   const items = [...document.querySelectorAll("#results-list .result-item")];
   const visible = items.filter((el) => el.style.display !== "none" && !el.classList.contains("ct-grouped"));
-  return { win, document, res, items, visible, folds: [...document.querySelectorAll(".ct-fold")] };
+  return { win, document, res, items, visible, errors, folds: [...document.querySelectorAll(".ct-fold")] };
 };
 
 test("page: real 'how to reset airpods' shows each document once and at most 2 per site", async () => {
@@ -90,3 +93,16 @@ test("page: arXiv copies merge into one result with version links", async () => 
   expect(ax.length).toBe(1);
   expect(document.querySelectorAll(".ct-alts").length).toBeGreaterThan(0);
 });
+test("page: all recorded web searches replay without a single page-script error; merges and folds counted", async () => {
+  const rows = [];
+  for (const s of REC.searches.filter((x) => !x.type || x.type === "web")) {
+    const { win, items, visible, folds, errors: errs } = await run(s.q);
+    // safe() reports every step's error through console.error / console.warn
+    const dups = items.filter((el) => el.dataset.ctDup).length, capped = items.filter((el) => el.dataset.ctCap).length;
+    rows.push(`${s.q.padEnd(34)} ${String(items.length).padStart(2)} in · ${String(dups).padStart(2)} merged · ${String(visible.length).padStart(2)} shown · ${folds.length} fold lines`);
+    win.close();
+    expect(errs).toEqual([]);
+  }
+  if (process.env.CT_REPORT) console.log(rows.join("\n"));
+  expect(rows.length).toBe(50);
+}, 60000);
