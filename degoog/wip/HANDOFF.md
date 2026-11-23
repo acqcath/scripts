@@ -1,10 +1,13 @@
-## STANDING RULES FOR EVERY RUN (user, 2026-11-23; read before anything else)
-- Least effort for the user: every step they must do is ONE copy-paste command, ready to run, with what it prints and what to paste back. Never "record it like before" or "push the branch" without the exact command.
-- Never write files to the user's Desktop. Saves go to Downloads.
-- No content/"safety" filtering by topic. Relevance decides: off-topic junk/porn may move down or out; relevant results always show.
-- Look and layout matter as much as function: check spacing (tight inside an item, equal between equals, more around groups), alignment to one column, and placement of controls; screenshot at 390 and 1280 before saying a visual change is done.
-- Time estimates: count installer round trips, not just coding minutes. Each change that needs a live check = one user round trip (~5-10 min of their time plus waiting). Say the range and what would stretch it. Today's miss: "30-40 min" for 4 FAILs became ~80 min because it took 2 more rounds (no live network here) and the scope grew (snippet, look pass, header, tabs) without a new estimate. Re-estimate every time the scope grows.
-- Why things got forgotten today: rules the user stated live lived only in the chat, and each run starts fresh from these notes. Any rule the user states goes into this section in the same turn.
+## HOW TO WORK FOR THIS USER (read first, every run)
+Their principles, in priority order, decide every call: works on real data, verified, fast + private, cheap, clean consistent design, excellent or cut, least effort for them.
+What that means in practice:
+- Real data: judge a feature on their recorded searches or their server's output, never on guesses. If the data isn't here, ask for it as one ready-to-run command.
+- Verified: say something works only after it was checked (tests, headless screenshot, their self-check). Say plainly what wasn't checked.
+- Least effort: anything they must do is one copy-paste command with what to expect and what to send back. Files go to Downloads, never the Desktop.
+- Design: judge by looking (screenshots at phone and PC width): grouping and spacing that show what belongs together, one aligned column, controls where they're expected.
+- Relevance, not restriction: nothing is filtered by topic; off-topic junk may move down.
+- Estimates: from measured past work, counting every step that waits on them; revise out loud when scope changes.
+- Anything new they state that is durable goes into this section in the same turn, phrased as a principle, not as a story of what went wrong.
 
 # clean-titles v50: build notes (branch v50-wip)
 
