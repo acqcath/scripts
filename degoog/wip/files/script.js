@@ -489,6 +489,9 @@ const earlyStart = () => {
   try { u = new URL(key); } catch { return; }
   const q = (u.searchParams.get("q") || "").trim();
   if (!q) return;
+  // !deepl: straight to DeepL with the text (your search box, your action), before anything else is asked
+  const dl = CT.deeplUrl(q);
+  if (dl) { location.replace(dl); return; }
   const from = (u.searchParams.get("ct_from") || "").trim();
   ask("fix", key, { q, ...(u.searchParams.has("ct_keep") ? { keep: 1 } : {}), ...(u.searchParams.has("ct_acc") && from ? { acc: from } : {}) });
   if (webTab && Number(u.searchParams.get("page") || 1) <= 1 && !q.startsWith("!")) {
