@@ -57,6 +57,18 @@ const upgrade = (raw, W) => {
 // learned from your own results (names like "Asura Scans" or "RTINGS"), so it keeps getting better the more you
 // search. Bing's suggestions (Bing already gets your searches as an engine) add a second opinion and the related
 // searches. Words you keep with "Search instead" are never changed again.
+// Same as core.js sitesFromLists (the server file can't import the page's core; a test checks they agree)
+const plainHost = (l) => /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(l);
+export const sitesFromLists = (block = "", score = "") => {
+  const out = {};
+  for (const raw of String(score).split("\n")) {
+    const [d, n] = raw.split("|").map((x) => (x || "").trim());
+    const v = Number(n);
+    if (d && plainHost(d) && n && Number.isFinite(v) && v !== 0) out[d.toLowerCase()] = v > 0 ? "prefer" : "lower";
+  }
+  for (const raw of String(block).split("\n")) { const d = raw.trim().toLowerCase(); if (plainHost(d)) out[d] = "hide"; }
+  return out;
+};
 let DIR = "/app/data/plugins/clean-titles";
 const WORDS = new Map();
 let TOTAL = 0, PTOTAL = 0; // all word / word-pair counts added up: how common one is = its count / total
@@ -497,6 +509,24 @@ export const routes = [
       } catch (e) {
         return new Response(JSON.stringify({ status: 502, type: "text/plain", text: String(e) }), { headers: { "Content-Type": "application/json" } });
       }
+    },
+  },
+  {
+    // Your site choices (Prefer / Lower / Hide), read from degoog's own block and score lists: domains only. The
+    // page keeps a copy, so the next page knows before paint which sites skip the 2-per-site limit. Read-only:
+    // changes go through degoog's Settings routes with your Settings sign-in, never through here.
+    method: "get",
+    path: "/sites",
+    handler: () => {
+      let block = "", score = "";
+      const data = process.env.DEGOOG_DATA_DIR || `${process.cwd()}/data`;
+      try {
+        const j = JSON.parse(fs.readFileSync(process.env.DEGOOG_SEARCH_LISTS_FILE || `${data}/search/search-lists.json`, "utf8"));
+        block = typeof j.domainBlockList === "string" ? j.domainBlockList : ""; score = typeof j.domainScoreList === "string" ? j.domainScoreList : "";
+      } catch {
+        try { const s = JSON.parse(fs.readFileSync(`${data}/server-settings.json`, "utf8")).settings || {}; block = String(s.domainBlockList || ""); score = String(s.domainScoreList || ""); } catch {}
+      }
+      return new Response(JSON.stringify({ sites: sitesFromLists(block, score) }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
     },
   },
   {

@@ -208,6 +208,28 @@ export const planPage = (items, ctx) => {
   return { shown, dups, hidden, capped, folds };
 };
 
+// ===== Sites: Prefer / Normal / Lower / Hide, stored in degoog's own lists =====
+// Hide = a line in domainBlockList; Prefer / Lower = "domain|N" in domainScoreList (N added to each result's score
+// on the server, where a top result scores about 60). So degoog applies them itself on every tab, before render.
+export const SITE_SCORE = { prefer: 40, lower: -40, normal: 0 };
+const plainHost = (l) => /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(l);
+// The lists' text -> {domain: "hide" | "prefer" | "lower"} (regex and uBlock lines are degoog's business; Hide wins)
+export const sitesFromLists = (block = "", score = "") => {
+  const out = {};
+  for (const raw of String(score).split("\n")) {
+    const [d, n] = raw.split("|").map((x) => (x || "").trim());
+    const v = Number(n);
+    if (d && plainHost(d) && n && Number.isFinite(v) && v !== 0) out[d.toLowerCase()] = v > 0 ? "prefer" : "lower";
+  }
+  for (const raw of String(block).split("\n")) { const d = raw.trim().toLowerCase(); if (plainHost(d)) out[d] = "hide"; }
+  return out;
+};
+// Block list without this site's own line (other lines, comments and patterns untouched)
+export const unblockText = (block, domain) => {
+  const d = String(domain).toLowerCase();
+  return String(block || "").split("\n").filter((l) => { const t = l.trim().toLowerCase(); return t !== d && t !== `www.${d}`; }).join("\n");
+};
+
 // ===== Snippet cleanup =====
 const MON = "(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\\.?";
 const DATE_RE = new RegExp(`^\\s*(${MON} \\d{1,2},? \\d{4}|\\d{1,2} ${MON},? \\d{4}|\\d{4}-\\d{2}-\\d{2}|\\d{1,2}/\\d{1,2}/\\d{2,4}|\\d+ (?:sec|second|min|minute|hour|hr|day|week|month|year)s? ago|yesterday|today)\\s*(?:\\.\\.\\.|…|—|–|-|·|:)\\s*`, "i");

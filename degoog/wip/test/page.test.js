@@ -16,10 +16,15 @@ const run = async (q, opts = {}) => {
   const { document } = win;
   document.body.innerHTML = '<div id="at-a-glance"></div><div id="results-list"></div>';
   if (!opts.noPsl) win.CT_PSL = PSL;
-  if (opts.sites) win.CT_DATA = { sites: opts.sites };
+  if (opts.sites) win.localStorage.setItem("ct-sites", JSON.stringify(opts.sites));
   for (const [k, v] of Object.entries(opts.store || {})) win.localStorage.setItem(k, v);
   // The server: every bridge call fails, unless the test answers a route (opts.bridge[route] = {data, delay ms})
   win.fetch = async (url, init) => {
+    // degoog's Settings routes (site choices): opts.settings(url, body) -> {status, json}
+    if (String(url).startsWith("/api/settings/")) {
+      const a = opts.settings ? opts.settings(String(url), init && init.body ? JSON.parse(init.body) : null, init && init.headers) : { status: 404 };
+      return new win.Response(JSON.stringify(a.json || {}), { status: a.status || 200, headers: { "Content-Type": "application/json" } });
+    }
     // The News search (Top stories): opts.news = {delay}, answered with the recorded news results for this search
     if (/^\/api\/search\?.*type=news/.test(String(url))) {
       const nr = opts.news && REC.searches.find((x) => x.type === "news" && q.includes(x.q));
@@ -207,4 +212,50 @@ test("page: News tab layout is decided before paint; recorded News pictures (upg
     expect(items.length).toBeGreaterThan(40);
     expect(items.filter((el) => el.classList.contains("ct-lowres")).length).toBe(0);
   }
+});
+
+test("page: site choices in the result menu: one group of four, saved in degoog's lists, applied on the page", async () => {
+  const calls = [];
+  const lists = { domainBlockList: "example.org\nyoutube.com", domainScoreList: "" };
+  const settings = (url, body, headers) => { calls.push([url, body, headers && headers["x-settings-token"]]); return url.endsWith("/general") ? { json: lists } : { json: { ok: true } }; };
+  const { document, win, errors } = await run("how to reset airpods", { settings });
+  win.sessionStorage.setItem("degoog-settings-token", "tok");
+  expect(errors).toEqual([]);
+  const yt = [...document.querySelectorAll("#results-list .result-item")].find((el) => /youtube\.com/.test(el.querySelector(".result-actions")?.dataset.host || ""));
+  const seg = yt.querySelector(".result-actions-menu .ct-seg");
+  expect([...seg.querySelectorAll("button")].map((b) => b.textContent)).toEqual(["Prefer", "Normal", "Lower", "Hide"]);
+  expect(seg.querySelector('[aria-pressed="true"]').textContent).toBe("Normal");
+  // Hide: degoog's block list gets the site (not the subdomain); its results leave this page
+  seg.querySelector('[data-ct-site="hide"]').click();
+  await new Promise((r) => setTimeout(r, 20));
+  expect(calls.at(-1)).toEqual(["/api/settings/domain-action", { kind: "block", source: "youtube.com" }, "tok"]);
+  const ytRows = [...document.querySelectorAll("#results-list .result-item")].filter((el) => /youtube\.com/.test(el.querySelector(".result-actions")?.dataset.host || ""));
+  expect(ytRows.every((el) => el.style.display === "none")).toBe(true);
+  expect(JSON.parse(win.localStorage.getItem("ct-sites"))["youtube.com"]).toBe("hide");
+  // Back to Prefer: the block line goes (other lines kept), then a +score line
+  calls.length = 0;
+  seg.querySelector('[data-ct-site="prefer"]').click();
+  await new Promise((r) => setTimeout(r, 20));
+  expect(calls.map((c) => c[0])).toEqual(["/api/settings/general", "/api/settings/field", "/api/settings/domain-action"]);
+  expect(calls[1][1]).toEqual({ key: "domainBlockList", value: "example.org" });
+  expect(calls[2][1]).toEqual({ kind: "score", source: "youtube.com", score: 40 });
+  // Not signed in to Settings: nothing changes, the menu says why
+  const b = await run("how to reset airpods", { settings: () => ({ status: 401 }) });
+  const s2 = b.document.querySelector(".result-actions-menu .ct-seg");
+  s2.querySelector('[data-ct-site="lower"]').click();
+  await new Promise((r) => setTimeout(r, 20));
+  expect(s2.parentElement.querySelector(".ct-seg-note").textContent).toBe("Sign in to Settings first");
+  expect(b.win.localStorage.getItem("ct-sites")).toBeNull();
+});
+test("page: un-hiding never writes back a block list degoog left out for being too long", async () => {
+  const calls = [];
+  const settings = (url, body) => { calls.push(url); return url.endsWith("/general") ? { json: { domainBlockList: "", degoogOversizedFields: { domainBlockList: { chars: 70000, lines: 5000 } } } } : { json: { ok: true } }; };
+  const { document } = await run("how to reset airpods", { settings, sites: { "youtube.com": "hide" } });
+  const yt = [...document.querySelectorAll("#results-list .result-item")].find((el) => /youtube\.com/.test(el.querySelector(".result-actions")?.dataset.host || ""));
+  const seg = yt.querySelector(".result-actions-menu .ct-seg");
+  expect(seg.querySelector('[aria-pressed="true"]').textContent).toBe("Hide");
+  seg.querySelector('[data-ct-site="normal"]').click();
+  await new Promise((r) => setTimeout(r, 20));
+  expect(calls).toEqual(["/api/settings/general"]);
+  expect(seg.parentElement.querySelector(".ct-seg-note").textContent).toMatch(/too long/);
 });

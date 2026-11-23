@@ -495,13 +495,19 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 /* PC: the hover box around a result ends where the AI summary box ends (it ran 16px past it) */
 @media (min-width: 768px) { .result-item::before { right: 0 !important; } }
 
-/* Result menu: a tiny faint dot button that brightens when used; only Rank higher / Rank lower / Block inside */
+/* Result menu: a tiny faint dot button that brightens when used; inside, one rounded group of four evenly spaced
+   choices for the site (Prefer / Normal / Lower / Hide); degoog's own items are hidden (the group replaces them) */
 .result-actions-toggle { width: 16px !important; height: 16px !important; min-width: 0 !important; padding: 0 !important; margin: 0 0 0 4px !important; border: 0 !important; background: none !important; font-size: 12px !important; line-height: 16px !important; color: var(--text-cite) !important; opacity: .5; }
 .result-actions-toggle:hover, .result-actions-toggle[aria-expanded="true"] { opacity: 1; }
-[id^="result-action-score-"], [id^="result-action-refresh-"], [id^="result-action-replace-"] { display: none !important; }
-.result-actions-menu .result-actions-item { font-size: 13px !important; padding: 6px 12px !important; }
-.result-item.ct-moved { animation: ct-flash 1.2s ease; }
-@keyframes ct-flash { from { background: rgba(137, 180, 250, .12); } to { background: transparent; } }
+.result-actions-menu:has(.ct-seg) > .result-actions-item { display: none !important; }
+.ct-seg { display: grid; grid-template-columns: repeat(4, 1fr); margin: 6px; border: 1px solid rgba(88, 91, 112, .7); border-radius: 999px; overflow: hidden; min-width: 280px; }
+.ct-seg-b { font: inherit; font-size: 13px; line-height: 18px; padding: 7px 10px; min-height: 32px; border: 0; background: none; color: var(--text-secondary); cursor: pointer; white-space: nowrap; }
+.ct-seg-b + .ct-seg-b { border-left: 1px solid rgba(88, 91, 112, .7); }
+.ct-seg-b:hover { color: var(--text-primary); }
+.ct-seg-b[aria-pressed="true"] { background: rgba(205, 214, 244, .14); color: var(--text-primary); font-weight: 600; }
+.ct-seg-b:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.ct-seg-note { font-size: 12.5px; line-height: 18px; padding: 0 14px 8px; color: var(--text-secondary); }
+@media (max-width: 767px) { .ct-seg { min-width: 300px; } .ct-seg-b { min-height: 44px; } }
 
 /* People also ask: Google's layout, sized like your results (heading = title size, answer = description, source = link line + title) */
 #ct-qa { margin: 12px 0 12px; }
