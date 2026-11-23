@@ -640,6 +640,37 @@ export const kpMatch = (title, urls) => {
 // Phone line: up to 3 facts, short ("Born Dec 13, 1989 · Height 330 m (1,083 ft)"); the page drops what doesn't fit
 export const kpLine = (facts) => (facts || []).slice(0, 4).map((f) => `${f.k} ${f.v}`);
 
+// ----- Meaning line (spec 9): the search's words have several meanings (Wikidata's matches for them), and the
+// results cover just one: "Also: snakes · Monty Python", each a search that adds the word. Results covering two or
+// more meanings (mercury: planet, element, bank) get no line. Never reorders or interleaves results.
+const MEAN_STOP = new Set("about after also american british from into known like main more most other over part such than that their them then there these they this used uses using very were what when where which while with within without world".split(" "));
+const meanWords = (t) => new Set(String(t || "").toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 4 && !MEAN_STOP.has(w)).map((w) => w.replace(/(?<=\w{3})s$/, "")));
+export const meaningLine = (q, alts, texts) => {
+  const s = String(q || "").trim().toLowerCase();
+  if (!s || !Array.isArray(alts) || alts.length < 2) return null;
+  const qw = meanWords(s);
+  const sets = alts.map((a) => { const w = meanWords(a.desc); for (const x of meanWords(a.label)) if (!qw.has(x)) w.add(x); for (const x of qw) w.delete(x); return w; });
+  const count = new Map();
+  for (const w of sets) for (const x of w) count.set(x, (count.get(x) || 0) + 1);
+  const own = sets.map((w) => [...w].filter((x) => count.get(x) === 1));
+  const docs = (texts || []).slice(0, 10).map((t) => meanWords(t));
+  const cov = own.map((ws) => docs.filter((d) => ws.some((x) => d.has(x))).length);
+  const top = cov.indexOf(Math.max(...cov));
+  if (cov[top] < 3 || cov.some((c, i) => i !== top && c > 0)) return null;
+  const chips = [];
+  alts.forEach((a, i) => {
+    if (i === top || !own[i].length || chips.length >= 3) return;
+    const label = String(a.label).trim(), ll = label.toLowerCase();
+    if (ll !== s && ` ${ll.replace(/[^\p{L}\p{N}]+/gu, " ")} `.includes(` ${s.replace(/[^\p{L}\p{N}]+/gu, " ")} `)) { if (!chips.some((c) => c.q === label)) chips.push({ text: label, q: label }); return; }
+    // the description's last own word ("family of snakes" -> "snake", as the search would say it)
+    const dw = String(a.desc).toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => own[i].includes(w.replace(/(?<=\w{3})s$/, "")));
+    const w = dw.length ? dw[dw.length - 1] : own[i][0];
+    const nq = `${String(q).trim()} ${w}`;
+    if (!chips.some((c) => c.q === nq)) chips.push({ text: w, q: nq });
+  });
+  return chips.length ? chips : null;
+};
+
 // ----- Images row (spec 12): searches that clearly want pictures, from their words -----
 const VISUAL = /\b(?:pictures?|photos?|photographs?|images?|pics?|wallpapers?|logos?|aesthetic|tattoos?|outfits?|hairstyles?|haircuts?|drawings?|paintings?|memes?|gifs?|clipart|inspo|nail designs?|room ideas|decor ideas|cake ideas|what does .+ look like)\b/i;
 // …but not tasks about image files ("image processing python", "resize photo", "logo generator")

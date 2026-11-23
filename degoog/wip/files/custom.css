@@ -746,3 +746,9 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .ct-qv-more { display: inline-flex; align-items: center; min-height: 36px; margin-top: 2px; padding: 0; border: 0; background: none; font: inherit; color: var(--text-link); cursor: pointer; }
 @media (max-width: 767px) { .ct-qv-more { min-height: 44px; } }
 .result-url-row .ct-stars-l { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+/* Meaning line: one line above the results; each word is a search that adds it */
+.ct-mean { display: flex; flex-wrap: wrap; align-items: center; min-height: 44px; margin: 0 0 4px; font-size: 14px; line-height: 20px; color: var(--text-secondary); }
+.ct-mean-l { white-space: pre; }
+.ct-mean-a { display: inline-flex; align-items: center; min-height: 32px; color: var(--text-link) !important; text-decoration: none; }
+.ct-mean-a:hover { text-decoration: underline; }
+.ct-mean-dot { white-space: pre; }
