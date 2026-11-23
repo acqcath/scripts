@@ -1467,6 +1467,23 @@ export const routes = [
     handler: () => new Response(JSON.stringify(SHOW), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } }),
   },
   {
+    // Page-load timings from the page (milliseconds only), last 60 kept in perf.json for the installer's self-check
+    method: "post",
+    path: "/perf",
+    async handler(req) {
+      try {
+        const j = await req.json();
+        const num = (o) => (o && typeof o === "object" ? Object.fromEntries(Object.entries(o).filter(([k, v]) => /^[a-z]{2,10}$/.test(k) && (typeof v === "number" || typeof v === "boolean" || (k === "type" && typeof v === "string" && v.length < 20)))) : null);
+        const e = { t: Date.now(), dev: j.dev === "phone" ? "phone" : "pc", nav: num(j.nav), search: num(j.search) };
+        let list = [];
+        try { list = JSON.parse(fs.readFileSync(`${DIR}/perf.json`, "utf8")); } catch {}
+        list = (Array.isArray(list) ? list : []).concat([e]).slice(-60);
+        fs.writeFileSync(`${DIR}/perf.json`, JSON.stringify(list));
+      } catch {}
+      return new Response(null, { status: 204 });
+    },
+  },
+  {
     method: "post",
     path: "/learn",
     async handler(req) {
