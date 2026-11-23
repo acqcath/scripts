@@ -2918,11 +2918,14 @@ const cleanTitle = (raw, href) => {
   }
 };
 
-// Adult results only when the search asks for them
+// Adult results by relevance (user's rule, 2026-11-23: anything may show if it's really about the search; no one
+// else's filter). Web: shown when the search asks for that kind of thing, or when the result is about the search
+// itself (every word of the search in its title or address). Specialised tabs (News, Science, Forums, Images,
+// Videos) are meant to be about one kind of thing, so there they show only when the search asks for it.
 const ADULT_HOST = /(porn|xvideos|xnxx|xhamster|redtube|youporn|spankbang|eporner|onlyfans|fansly|chaturbate|stripchat|camsoda|bongacams|livejasmin|rule34|hentai|motherless|txxx|brazzers|bangbros|realitykings|erome|thothub|fapello|nudostar|xxx)|(^|[.-])(sex|nsfw|nudes?|escorts?)([.-]|$)/i;
 const ADULT_TEXT = /\b(xxx|nsfw|hentai|milfs?|blowjobs?|cumshots?|creampies?|gangbangs?|deepthroat|(?:free|hd|amateur) porn|porn (?:videos?|clips?|pics?|tube|stars?)|sex (?:videos?|tapes?|cams?|chat)|camgirls?|onlyfans leaks?|nudes? leak(?:ed|s)?)\b/i;
 const WANTS_ADULT = /\b(porn\w*|sex\w*|nude\w*|naked|nsfw|xxx|hentai|onlyfans|erotic\w*|milfs?|boobs?|tits?|pussy|dick|cock|fap\w*|r34|rule ?34|lewd)\b/i;
-let href = "", wantsAdult = false, webTab = true, wantsDict = true;
+let href = "", wantsAdult = false, webTab = true, wantsDict = true, qWords = [];
 // Dictionary pages only when the search is about a word (Bing adds them for words like "under" or "fix")
 const DICT = /(^|\.)(merriam-webster\.com|thefreedictionary\.com|dictionary\.cambridge\.org|dictionary\.com|collinsdictionary\.com|oxfordlearnersdictionaries\.com|vocabulary\.com|wordreference\.com|yourdictionary\.com|wiktionary\.org|urbandictionary\.com)$/i;
 const readQuery = () => {
@@ -2930,12 +2933,14 @@ const readQuery = () => {
   href = location.href;
   try { wantsAdult = WANTS_ADULT.test(new URL(href).searchParams.get("q") || ""); } catch { wantsAdult = false; }
   try { webTab = !new URL(href).searchParams.get("type"); } catch { webTab = true; }
+  try { qWords = [...new Set((new URL(href).searchParams.get("q") || "").toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 3 && !/^(?:the|and|for|with|from|what|how|who|why|when|where|this|that|are|was|you|your)$/.test(w)))]; } catch { qWords = []; }
   try {
     const q = (new URL(href).searchParams.get("q") || "").trim();
     wantsDict = q.split(/\s+/).length <= 2 || /\b(define|definition|meaning|means?|synonyms?|antonyms?|pronounc\w*|spell\w*|dictionary|word|etymology|slang)\b/i.test(q);
   } catch { wantsDict = true; }
 };
-const adult = (host, text) => !wantsAdult && (ADULT_HOST.test(host) || ADULT_TEXT.test(text));
+const aboutSearch = (host, text) => { if (!qWords.length) return false; const t = `${host} ${text}`.toLowerCase(); return qWords.every((w) => t.includes(w)); };
+const adult = (host, text) => !wantsAdult && (ADULT_HOST.test(host) || ADULT_TEXT.test(text)) && !(webTab && aboutSearch(host, text));
 // Results the page never shows: adult ones the search didn't ask for, dictionary pages for non-word searches
 const junk = (el) => {
   const a = el.querySelector("a.result-title");
