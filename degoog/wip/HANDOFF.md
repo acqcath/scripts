@@ -50,6 +50,13 @@ The spec is the user's handoff text (they paste it into each new chat). These no
   - Build: `python3 build.py` -> files/ct-page.js = core.js wrapped as `CT` + script.js. The installer must embed ct-page.js as its script.js (layout.html inlines one module, so no imports).
   - Tests: 29 pass, stable over repeated runs. New test/page.test.js runs the built page script in happy-dom on real recorded results rendered with degoog's own result.html (test/fixtures/result.html, degoog e006d50). Needs `bun install` in degoog/wip first (package.json, happy-dom 15.11.7; node_modules ignored).
 
+- Run 2026-11-23 05:52 UTC:
+  - Top stories: no insert after paint. The News search starts at page load (in parallel with the engines) only for a search that looked like news on an earlier visit (`ct-newsy` in localStorage: FNV hash of the search, not the words, 12 h, max 300). It's drawn after the first shown result in the same pass only if the answer is already in hand; else dropped. First visit to a news search shows no Top stories (accepted: the alternative is a News search on every query, which breaks "cheap").
+  - "Looks like news" (spec 15, carried-over value, now set from real data): 3+ different sites with an exact "N minutes/hours ago" stamp in the last 24 h. On the 50 recorded web searches only steelers and taylor swift pass. v49's rule (2+ sites dated within 2–3 days) also fired on time in tokyo, days until christmas, 100 usd to eur, $AAPL, nvidia stock (pages stamped with today's date).
+  - Real News answers have no dates (recorded steelers + nvidia: 0 of 55 results dated), so v49's "fresh stories only" filter dropped every story: Top stories could never show. Now undated stories count as current and keep degoog's order; dated-old ones are still left out.
+  - Bug fixed: after the date moved to the source line (previous run), `info()` no longer found it, so forum/video/news boxes saw no dates. The moved `span.ct-date` keeps the raw text in data-raw and info() reads it.
+  - Story card picture that fails to load: hidden with visibility (keeps its box) instead of removed (the card changed shape after paint).
+
 ## Verified this run
 - Real recordings, dedupe -> cap (results in -> after dedupe -> shown): airpods 29 -> 26 -> 21; mdn array map 28 -> 28 -> 17 before the site-word fix (mozilla.org 10 folded), now uncapped; is windows 10 supported 28 -> 28 -> 22 (6 microsoft.com folded under end-of-support). No recorded search reproduces "18 -> 6"; that figure came from an earlier hand-picked set. Real numbers are in the tests instead.
 - On airpods, sitelinks + Discussions + Videos boxes take every capped result, so no fold line appears: correct (nothing shown twice).
@@ -67,7 +74,6 @@ The spec is the user's handoff text (they paste it into each new chat). These no
 ## Next
 - Step 3, part 2 (after-paint items still open):
   - News tab `ct-lowres`: the class is added once the picture loads and switches the card layout (banner -> 92px thumb) after paint. Fix: decide before paint from URL size hints (Bing th?w=&h=, Brave), else always the thumb layout on that tab. Measure on the recorded news searches (steelers, nvidia) first.
-  - Top stories: the /api/search?type=news insert after result 1 lands after paint and isn't sure to arrive. It can't be reserved, so the choices are: drop it unless ready before paint, or cut it. Running a news search for every query breaks "cheap". Suggested: keep the "newsy" test (spec item 15: set "fresh" and the threshold from the recorded news searches) and only use news results already in degoog's cache. If that isn't possible in 1.2.0, cut it and write down why.
   - Measure live how often /fix and /qs are in hand before results arrive (engine cache hits come back fast). If "Showing results for" is often dropped while the search really was changed, show it from the server's answer: the interceptor knows the fix before the engines run.
   - Rank higher / Rank lower menu click moves rows: user-initiated, so allowed; it gets replaced by Prefer/Normal/Lower/Hide in M2.
   - Title cleanup audit (cleanTitle runs in row() before paint: OK; check nothing else rewrites titles later).

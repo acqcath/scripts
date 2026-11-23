@@ -27,8 +27,16 @@ const run = async (q, opts = {}) => {
   document.body.innerHTML = '<div id="at-a-glance"></div><div id="results-list"></div>';
   if (!opts.noPsl) win.CT_PSL = PSL;
   if (opts.sites) win.CT_DATA = { sites: opts.sites };
+  for (const [k, v] of Object.entries(opts.store || {})) win.localStorage.setItem(k, v);
   // The server: every bridge call fails, unless the test answers a route (opts.bridge[route] = {data, delay ms})
   win.fetch = async (url, init) => {
+    // The News search (Top stories): opts.news = {delay}, answered with the recorded news results for this search
+    if (/^\/api\/search\?.*type=news/.test(String(url))) {
+      const nr = opts.news && REC.searches.find((x) => x.type === "news" && q.includes(x.q));
+      if (!nr) return new win.Response("{}", { status: 404 });
+      await new Promise((r) => setTimeout(r, opts.news.delay || 0));
+      return new win.Response(JSON.stringify({ results: nr.results }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
     const query = init && init.body ? JSON.parse(init.body).query : "";
     const m = /^!cleantitles bridge (\w+)/.exec(query);
     // Another command (a card the page asks for, like "!weather pittsburgh"): opts.command = {html, delay}
@@ -177,4 +185,27 @@ test("page: a command card (weather at the end of the search) goes in only befor
   b.fire([d]);
   expect(b.document.querySelector("#at-a-glance .ct-card")).toBeNull();
   b.win.close();
+});
+
+test("page: Top stories only for news-like results, drawn before paint, never inserted later", async () => {
+  // Not news-like (v49's rule fired here): nothing remembered, no News search
+  const calm = await run("time in tokyo", { news: {} });
+  expect(calm.win.localStorage.getItem("ct-newsy")).toBeNull();
+  // First visit to a news-like search: no News search was started, so nothing is added; the search is remembered
+  const a = await run("steelers", { news: {} });
+  expect(a.errors).toEqual([]);
+  expect(a.document.querySelector(".ct-news")).toBeNull();
+  const store = { "ct-newsy": a.win.localStorage.getItem("ct-newsy") };
+  expect(store["ct-newsy"]).not.toContain("steelers"); // a hash, not the words
+  // Next visit: the News search starts at page load; in hand before the results -> drawn in the same pass
+  const b = await run("steelers", { news: { delay: 0 }, store, engines: 20 });
+  expect(b.errors).toEqual([]);
+  const box = b.document.querySelector(".ct-news");
+  expect(box).not.toBeNull();
+  expect(box.previousElementSibling.classList.contains("result-item")).toBe(true);
+  // News answer slower than the engines: dropped, and nothing appears after the results are on screen
+  const c = await run("steelers", { news: { delay: 60 }, store, engines: 0 });
+  await new Promise((r) => setTimeout(r, 120));
+  c.fire([]);
+  expect(c.document.querySelector(".ct-news")).toBeNull();
 });

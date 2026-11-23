@@ -580,7 +580,7 @@ const row = (el) => {
     while (n0 && n0.nodeType === 3 && !n0.data.trim()) n0 = n0.nextSibling;
     if (n0 && n0.nodeType === 3) { const c = CT.cleanSnippet(n0.data); if (!dRaw) dRaw = c.date; n0.data = c.text; }
     const label = dRaw ? CT.dateLabel(dRaw) : "";
-    if (label && cite) cite.after(mk("span", "ct-date", label));
+    if (label && cite) { const d = mk("span", "ct-date", label); d.dataset.raw = dRaw; cite.after(d); }
   }
   const img = el.querySelector(".result-thumbnail-wrap img");
   if (img) { work.set(el, () => hdImg(img)); near.observe(el); }
@@ -709,7 +709,16 @@ const earlyStart = () => {
   if (!q) return;
   const from = (u.searchParams.get("ct_from") || "").trim();
   ask("fix", key, { q, ...(u.searchParams.has("ct_keep") ? { keep: 1 } : {}), ...(u.searchParams.has("ct_acc") && from ? { acc: from } : {}) });
-  if (webTab && Number(u.searchParams.get("page") || 1) <= 1 && !q.startsWith("!")) ask("qs", key, { q });
+  if (webTab && Number(u.searchParams.get("page") || 1) <= 1 && !q.startsWith("!")) {
+    ask("qs", key, { q });
+    // Top stories: the News search starts now, in parallel, only for a search that looked like news last time
+    if (SHOW.news && newsy.has(qHash(q))) {
+      const e = { key, data: undefined };
+      early.set("news", e);
+      fetch(`/api/search?q=${encodeURIComponent(q)}&type=news`).then((x) => (x.ok ? x.json() : null))
+        .then((j) => { e.data = j && Array.isArray(j.results) ? j : null; }, () => { e.data = null; });
+    }
+  }
 };
 
 // Typo fix line above the results, related searches below them (Web tab), and learning from your results
@@ -1106,6 +1115,28 @@ const ago = (w) => {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric", ...(days > 300 ? { year: "numeric" } : {}) });
 };
 const fresh = (w) => !!w && Date.now() - w.t < (w.exact ? 2 : 3) * 864e5;
+// "Looks like news": 3+ different sites with an exact "N minutes/hours ago" stamp from the last 24 h. Measured on the
+// 50 recorded web searches: only steelers and taylor swift pass. v49's rule (2+ sites dated within 2-3 days) also
+// fired on time in tokyo, days until christmas and 100 usd to eur (pages stamped with today's date).
+const hot = (rows) => new Set(rows.filter((r) => r.w && r.w.exact && Date.now() - r.w.t < 864e5).map((r) => r.h)).size >= 3;
+// Searches that looked like news, kept in this browser as a short hash of the search (not the words) for 12 h,
+// the same time degoog keeps engine answers. Only these start a News search early on the next visit.
+const NEWSY_KEY = "ct-newsy";
+const qHash = (q) => { let h = 2166136261; for (const c of String(q).trim().toLowerCase()) h = Math.imul(h ^ c.codePointAt(0), 16777619); return (h >>> 0).toString(36); };
+const newsy = (() => {
+  let m = {};
+  try { const c = JSON.parse(localStorage.getItem(NEWSY_KEY) || "{}"); if (c && typeof c === "object") m = c; } catch {}
+  const now = Date.now();
+  for (const k of Object.keys(m)) if (!(now - m[k] < 432e5)) delete m[k];
+  return {
+    has: (h) => h in m,
+    add: (h) => {
+      m[h] = Date.now();
+      const ks = Object.keys(m); if (ks.length > 300) ks.sort((a, b) => m[a] - m[b]).slice(0, ks.length - 300).forEach((k) => delete m[k]);
+      try { localStorage.setItem(NEWSY_KEY, JSON.stringify(m)); } catch {}
+    },
+  };
+})();
 const _info = new WeakMap();
 const info = (el) => {
   if (_info.has(el)) return _info.get(el);
@@ -1113,12 +1144,13 @@ const info = (el) => {
   const a = el.querySelector("a.result-title");
   try {
     const u = new URL(a.href), h = u.hostname.replace(/^(www|m|old)\./, "");
-    const p = el.querySelector(".result-snippet"), dEl = p && p.querySelector(".result-date, .ct-date");
+    // The date: degoog's own (if row cleanup hasn't run), else the one cleanup moved to the source line (raw text kept)
+    const p = el.querySelector(".result-snippet"), dEl = (p && p.querySelector(".result-date")) || el.querySelector(".result-url-row .ct-date");
     const raw = (a.textContent || "").replace(/\s+/g, " ").trim();
     r = {
       el, u, h, href: a.href, title: (el.dataset.ctCap ? cleanTitle(raw, a.href) : "") || raw,
-      snippet: p ? (p.textContent || "").replace(dEl ? dEl.textContent : "", "").replace(/^\s*·\s*/, "").trim() : "",
-      w: when(dEl ? dEl.textContent : ""), thumb: el.querySelector(".result-thumbnail-wrap:not([style*='none']) img")?.src || "",
+      snippet: p ? (p.textContent || "").replace(dEl && p.contains(dEl) ? dEl.textContent : "", "").replace(/^\s*·\s*/, "").trim() : "",
+      w: when(dEl ? dEl.dataset.raw || dEl.textContent : ""), thumb: el.querySelector(".result-thumbnail-wrap:not([style*='none']) img")?.src || "",
       fav: el.querySelector("img.result-favicon")?.src || "", dur: el.querySelector(".degoog-result--video-duration")?.textContent.trim() || "",
     };
     r.video = VIDEO_URL(u, h) || !!el.querySelector(".degoog-result--thumb--video");
@@ -1186,7 +1218,7 @@ const videoCard = (r) => {
 };
 const storyCard = (r) => {
   const a = mk("a", "ct-card ct-sc"); a.href = r.href;
-  if (r.thumb) { const pic = mk("span", "ct-pic"); const i = mk("img"); i.src = r.thumb; i.alt = ""; i.loading = "lazy"; i.onerror = () => { pic.remove(); a.classList.add("ct-nopic"); }; pic.append(i); a.append(pic); }
+  if (r.thumb) { const pic = mk("span", "ct-pic"); const i = mk("img"); i.src = r.thumb; i.alt = ""; i.loading = "lazy"; i.onerror = () => { i.style.visibility = "hidden"; /* keeps its box: no shape change after paint */ }; pic.append(i); a.append(pic); }
   else a.classList.add("ct-nopic");
   const meta = mk("span", "ct-meta"); meta.append(favImg(r.fav), mk("span", "ct-src", r.h));
   a.append(meta, mk("span", "ct-ct", r.title), mk("span", "ct-when", ago(r.w)));
@@ -1256,40 +1288,38 @@ const groups = () => {
   if (SHOW.forum) box("forum", (r) => !!r.forum, 4, forumRow, "Discussions and forums", "forums", "More discussions", false);
   if (SHOW.video) box("video", (r) => r.video, 8, videoCard, "Videos", "videos", "More videos", true);
 
-  // Top stories: only when 2+ results from different sites are from the last few days. One News-tab search (degoog
-  // keeps engine answers, so opening the News tab after reuses it); fresh stories only, one per outlet, none already shown
+  // Top stories: only when the results look like news (hot). Drawn in this same pass, before paint, and only if the
+  // News answer started at page load is already in hand; otherwise nothing is added and the search is remembered,
+  // so the next visit starts the News search early. Fresh stories only, one per outlet, none already shown.
   if (SHOW.news && !G.news) {
-    const recent = new Set(rows.filter((r) => fresh(r.w)).map((r) => r.h));
-    if (recent.size < 2) return;
+    if (!hot(rows)) return;
     G.news = true;
     const q = new URLSearchParams(location.search).get("q") || "";
     if (!q) return;
-    fetch(`/api/search?q=${encodeURIComponent(q)}&type=news`)
-      .then((x) => (x.ok ? x.json() : null))
-      .then((j) => {
-        if (!j || G.key !== key) return;
-        const onPage = new Set(rows.map((r) => r.href.split("#")[0]));
-        const seen = new Set();
-        const items = (j.results || []).map((x) => {
-          let u; try { u = new URL(x.url); } catch { return null; }
-          const h = u.hostname.replace(/^(www|m)\./, "");
-          const rel = /(\d+)\s+(minute|hour|day)s?\s+ago/i.exec(x.snippet || "");
-          const w = rel ? when(rel[0]) : x.publishedAt ? { t: Date.parse(`${x.publishedAt}T12:00:00Z`), exact: false } : null;
-          return { h, href: x.url, title: cleanTitle(String(x.title || ""), x.url) || String(x.title || ""), w, thumb: x.thumbnail || "", fav: x.favicon || "" };
-        }).filter((r) => r && r.title && fresh(r.w) && !onPage.has(r.href.split("#")[0]) && !seen.has(r.h) && seen.add(r.h))
-          .sort((a, b) => b.w.t - a.w.t).slice(0, 8);
-        if (items.length < 3) return;
-        const s = section("ct-news", "Top stories");
-        const [wrap, row] = scroller();
-        items.forEach((r) => row.append(storyCard(r)));
-        s.append(wrap);
-        const m = moreBtn("More news", "news"); if (m) s.append(m);
-        const t = [...list.querySelectorAll(".result-item")].find(shown);
-        if (!t) return;
-        t.after(s);
-        wrap.upd();
-      })
-      .catch(() => {});
+    newsy.add(qHash(q));
+    const j = ready("news", key);
+    if (!j) return;
+    const onPage = new Set(rows.map((r) => r.href.split("#")[0]));
+    const seen = new Set();
+    const items = (j.results || []).map((x) => {
+      let u; try { u = new URL(x.url); } catch { return null; }
+      const h = u.hostname.replace(/^(www|m)\./, "");
+      const rel = /(\d+)\s+(minute|hour|day)s?\s+ago/i.exec(x.snippet || "");
+      const w = rel ? when(rel[0]) : x.publishedAt ? { t: Date.parse(`${x.publishedAt}T12:00:00Z`), exact: false } : null;
+      return { h, href: x.url, title: cleanTitle(String(x.title || ""), x.url) || String(x.title || ""), w, thumb: x.thumbnail || "", fav: x.favicon || "" };
+    // Real News answers carry no date at all (recorded steelers/nvidia: 0 of 55 dated), so undated stories count as
+    // current (a News search returns current news) and keep degoog's order; one dated older than fresh() is left out
+    }).filter((r) => r && r.title && (!r.w || fresh(r.w)) && !onPage.has(r.href.split("#")[0]) && !seen.has(r.h) && seen.add(r.h)).slice(0, 8);
+    if (items.length < 3) return;
+    const t = [...list.querySelectorAll(".result-item")].find(shown);
+    if (!t) return;
+    const s = section("ct-news", "Top stories");
+    const [wrap, row] = scroller();
+    items.forEach((r) => row.append(storyCard(r)));
+    s.append(wrap);
+    const m = moreBtn("More news", "news"); if (m) s.append(m);
+    t.after(s);
+    wrap.upd();
   }
 };
 
