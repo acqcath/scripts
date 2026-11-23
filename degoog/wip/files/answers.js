@@ -640,6 +640,18 @@ export const kpMatch = (title, urls) => {
 // Phone line: up to 3 facts, short ("Born Dec 13, 1989 · Height 330 m (1,083 ft)"); the page drops what doesn't fit
 export const kpLine = (facts) => (facts || []).slice(0, 4).map((f) => `${f.k} ${f.v}`);
 
+// ----- !deepl (spec 14): "!deepl text" or "!deepl de text" -> DeepL's translator with that text (target English
+// unless a DeepL target code comes first). URL form from knowledge (#source/target/text), not live-checked.
+const DEEPL_TO = new Set(["ar", "bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fr", "he", "hu", "id", "it", "ja", "ko", "lt", "lv", "nb", "nl", "pl", "pt", "ro", "ru", "sk", "sl", "sv", "th", "tr", "uk", "vi", "zh"]);
+export const deeplUrl = (q) => {
+  const m = /^\s*!deepl(?:\s+([\s\S]*))?$/i.exec(String(q || ""));
+  if (!m) return "";
+  let text = (m[1] || "").trim(), to = "en";
+  const w = /^([a-z]{2})\s+([\s\S]+)$/i.exec(text);
+  if (w && DEEPL_TO.has(w[1].toLowerCase())) { to = w[1].toLowerCase(); text = w[2].trim(); }
+  return text ? `https://www.deepl.com/translator#auto/${to}/${encodeURIComponent(text).replace(/%2F/g, "%5C%2F")}` : "https://www.deepl.com/translator";
+};
+
 // ----- The one local answer for a search, or null. CMU course numbers are left to the CMU card (network). -----
 export const answer = (q, now = Date.now(), data = {}) => {
   const s = String(q || "").trim();

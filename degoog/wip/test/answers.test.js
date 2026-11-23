@@ -139,3 +139,13 @@ test("knowledge panel: which searches ask, and the same-article check", () => {
   expect(A.kpMatch("", urls).ok).toBe(false);
   expect(A.kpLine([{ k: "Born", v: "Dec 13, 1989" }, { k: "Occupation", v: "singer, songwriter" }])).toEqual(["Born Dec 13, 1989", "Occupation singer, songwriter"]);
 });
+
+test("!deepl: DeepL translator link, optional target language", () => {
+  expect(A.deeplUrl("!deepl guten Morgen")).toBe("https://www.deepl.com/translator#auto/en/guten%20Morgen");
+  expect(A.deeplUrl("!deepl de good morning")).toBe("https://www.deepl.com/translator#auto/de/good%20morning");
+  expect(A.deeplUrl("!DeepL so am I")).toBe("https://www.deepl.com/translator#auto/en/so%20am%20I"); // "so" isn't a code
+  expect(A.deeplUrl("!deepl a/b")).toBe("https://www.deepl.com/translator#auto/en/a%5C%2Fb");
+  expect(A.deeplUrl("!deepl")).toBe("https://www.deepl.com/translator");
+  expect(A.deeplUrl("deepl hello")).toBe("");
+  expect(A.deeplUrl("!deeplx hello")).toBe("");
+});
