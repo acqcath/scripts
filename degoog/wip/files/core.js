@@ -457,3 +457,21 @@ export const matchShare = (words, text) => {
 // A search made mostly of common words (a quote, "why does no one love me") can't be judged by its words: no check
 export const relJudgeable = (q) => { const t = relToks(q); return t.length > 0 && relWords(q).length * 2 >= t.length; };
 export const related = (words, ident, text, engines, pos) => matchShare(words, text) > 0 || engines >= 2 || (ident && pos < 3);
+// Second look before a result is folded: words the related results share (in 15%+ of them, at least 3; one also in
+// 2+ of their titles) are the topic of this search ("tracking", "package" for a UPS number; "attention", "encoder"
+// for an arXiv id; "football", "pittsburgh" for steelers on Science). A result with 2+ of them stays: it uses other
+// words for the same thing. Built from this page's own results each time: nothing stored, nothing to maintain.
+const TOPIC_STOP = new Set("that this your with from have more about what when where which their there they them will been were into also just like only some than then these those other such most many much number word words meaning definition best free online official home page site http https html".split(" "));
+const topicToks = (t) => relToks(t).filter((w) => w.length >= 4 && /\p{L}/u.test(w) && !TOPIC_STOP.has(w));
+export const topicOf = (rel, words) => {
+  const df = new Map(), dt = new Map();
+  for (const r of rel) {
+    for (const t of new Set(topicToks(`${r.title} ${r.snippet || ""}`))) df.set(t, (df.get(t) || 0) + 1);
+    for (const t of new Set(topicToks(r.title))) dt.set(t, (dt.get(t) || 0) + 1);
+  }
+  const need = Math.max(3, Math.ceil(rel.length * 0.15));
+  const own = (t) => words.some((w) => relHit(w, t));
+  const topic = new Set([...df].filter(([t, n]) => n >= need && !own(t)).map(([t]) => t));
+  const titled = new Set([...dt].filter(([t, n]) => n >= 2 && topic.has(t)).map(([t]) => t));
+  return (r) => { const hits = [...new Set(topicToks(`${r.title} ${r.snippet || ""}`))].filter((t) => topic.has(t)); return hits.length >= 2 && hits.some((t) => titled.has(t)); };
+};
