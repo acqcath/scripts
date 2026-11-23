@@ -31,5 +31,8 @@ Each result's ⋮ menu now has one group of four: **Prefer · Normal · Lower ·
 - The same list is in Settings → Clean Titles → **Sites** (add a site, pick a choice, Save). Changes there and in the menu show up in both places.
 - Try: Hide a site on one search, then search something else where it usually shows up.
 
+## Anti-SEO auto-Lower (M2)
+Each search's first page is checked for SEO signs (scraper copies of another result, "search volume" bait, stale "best … 2023" lists, AI-written wording, essay-writing services). A site with signs on most of the searches it's in (at least 5) is set to **Lower**, and its menu says "Lowered automatically". Only Lower, never Hide; any choice you make wins and stops it for that site. On your recorded searches it would lower nothing (the one scraper it spotted, an MDN copy, showed up once). Off switch: Settings → Clean Titles → "Lower SEO junk automatically".
+
 ## Not in this preview yet
-Anti-SEO auto-Lower, the Paywall tag and the Images-only blocklist (rest of M2). Then answer cards (M3/M4) and the rest of the spec.
+The Paywall tag and the Images-only blocklist (rest of M2). Then answer cards (M3/M4) and the rest of the spec.

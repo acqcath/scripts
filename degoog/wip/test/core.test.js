@@ -141,3 +141,25 @@ test("sites: degoog's block/score lists -> one choice per site; Hide wins; patte
   expect(unblockText(block, "pinterest.com").split("\n")[0]).toBe("/.*\\.spam\\..*/");
   expect(SITE_SCORE.prefer > 0 && SITE_SCORE.lower < 0 && SITE_SCORE.normal === 0).toBe(true);
 });
+
+test("anti-SEO signs: copies, bait, stale lists, AI tells, essay sites; not paper mirrors or forum titles", () => {
+  const now = Date.parse("2026-11-23T05:00:00Z");
+  const r = C.seoSigns([
+    { url: "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/map", title: "Array.prototype.map() - JavaScript | MDN", snippet: "The map() method of Array instances creates a new array populated with the results of calling a provided function on every element" },
+    { url: "https://mdn2.netlify.app/en-us/docs/web/javascript/reference/global_objects/array/map", title: "Array.prototype.map() - JavaScript | MDN", snippet: "Mar 28, 2022 ... The map() method creates a new array populated with the results of calling a provided function on every element in the calling array." },
+    { url: "https://time.savvycal.com/worldclock/Japan/Tokyo", title: "Current Local Time in Tokyo, Japan", snippet: "Tokyo, Japan is in the Japan Time time zone (JST), currently UTC+09:00. Tokyo stays at UTC" },
+    { url: "https://www.thetimenow.com/japan/tokyo", title: "Current Local Time in Tokyo, Japan", snippet: "Tokyo uses the Asia/Tokyo time zone, currently JST (UTC+9). Does Tokyo observe daylight saving" },
+    { url: "https://papers.nips.cc/paper/7181-attention-is-all-you-need", title: "Attention is All you Need - NIPS", snippet: "Abstract. The dominant sequence transduction models are based on complex recurrent" },
+    { url: "https://proceedings.neurips.cc/paper/2017/file/x-Paper.pdf", title: "Attention is All you Need - NIPS", snippet: "The dominant sequence transduction models are based on complex recurrent or convolutional" },
+    { url: "https://www.reddit.com/r/keyboards/comments/x/best_keyboard_2023/", title: "Best mechanical keyboard 2023?", snippet: "Looking for one" },
+    { url: "https://bestlists.example.com/kb", title: "10 Best Mechanical Keyboards of 2024", snippet: "Our picks" },
+    { url: "https://kw.example.net/x", title: "react hooks", snippet: "react hooks has a search volume of 12k and keyword difficulty 40" },
+    { url: "https://ai.example.org/y", title: "React hooks guide", snippet: "In today's fast-paced digital world, we delve into hooks" },
+    { url: "https://www.ukessays.com/essays/x", title: "Essay", snippet: "x" },
+  ], psl, now);
+  expect(r.hit).toEqual({ "mdn2.netlify.app": ["copy"], "example.com": ["stale"], "example.net": ["bait"], "example.org": ["ai"], "ukessays.com": ["cheat"] });
+  expect(r.seen).toContain("thetimenow.com");
+  expect(C.seoVerdict({ seen: 5, hits: 3 })).toBe(true);
+  expect(C.seoVerdict({ seen: 4, hits: 4 })).toBe(false);
+  expect(C.seoVerdict({ seen: 6, hits: 3 })).toBe(false);
+});
