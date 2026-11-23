@@ -125,3 +125,17 @@ test("answers: sports card data (final, live, next)", () => {
   expect(A.sportsAnswer({ ...g, state: "pre" }, now)).toMatchObject({ status: "Next game", showScore: false, copy: "" });
   expect(A.sportsAnswer({ ...g, state: "postponed" }, now)).toBe(null);
 });
+
+test("knowledge panel: which searches ask, and the same-article check", () => {
+  for (const q of ["taylor swift", "golden gate bridge", "jaguar", "mercury", "Pittsburgh", "AC/DC".replace("/", "")]) expect([q, !!A.kpQuery(q)]).toEqual([q, true]);
+  for (const q of ["how to reset airpods", "best laptop 2026", "react useEffect cleanup", "iphone 16 vs iphone 17", "nvidia stock", "1Z999AA10123456784", "15-213", "chocolate chip cookie recipe", "time in tokyo", "weather pittsburgh", "apple support", "a", "one two three four five six"]) expect([q, A.kpQuery(q)]).toEqual([q, null]);
+  const urls = ["https://www.taylorswift.com", "https://en.wikipedia.org/wiki/Taylor_Swift", "https://www.britannica.com/biography/Taylor-Swift"];
+  expect(A.kpMatch("Taylor Swift", urls)).toEqual({ ok: true, wiki: [1] });
+  expect(A.kpMatch("Taylor Swift", [urls[0], urls[2]])).toEqual({ ok: true, wiki: [] });
+  expect(A.kpMatch("Golden Gate Bridge", ["https://www.wikiwand.com/en/Golden_Gate_Bridge"]).ok).toBe(true);
+  expect(A.kpMatch("Mercury (planet)", ["https://en.wikipedia.org/wiki/Mercury_(planet)"]).wiki).toEqual([0]);
+  expect(A.kpMatch("Jaguar", ["https://www.britannica.com/animal/jaguar-mammal", "https://en.wikipedia.org/wiki/Jaguar_Cars"]).ok).toBe(false);
+  expect(A.kpMatch("Spider-Man", ["https://en.wikipedia.org/wiki/Spider-Man%3A_Homecoming", "not a url"]).ok).toBe(false);
+  expect(A.kpMatch("", urls).ok).toBe(false);
+  expect(A.kpLine([{ k: "Born", v: "Dec 13, 1989" }, { k: "Occupation", v: "singer, songwriter" }])).toEqual(["Born Dec 13, 1989", "Occupation singer, songwriter"]);
+});

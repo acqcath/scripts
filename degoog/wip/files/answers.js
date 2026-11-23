@@ -603,6 +603,43 @@ export const sportsAnswer = (g, now = Date.now()) => {
   return { kind: "sports", label: g.league || "", live: g.state === "in", status, teams: [g.away, g.home], showScore: g.state !== "pre", detail: [when, rec].filter(Boolean).join(" · "), copy: g.state === "pre" ? "" : `${g.away.abbr} ${g.away.score} – ${g.home.score} ${g.home.abbr}` };
 };
 
+// ----- Knowledge panel (spec 3): which searches ask for one, and whether the results back it up -----
+// Short name-like searches only: no question, task, shopping or command words (those want results or an answer)
+const KP_NOT = /^(?:how|what|whats|why|when|where|who|whos|which|is|are|was|do|does|did|can|could|should|will|define|weather|time|best|top|cheap|buy|download|install|watch|play|login|log|sign|free|near|latest|new)\b|\b(?:vs|versus|or|near me|review|reviews|price|prices|deal|deals|stock|tutorial|login|error|errors|support|setup|fix|not working|lyrics|meaning|tickets|hours|menu|coupon|codes?|app|apk|wallpaper|jobs|careers|salary|today|tonight|score|schedule|news|recipe|pdf|reddit)\b/i;
+export const kpQuery = (q) => {
+  const s = String(q || "").trim().replace(/\s+/g, " ");
+  if (s.length < 2 || s.length > 60 || s.split(" ").length > 5) return null;
+  if (!/^[\p{L}\d][\p{L}\d .'&-]*$/u.test(s) || /^[\d .-]+$/.test(s) || KP_NOT.test(s)) return null;
+  // Code-like words (useEffect, 1Z999…) aren't names of things
+  if (/\p{Ll}\p{Lu}/u.test(s) || /\d\p{L}|\p{L}\d/u.test(s)) return null;
+  return s;
+};
+// Titles compared without case, underscores/hyphens or a "(qualifier)"
+const kpNorm = (t) => String(t || "").toLowerCase().replace(/[_-]+/g, " ").replace(/[()]/g, " ").replace(/\s+/g, " ").trim();
+// The panel shows only when a result is that same article: Wikipedia itself (that result is then hidden: the panel
+// replaces it), or the same article on Wikiwand (a Wikipedia mirror) or Britannica (on the user's engines no
+// Wikipedia result came back in 50 recorded searches; Britannica's article is the same evidence that this meaning
+// is the one the results are about). Returns {ok, wiki: [indices of Wikipedia results]}.
+export const kpMatch = (title, urls) => {
+  const t = kpNorm(title), wiki = [];
+  let ok = false;
+  if (!t) return { ok, wiki };
+  (urls || []).forEach((h, i) => {
+    let u;
+    try { u = new URL(h); } catch { return; }
+    let path;
+    try { path = decodeURIComponent(u.pathname); } catch { path = u.pathname; }
+    const host = u.hostname.replace(/^www\./, "");
+    let m;
+    if (/^en\.(?:m\.)?wikipedia\.org$/.test(host) && (m = /^\/wiki\/([^/]+)$/.exec(path)) && kpNorm(m[1]) === t) { ok = true; wiki.push(i); }
+    else if (host === "wikiwand.com" && (m = /^\/en\/(?:articles\/)?([^/]+)$/.exec(path)) && kpNorm(m[1]) === t) ok = true;
+    else if (host === "britannica.com" && (m = /^\/(?:topic|biography|place|science|art|technology|event|animal|plant|money|sports|summary)\/([^/]+)/.exec(path)) && kpNorm(m[1]) === t) ok = true;
+  });
+  return { ok, wiki };
+};
+// Phone line: up to 3 facts, short ("Born Dec 13, 1989 · Height 330 m (1,083 ft)"); the page drops what doesn't fit
+export const kpLine = (facts) => (facts || []).slice(0, 4).map((f) => `${f.k} ${f.v}`);
+
 // ----- The one local answer for a search, or null. CMU course numbers are left to the CMU card (network). -----
 export const answer = (q, now = Date.now(), data = {}) => {
   const s = String(q || "").trim();
