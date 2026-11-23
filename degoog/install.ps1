@@ -5631,6 +5631,23 @@ docker exec $c bun /tmp/setcss.js; docker exec $c rm -f /tmp/custom.css /tmp/set
 // (TTL_MS, 12 h unless DEGOOG_CACHE_TTL_MS says otherwise), instead of its hard-coded 2 minutes. RAM/valkey cache
 // only, like the results. Exactly one matching line is changed; 0 or several -> nothing changed, and it says so.
 const fs = require("fs");
+// Empty answers: degoog keeps an engine's run for 12 h when the engine "succeeded" with 0 results (a blocked or
+// captcha page parses as nothing), so a search that once came back empty stays "No results found" on every refresh.
+// Patched in degoog's engine cache: an empty run is kept only as long as a failed one (SHORT_TTL_MS, 2 min), so the
+// next search after that asks the engine again. Same safety as above: exactly one matching line, else nothing.
+(() => {
+  const f = `${process.env.DEGOOG_SRC_DIR || "/app/src"}/server/search/engine-cache.ts`;
+  const MARK2 = "/* clean-titles: empty runs retried soon */";
+  let src = "";
+  try { src = fs.readFileSync(f, "utf8"); } catch { console.log("Empty results: degoog's engine-cache.ts not found, nothing changed (NOTICE)"); return; }
+  if (src.includes(MARK2)) { console.log("Empty results: asked again after 2 minutes instead of 12 hours (OK)"); return; }
+  const OLD = "engineErrored(timing.status) ? SHORT_TTL_MS : TTL_MS;";
+  const n = src.split(OLD).length - 1;
+  if (n !== 1) { console.log(`Empty results: NOTICE found ${n} copies of degoog's cache line (expected 1), nothing changed. degoog may have been updated.`); return; }
+  fs.writeFileSync(f + ".ct-tmp", src.replace(OLD, `engineErrored(timing.status) || !timing.resultCount ? SHORT_TTL_MS : TTL_MS; ${MARK2}`));
+  fs.renameSync(f + ".ct-tmp", f);
+  console.log("Empty results: asked again after 2 minutes instead of 12 hours (OK)");
+})();
 const root = process.env.DEGOOG_PLUGINS_DIR || "/app/data/plugins";
 const MARK = "/* clean-titles: same as degoog's TTL_MS */";
 const LINE = /^const SHORT_TTL_MS = 2 \* 60 \* 1000;[ \t]*$/gm;
@@ -5650,24 +5667,6 @@ for (const d of dirs) {
   fs.renameSync(f + ".ct-tmp", f);
   console.log(`AI summary cache: ${d} now keeps answers as long as search results (OK)`);
 }
-
-// Empty answers: degoog keeps an engine's run for 12 h when the engine "succeeded" with 0 results (a blocked or
-// captcha page parses as nothing), so a search that once came back empty stays "No results found" on every refresh.
-// Patched in degoog's engine cache: an empty run is kept only as long as a failed one (SHORT_TTL_MS, 2 min), so the
-// next search after that asks the engine again. Same safety as above: exactly one matching line, else nothing.
-(() => {
-  const f = `${process.env.DEGOOG_SRC_DIR || "/app/src"}/server/search/engine-cache.ts`;
-  const MARK2 = "/* clean-titles: empty runs retried soon */";
-  let src = "";
-  try { src = fs.readFileSync(f, "utf8"); } catch { console.log("Empty results: degoog's engine-cache.ts not found, nothing changed (NOTICE)"); return; }
-  if (src.includes(MARK2)) { console.log("Empty results: asked again after 2 minutes instead of 12 hours (OK)"); return; }
-  const OLD = "engineErrored(timing.status) ? SHORT_TTL_MS : TTL_MS;";
-  const n = src.split(OLD).length - 1;
-  if (n !== 1) { console.log(`Empty results: NOTICE found ${n} copies of degoog's cache line (expected 1), nothing changed. degoog may have been updated.`); return; }
-  fs.writeFileSync(f + ".ct-tmp", src.replace(OLD, `engineErrored(timing.status) || !timing.resultCount ? SHORT_TTL_MS : TTL_MS; ${MARK2}`));
-  fs.renameSync(f + ".ct-tmp", f);
-  console.log("Empty results: asked again after 2 minutes instead of 12 hours (OK)");
-})();
 
 '@)
 docker cp "$t\aittl.js" "${c}:/tmp/aittl.js"; docker exec $c bun /tmp/aittl.js; docker exec $c rm -f /tmp/aittl.js
@@ -5725,24 +5724,16 @@ for (const code of sx) {
 //   cutting a healthy answer. Measured worst cases on this server: Bing 674 ms, Startpage 625 ms (60 searches each),
 //   Brave News 1,029 ms. A blocked first try retried with curl ("curl-fallback") takes about two normal requests,
 //   ~1.3 s for the web engines, so 2 s keeps those and caps a bad case at 2 s instead of degoog's default 10 s.
-<<<<<<< HEAD
 // - outgoing client: the engine's own setting is kept (the user picked what works); unset -> "curl-fallback".
 //   Brave always "curl-impersonate": measured on the user's server, Brave returned 0 results with curl-fallback
 //   (it turns away anything that doesn't look like a browser).
-=======
-// - outgoing client "curl-fallback" (plain fetch, retried with curl when a site answers 403/429/5xx)
->>>>>>> origin/main
 const SPECIAL = /(?:^|-)(?:wikipedia|reddit|hacker-news|lemmy|the-guardian|internet-archive|wikimedia-commons|openverse|nasa-images|immich)$/i;
 const tuned = [];
 for (const d of dirs) {
   const id = d.toLowerCase().endsWith("-engine") ? d.toLowerCase() : `${d.toLowerCase()}-engine`;
   const key = Object.keys(store).find((k) => k.toLowerCase() === id) || id;
   const cur = store[key] && typeof store[key] === "object" ? store[key] : {};
-<<<<<<< HEAD
   const want = { score: SPECIAL.test(d) ? "0.25" : "1", timeoutMs: "2000", outgoingTransport: /(?:^|-)brave(?:-|$)/i.test(d) ? "curl-impersonate" : String(cur.outgoingTransport || "curl-fallback") };
-=======
-  const want = { score: SPECIAL.test(d) ? "0.25" : "1", timeoutMs: "2000", outgoingTransport: "curl-fallback" };
->>>>>>> origin/main
   const diff = Object.entries(want).filter(([k, v]) => String(cur[k] ?? "") !== v);
   if (!diff.length) continue;
   store[key] = { ...cur, ...want };
