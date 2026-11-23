@@ -27,22 +27,53 @@ const run = async (q, opts = {}) => {
   document.body.innerHTML = '<div id="at-a-glance"></div><div id="results-list"></div>';
   if (!opts.noPsl) win.CT_PSL = PSL;
   if (opts.sites) win.CT_DATA = { sites: opts.sites };
-  win.fetch = async () => new win.Response("{}", { status: 404 }); // the server is not here: every bridge call fails
+  // The server: every bridge call fails, unless the test answers a route (opts.bridge[route] = {data, delay ms})
+  win.fetch = async (url, init) => {
+    const m = /^!cleantitles bridge (\w+)/.exec(init && init.body ? JSON.parse(init.body).query : "");
+    const a = m && opts.bridge && opts.bridge[m[1]];
+    if (!a) return new win.Response("{}", { status: 404 });
+    await new Promise((r) => setTimeout(r, a.delay || 0));
+    const html = JSON.stringify(a.data).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    return new win.Response(JSON.stringify({ html }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
   win.IntersectionObserver = class { observe() {} unobserve() {} };
   const errors = [];
   win.console.error = (...a) => errors.push(a.join(" "));
   win.console.warn = (...a) => errors.push(a.join(" "));
-  win.eval(`const __PLUGIN_ID__="clean-titles";\n${CODE}`);
+  win.addEventListener("error", (e) => errors.push(String(e.error && e.error.stack || e.message)));
+  // Run it against this window's globals (document, location...), not the test runner's. MutationObserver is
+  // replaced by one the test fires itself: browsers deliver records as a microtask right after the DOM change
+  // (before paint), while happy-dom uses timers that sometimes never fire here
+  const mos = [];
+  class MO { constructor(cb) { this.cb = cb; mos.push(this); } observe() {} disconnect() {} takeRecords() { return []; } }
+  const scope = new Proxy(win, {
+    has: () => true,
+    get: (t, k) => {
+      if (k === "MutationObserver") return MO;
+      if (k === Symbol.unscopables) return undefined;
+      if (!(k in t)) return globalThis[k];
+      const v = Reflect.get(t, k);
+      return typeof v === "function" && typeof k === "string" && /^[a-z]/.test(k) ? v.bind(t) : v;
+    },
+    set: (t, k, v) => { t[k] = v; return true; },
+  });
+  new Function("scope", `with (scope) {\nconst __PLUGIN_ID__="clean-titles";\n${CODE}\n}`)(scope);
+  const fire = (nodes) => { for (const m of mos) m.cb([{ type: "childList", addedNodes: nodes }], m); };
   const res = REC.searches.find((x) => x.q === q && !x.type || x.q === q && x.type === "web").results;
-  document.getElementById("results-list").innerHTML = res.map((r, i) => render(TPL, ctx(r, i))).join("");
-  await new Promise((r) => setTimeout(r, 30));
+  // The page script starts at page load, before any results (as in degoog: results come from a later fetch)
+  if (document.readyState === "loading") await new Promise((r) => document.addEventListener("DOMContentLoaded", r, { once: true }));
+  await new Promise((r) => setTimeout(r, opts.engines || 0)); // the engines' time, while early answers arrive
+  const list = document.getElementById("results-list");
+  list.innerHTML = res.map((r, i) => render(TPL, ctx(r, i))).join("");
+  fire([...list.children]);
   const items = [...document.querySelectorAll("#results-list .result-item")];
   const visible = items.filter((el) => el.style.display !== "none" && !el.classList.contains("ct-grouped"));
-  return { win, document, res, items, visible, errors, folds: [...document.querySelectorAll(".ct-fold")] };
+  return { win, document, res, items, visible, errors, fire, folds: [...document.querySelectorAll(".ct-fold")] };
 };
 
 test("page: real 'how to reset airpods' shows each document once and at most 2 per site", async () => {
-  const { visible } = await run("how to reset airpods");
+  const { visible, errors } = await run("how to reset airpods");
+  expect(errors).toEqual([]);
   const urls = visible.map((el) => el.querySelector("a.result-title").href);
   expect(urls).not.toContain("https://support.apple.com/en-gb/118531");
   expect(urls).not.toContain("https://m.youtube.com/watch?v=D0LZz3Zxk00");
@@ -106,3 +137,25 @@ test("page: all recorded web searches replay without a single page-script error;
   if (process.env.CT_REPORT) console.log(rows.join("\n"));
   expect(rows.length).toBe(50);
 }, 60000);
+
+// Early answers: in hand when results arrive -> drawn in the same pass; late -> never drawn
+const FIX = { fix: null, words: [], dym: "pyhton tutorial", related: ["python download", "python tutorial"] };
+const QS = { q: ["What is Python used for?", "Is Python hard to learn?"] };
+test("page: typo line, related searches and People also ask drawn with the results when their answers came first", async () => {
+  const { document, win } = await run("python", { engines: 40, bridge: { fix: { data: FIX, delay: 5 }, qs: { data: QS, delay: 5 } } });
+  expect(document.getElementById("ct-related")).not.toBeNull();
+  expect(document.getElementById("ct-qa")).not.toBeNull();
+  expect(document.getElementById("ct-qa").querySelectorAll("details").length).toBe(2);
+  win.close();
+});
+test("page: the same answers arriving after the results are dropped (nothing inserted later)", async () => {
+  const { document, win, fire } = await run("python", { engines: 0, bridge: { fix: { data: FIX, delay: 60 }, qs: { data: QS, delay: 60 } } });
+  await new Promise((r) => setTimeout(r, 120));
+  const d = document.createElement("div");
+  document.getElementById("results-list").append(d);
+  fire([d]); // another pass after they came
+  expect(document.getElementById("ct-related")).toBeNull();
+  expect(document.getElementById("ct-qa")).toBeNull();
+  expect(document.getElementById("ct-fix")).toBeNull();
+  win.close();
+});

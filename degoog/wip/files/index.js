@@ -398,7 +398,17 @@ const questions = async (q) => {
 // The fix for a search, or null. Both opinions agree on what's a real search: if Bing has suggestions that
 // start with it, it's left alone
 const _fix = new Map();
-const check = async (q) => {
+// The page now asks /fix at page load, while the search's own interceptor is working out the same fix: both share
+// one run (one set of Bing suggestion requests), not two
+const _fixRun = new Map();
+const check = (q) => {
+  const qn = norm(q);
+  if (_fixRun.has(qn)) return _fixRun.get(qn);
+  const p = check0(q).finally(() => _fixRun.delete(qn));
+  _fixRun.set(qn, p);
+  return p;
+};
+const check0 = async (q) => {
   const qn = norm(q);
   if (skip(qn)) return { fix: null, words: [] };
   if (_fix.has(qn)) return _fix.get(qn);
@@ -447,8 +457,8 @@ export const routes = [
     async handler(req) {
       const u = new URL(req.url);
       const q = (u.searchParams.get("q") || "").slice(0, 200);
-      if (u.searchParams.get("keep")) { keep(q); _fix.clear(); }
-      if (u.searchParams.get("acc")) { accept(u.searchParams.get("acc").slice(0, 200), q); _fix.clear(); }
+      if (u.searchParams.get("keep")) { keep(q); _fix.clear(); _fixRun.clear(); }
+      if (u.searchParams.get("acc")) { accept(u.searchParams.get("acc").slice(0, 200), q); _fix.clear(); _fixRun.clear(); }
       const { fix, words, dym, via } = await check(q);
       const seen = new Set([norm(q), norm(fix || q)]);
       // Several suggestions that are the same search plus a different place ("... in hull", "... in surin") are a

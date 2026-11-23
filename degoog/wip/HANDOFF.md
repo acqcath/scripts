@@ -45,8 +45,9 @@ The spec is the user's handoff text (they paste it into each new chat). These no
   - script.js wired: `listPass` runs first in every observer pass (Web tab), then `scan` (row cleanup), then groups, then `foldPass` ("N more from site ⌄" under the site's last shown result on the same page; tap opens the results in place where the line was). Hidden results carry data-ct-dup / data-ct-hide / data-ct-cap (cap ones stay usable as sitelinks, as in v49). v49's per-host cap (perSite) is gone.
   - Snippet cleanup: core cleanSnippet on the first text node; degoog's `.result-date` (else the leading date from the text) moves to the source line as `span.ct-date` ("site · yesterday"), via dateLabel.
   - After-paint fixes: groups() no longer waits for the prefs bridge (switches read from localStorage "ct-show", switch values only; a change applies from the next page load; missing = on). HD thumbnails: same-size opacity-only crossfade (decoded overlay `img.ct-hd`), no more src swap, and a frame degoog hid stays hidden. YouTube description append cut (page + server /ytdesc route + ytDesc).
+  - Did you mean / Showing results for / Related searches (/fix) and People also ask (/qs): asked at page load (`earlyStart`, in parallel with the engines). They're drawn in the same pass as the results only if the answer is already in hand; an answer that comes later is dropped (no insert after paint). Server: /fix and the search interceptor share one in-flight check() run (`_fixRun`), so this adds no Bing suggestion requests.
   - Build: `python3 build.py` -> files/ct-page.js = core.js wrapped as `CT` + script.js. The installer must embed ct-page.js as its script.js (layout.html inlines one module, so no imports).
-  - Tests: 25 pass. New test/page.test.js runs the built page script in happy-dom on real recorded results rendered with degoog's own result.html (test/fixtures/result.html, degoog e006d50). Needs `bun install` in degoog/wip first (package.json, happy-dom 15.11.7; node_modules ignored).
+  - Tests: 28 pass, stable over 12 consecutive runs. New test/page.test.js runs the built page script in happy-dom on real recorded results rendered with degoog's own result.html (test/fixtures/result.html, degoog e006d50). Needs `bun install` in degoog/wip first (package.json, happy-dom 15.11.7; node_modules ignored).
 
 ## Verified this run
 - Real recordings, dedupe -> cap (results in -> after dedupe -> shown): airpods 29 -> 26 -> 21; mdn array map 28 -> 28 -> 17 before the site-word fix (mozilla.org 10 folded), now uncapped; is windows 10 supported 28 -> 28 -> 22 (6 microsoft.com folded under end-of-support). No recorded search reproduces "18 -> 6"; that figure came from an earlier hand-picked set. Real numbers are in the tests instead.
@@ -54,6 +55,7 @@ The spec is the user's handoff text (they paste it into each new chat). These no
 - Same-title-within-site merges two different YouTube IDs with the same title (8lnlUrHBqOE vs D0LZz3Zxk00, re-uploads): kept as intended (spec: reposts).
 - degoog's resultFadeIn also slides 8px (_results.scss), so the image crossfade uses its own opacity-only keyframes (ctXfade, same .3s).
 
+- Test harness: happy-dom's MutationObserver uses timers that sometimes never fired, which made the tests flaky. The page script now runs against a scope proxy whose MutationObserver the test fires itself, right after each DOM change. That matches the browser, which delivers records as a microtask before paint.
 - Replay of all 50 recorded web searches through the built page script (test/page.test.js, `CT_REPORT=1 bun test` prints the table): zero page-script errors; merges per search 0–4, fold lines 0–4.
 - PLAN.md (pushed by another session at 05:16–05:18 UTC, while this run held LOCK) is followed: this run's work is M1 item 1 plus part of item 2 (HD crossfade; groups no longer wait for the prefs bridge).
 
@@ -65,7 +67,9 @@ The spec is the user's handoff text (they paste it into each new chat). These no
 - Step 3, part 2 (after-paint items still open):
   - News tab `ct-lowres`: the class is added once the picture loads and switches the card layout (banner -> 92px thumb) after paint. Fix: decide before paint from URL size hints (Bing th?w=&h=, Brave), else always the thumb layout on that tab. Measure on the recorded news searches (steelers, nvidia) first.
   - Top stories: the /api/search?type=news insert after result 1 lands after paint and isn't sure to arrive. It can't be reserved, so the choices are: drop it unless ready before paint, or cut it. Running a news search for every query breaks "cheap". Suggested: keep the "newsy" test (spec item 15: set "fresh" and the threshold from the recorded news searches) and only use news results already in degoog's cache. If that isn't possible in 1.2.0, cut it and write down why.
-  - extras() (Did you mean, Related), paa(), glance() fetched card: check each for after-paint inserts; reserve exact size or drop.
+  - glance() fetched card (/api/command for bangs at search time): same early-or-drop treatment as /fix and /qs.
+  - Measure live how often /fix and /qs are in hand before results arrive (engine cache hits come back fast). If "Showing results for" is often dropped while the search really was changed, show it from the server's answer: the interceptor knows the fix before the engines run.
+  - Rank higher / Rank lower menu click moves rows: user-initiated, so allowed; it gets replaced by Prefer/Normal/Lower/Hide in M2.
   - Title cleanup audit (cleanTitle runs in row() before paint: OK; check nothing else rewrites titles later).
 - Site prefs UI (Prefer/Normal/Lower/Hide in the result menu and Settings) + server compiling CT_DATA.sites into the inline block.
 - Headless Chrome check of fold line, date on source line, crossfade at 390/1280 with the recorded CSS (rec `css`), CLS = 0.
