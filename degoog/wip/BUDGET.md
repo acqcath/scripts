@@ -16,4 +16,4 @@
 
 ## Log (UTC start, UTC end, setup min, work min, items done)
 - 2026-11-23 05:10, 05:30, ~5, ~15, M1 item 1 + most of item 2 (first run, old instructions)
-- 2026-11-23 05:52, (running), ~2, ~19 so far, M1 done (items 2-6); M2 site choices menu (Prefer/Normal/Lower/Hide) built
+- 2026-11-23 05:52, 06:11, ~2, ~21, M1 done (items 2-6: Top stories, News layout, PSL file, preview installer, headless CLS 0, PREVIEW.md); M2 site choices menu built; Settings-list design notes
