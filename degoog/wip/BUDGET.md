@@ -21,4 +21,4 @@
 - 2026-11-23 05:52, 06:11, ~2, ~21, M1 done (items 2-6: Top stories, News layout, PSL file, preview installer, headless CLS 0, PREVIEW.md); M2 site choices menu built; Settings-list design notes
 - 2026-11-23 06:17, (cut off, no commits after lock), ~1, ~0, none
 - 2026-11-23 09:17, 10:05, ~2, ~46, M2 done (Sites list in Settings, anti-SEO auto-Lower, Paywall tag, Images-tab AI list, shared fetch helper); M3 done (local answer card, ai-summary TTL patch, AI spot); M4 currency, endoflife.date, Wikidata facts, CMU card, sports, knowledge panel server part (took over stale 06:16 LOCK)
-- 2026-11-23 10:16, (running), ~2, ~13, M4 knowledge panel page UI; preview installer + PREVIEW.md for M4; M5 same-shape results, !deepl
+- 2026-11-23 10:16, (running), ~2, ~15, M4 knowledge panel page UI; preview installer + PREVIEW.md for M4; M5 same-shape results, !deepl, carried-over values
