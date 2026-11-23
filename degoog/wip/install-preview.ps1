@@ -60,6 +60,18 @@ const upgrade = (raw, W) => {
 // learned from your own results (names like "Asura Scans" or "RTINGS"), so it keeps getting better the more you
 // search. Bing's suggestions (Bing already gets your searches as an engine) add a second opinion and the related
 // searches. Words you keep with "Search instead" are never changed again.
+// Same as core.js sitesFromLists (the server file can't import the page's core; a test checks they agree)
+const plainHost = (l) => /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(l);
+export const sitesFromLists = (block = "", score = "") => {
+  const out = {};
+  for (const raw of String(score).split("\n")) {
+    const [d, n] = raw.split("|").map((x) => (x || "").trim());
+    const v = Number(n);
+    if (d && plainHost(d) && n && Number.isFinite(v) && v !== 0) out[d.toLowerCase()] = v > 0 ? "prefer" : "lower";
+  }
+  for (const raw of String(block).split("\n")) { const d = raw.trim().toLowerCase(); if (plainHost(d)) out[d] = "hide"; }
+  return out;
+};
 let DIR = "/app/data/plugins/clean-titles";
 const WORDS = new Map();
 let TOTAL = 0, PTOTAL = 0; // all word / word-pair counts added up: how common one is = its count / total
@@ -503,6 +515,24 @@ export const routes = [
     },
   },
   {
+    // Your site choices (Prefer / Lower / Hide), read from degoog's own block and score lists: domains only. The
+    // page keeps a copy, so the next page knows before paint which sites skip the 2-per-site limit. Read-only:
+    // changes go through degoog's Settings routes with your Settings sign-in, never through here.
+    method: "get",
+    path: "/sites",
+    handler: () => {
+      let block = "", score = "";
+      const data = process.env.DEGOOG_DATA_DIR || `${process.cwd()}/data`;
+      try {
+        const j = JSON.parse(fs.readFileSync(process.env.DEGOOG_SEARCH_LISTS_FILE || `${data}/search/search-lists.json`, "utf8"));
+        block = typeof j.domainBlockList === "string" ? j.domainBlockList : ""; score = typeof j.domainScoreList === "string" ? j.domainScoreList : "";
+      } catch {
+        try { const s = JSON.parse(fs.readFileSync(`${data}/server-settings.json`, "utf8")).settings || {}; block = String(s.domainBlockList || ""); score = String(s.domainScoreList || ""); } catch {}
+      }
+      return new Response(JSON.stringify({ sites: sitesFromLists(block, score) }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+    },
+  },
+  {
     method: "get",
     path: "/prefs",
     handler: () => new Response(JSON.stringify(SHOW), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } }),
@@ -806,6 +836,28 @@ const planPage = (items, ctx) => {
   return { shown, dups, hidden, capped, folds };
 };
 
+// ===== Sites: Prefer / Normal / Lower / Hide, stored in degoog's own lists =====
+// Hide = a line in domainBlockList; Prefer / Lower = "domain|N" in domainScoreList (N added to each result's score
+// on the server, where a top result scores about 60). So degoog applies them itself on every tab, before render.
+const SITE_SCORE = { prefer: 40, lower: -40, normal: 0 };
+const plainHost = (l) => /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(l);
+// The lists' text -> {domain: "hide" | "prefer" | "lower"} (regex and uBlock lines are degoog's business; Hide wins)
+const sitesFromLists = (block = "", score = "") => {
+  const out = {};
+  for (const raw of String(score).split("\n")) {
+    const [d, n] = raw.split("|").map((x) => (x || "").trim());
+    const v = Number(n);
+    if (d && plainHost(d) && n && Number.isFinite(v) && v !== 0) out[d.toLowerCase()] = v > 0 ? "prefer" : "lower";
+  }
+  for (const raw of String(block).split("\n")) { const d = raw.trim().toLowerCase(); if (plainHost(d)) out[d] = "hide"; }
+  return out;
+};
+// Block list without this site's own line (other lines, comments and patterns untouched)
+const unblockText = (block, domain) => {
+  const d = String(domain).toLowerCase();
+  return String(block || "").split("\n").filter((l) => { const t = l.trim().toLowerCase(); return t !== d && t !== `www.${d}`; }).join("\n");
+};
+
 // ===== Snippet cleanup =====
 const MON = "(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\\.?";
 const DATE_RE = new RegExp(`^\\s*(${MON} \\d{1,2},? \\d{4}|\\d{1,2} ${MON},? \\d{4}|\\d{4}-\\d{2}-\\d{2}|\\d{1,2}/\\d{1,2}/\\d{2,4}|\\d+ (?:sec|second|min|minute|hour|hr|day|week|month|year)s? ago|yesterday|today)\\s*(?:\\.\\.\\.|…|—|–|-|·|:)\\s*`, "i");
@@ -866,7 +918,7 @@ const cmuCourse = (q, courses) => {
   return { id, level, prof: /prof|instructor|teacher/.test(rest) };
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, planPage, cleanSnippet, dateLabel, relDate, upsValid, isbnValid, cmuCourse };
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, planPage, SITE_SCORE, sitesFromLists, unblockText, cleanSnippet, dateLabel, relDate, upsValid, isbnValid, cmuCourse };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -1012,8 +1064,16 @@ const junk = (el) => {
 // If it failed to load, sites are whole host names (never a guessed suffix).
 let PSL0;
 const PSL = () => (PSL0 !== undefined ? PSL0 : (PSL0 = typeof window.CT_PSL === "string" && window.CT_PSL ? CT.pslParse(window.CT_PSL) : null));
-// Prefer / Lower / Hide per site, compiled into the page by the server (none yet = every site Normal)
-const SITE_PREFS = (window.CT_DATA && window.CT_DATA.sites) || {};
+// Prefer / Lower / Hide per site: this browser's copy of your choices in degoog's lists ({domain: choice}),
+// refreshed from the server on each page load. degoog already applied them on the server; the page uses them for
+// the 2-per-site limit (Prefer skips it) and keeps them within each endless-scroll page.
+const SITES_KEY = "ct-sites";
+let SITES = {};
+try { const c = JSON.parse(localStorage.getItem(SITES_KEY) || "null"); if (c && typeof c === "object") SITES = c; } catch {}
+const saveSites = () => { try { localStorage.setItem(SITES_KEY, JSON.stringify(SITES)); } catch {} };
+bridge("sites", {}).then((j) => { if (j && j.sites && typeof j.sites === "object") { SITES = j.sites; saveSites(); } }).catch(() => {});
+// Only whole-site entries count here (a line for one subdomain is left to degoog's own filter)
+const sitePrefs = () => { const o = {}; for (const [d, v] of Object.entries(SITES)) if (siteOf(d) === d) o[d] = v; return o; };
 const planned = new WeakSet();
 let LP = null;
 const listPass = () => {
@@ -1029,7 +1089,7 @@ const listPass = () => {
     list.querySelectorAll(".ct-fold").forEach((x) => x.remove());
     let q = "";
     try { q = new URL(location.href).searchParams.get("q") || ""; } catch {}
-    LP = { key, first: fresh[0], ctx: CT.listCtx(q, PSL(), SITE_PREFS), pend: [] };
+    LP = { key, first: fresh[0], ctx: CT.listCtx(q, PSL(), sitePrefs()), pend: [] };
   }
   const items = [];
   for (const el of fresh) {
@@ -1214,7 +1274,7 @@ const handle = (el) => {
   done.add(el);
   try {
     const c = el.classList;
-    if (c.contains("result-item")) { row(el); rankItems(el); }
+    if (c.contains("result-item")) { row(el); siteItems(el); }
     else card(el, c.contains("image-card"));
   } catch (e) { console.warn("[clean-titles]", e); }
 };
@@ -1448,7 +1508,7 @@ const extras = () => {
     })(ready("fix", key));
 };
 
-// ===== Rank higher / Rank lower, People also ask, and search Tools =====
+// ===== Site choices, People also ask, and search Tools =====
 const goTo = (text) => {
   const u = new URL(location.href);
   u.searchParams.set("q", text);
@@ -1456,43 +1516,81 @@ const goTo = (text) => {
   return u.toString();
 };
 const rowHost = (x) => { const w = x.querySelector(".result-actions"); return w ? w.dataset.host || "" : ""; };
-// One tap in each result's tiny menu, kept forever (degoog's own site scores, so new searches rank it too)
-const rankItems = (el) => {
+// ===== Sites: Prefer / Normal / Lower / Hide, one rounded group in each result's menu (replaces Rank / Block) =====
+// Stored in degoog's own block and score lists (core SITE_SCORE), through degoog's Settings routes with your
+// Settings sign-in, so degoog applies them on the server on every tab. This browser keeps a read-only copy
+// (ct-sites, refreshed from the server each page load) for the parts the page does: Prefer skips the 2-per-site limit.
+const SITE_CHOICES = [["prefer", "Prefer"], ["normal", "Normal"], ["lower", "Lower"], ["hide", "Hide"]];
+const siteOf = (host) => { const h = String(host || "").toLowerCase().replace(/^www\./, ""); return (h && CT.regDomain(h, PSL())) || h; };
+const siteItems = (el) => {
   const menu = el.querySelector(".result-actions-menu");
-  if (!menu || menu.querySelector(".ct-rank") || !menu.querySelector('[id^="result-action-score-"]')) return;
-  const mk = (label, n) => {
-    const b = document.createElement("button");
+  const host = rowHost(el);
+  if (!menu || !host || menu.querySelector(".ct-seg")) return;
+  const cur = SITES[siteOf(host)] || "normal";
+  const seg = mk("div", "ct-seg");
+  seg.setAttribute("role", "group");
+  seg.setAttribute("aria-label", `Results from ${siteOf(host)}`);
+  for (const [v, label] of SITE_CHOICES) {
+    const b = mk("button", "ct-seg-b", label);
     b.type = "button";
-    b.className = "result-actions-item degoog-menu-item ct-rank";
-    b.setAttribute("role", "menuitem");
-    b.dataset.ctScore = String(n);
-    b.textContent = label;
-    return b;
-  };
-  menu.prepend(mk("Rank higher", 15), mk("Rank lower", -15));
+    b.dataset.ctSite = v;
+    b.setAttribute("aria-pressed", String(v === cur));
+    seg.append(b);
+  }
+  menu.prepend(seg);
+};
+const settingsFetch = (path, body) => {
+  let tok = null;
+  try { tok = sessionStorage.getItem("degoog-settings-token"); } catch {}
+  const h = body ? { "Content-Type": "application/json" } : {};
+  if (tok) h["x-settings-token"] = tok;
+  return fetch(path, body ? { method: "POST", headers: h, credentials: "same-origin", body: JSON.stringify(body) } : { headers: h, credentials: "same-origin" });
+};
+// Returns "" when saved, else what to tell the user
+const saveSite = async (site, pref) => {
+  try {
+    if (SITES[site] === "hide" && pref !== "hide") {
+      const g = await settingsFetch("/api/settings/general");
+      if (g.status === 401) return "Sign in to Settings first";
+      if (!g.ok) return "Couldn't save";
+      const j = await g.json();
+      // degoog leaves a very long list out of this answer: writing it back would erase it
+      if (j.degoogOversizedFields && j.degoogOversizedFields.domainBlockList) return "Block list too long: change it in Settings";
+      const w = await settingsFetch("/api/settings/field", { key: "domainBlockList", value: CT.unblockText(j.domainBlockList || "", site) });
+      if (!w.ok) return w.status === 401 ? "Sign in to Settings first" : "Couldn't save";
+    }
+    const r = await settingsFetch("/api/settings/domain-action", pref === "hide" ? { kind: "block", source: site } : { kind: "score", source: site, score: CT.SITE_SCORE[pref] });
+    return r.ok ? "" : r.status === 401 ? "Sign in to Settings first" : "Couldn't save";
+  } catch { return "Couldn't save"; }
 };
 document.addEventListener("click", async (e) => {
-  const b = e.target.closest && e.target.closest(".ct-rank");
+  const b = e.target.closest && e.target.closest(".ct-seg-b");
   if (!b) return;
   e.preventDefault();
   e.stopPropagation();
-  const wrap = b.closest(".result-actions"), menu = b.closest(".result-actions-menu");
-  const host = wrap ? wrap.dataset.host || "" : "", n = Number(b.dataset.ctScore);
+  const wrap = b.closest(".result-actions"), menu = b.closest(".result-actions-menu"), seg = b.closest(".ct-seg");
+  const site = siteOf(wrap ? wrap.dataset.host : ""), pref = b.dataset.ctSite;
+  if (!site || !seg || seg.dataset.busy) return;
+  seg.dataset.busy = "1";
+  const msg = await saveSite(site, pref);
+  delete seg.dataset.busy;
+  // Problem: said inside the menu, which stays open (fixed-height line, so the menu doesn't change size twice)
+  let note = menu && menu.querySelector(".ct-seg-note");
+  if (msg) { if (!note && menu) { note = mk("div", "ct-seg-note"); seg.after(note); } if (note) note.textContent = msg; return; }
+  if (note) note.remove();
+  if (pref === "normal") delete SITES[site]; else SITES[site] = pref;
+  saveSites();
   if (menu) menu.hidden = true;
   const tg = wrap && wrap.querySelector(".result-actions-toggle");
   if (tg) tg.setAttribute("aria-expanded", "false");
-  if (!host) return;
-  let tok = null;
-  try { tok = sessionStorage.getItem("degoog-settings-token"); } catch {}
-  const h = { "Content-Type": "application/json" };
-  if (tok) h["x-settings-token"] = tok;
-  const r = await fetch("/api/settings/domain-action", { method: "POST", headers: h, credentials: "same-origin", body: JSON.stringify({ kind: "score", source: host, score: n }) }).catch(() => null);
+  document.querySelectorAll(".ct-seg").forEach((g) => { const h = g.closest(".result-actions"); if (h && siteOf(h.dataset.host) === site) g.querySelectorAll(".ct-seg-b").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.ctSite === pref))); });
+  // Your tap, so this page follows at once: Hide takes that site's results away, Prefer moves them up, Lower down
   const list = document.getElementById("results-list");
-  if (!r || !r.ok || !list) return;
-  // Move that site's results now too: to the top, or to the bottom
-  const rows = [...list.querySelectorAll(".result-item")].filter((x) => { const rh = rowHost(x); return rh === host || rh.endsWith(`.${host}`); });
-  if (n > 0) list.prepend(...rows); else list.append(...rows);
-  rows.forEach((x) => { x.classList.add("ct-moved"); setTimeout(() => x.classList.remove("ct-moved"), 1200); });
+  if (!list || pref === "normal") return;
+  const rows = [...list.querySelectorAll(".result-item")].filter((x) => siteOf(rowHost(x)) === site);
+  if (pref === "hide") rows.forEach((x) => { x.style.display = "none"; x.dataset.ctHide = "1"; });
+  else if (pref === "prefer") list.prepend(...rows);
+  else list.append(...rows);
 }, true);
 
 // People also ask, after the 3rd result: tap a question to see the best answer degoog finds for it
@@ -2534,13 +2632,19 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 /* PC: the hover box around a result ends where the AI summary box ends (it ran 16px past it) */
 @media (min-width: 768px) { .result-item::before { right: 0 !important; } }
 
-/* Result menu: a tiny faint dot button that brightens when used; only Rank higher / Rank lower / Block inside */
+/* Result menu: a tiny faint dot button that brightens when used; inside, one rounded group of four evenly spaced
+   choices for the site (Prefer / Normal / Lower / Hide); degoog's own items are hidden (the group replaces them) */
 .result-actions-toggle { width: 16px !important; height: 16px !important; min-width: 0 !important; padding: 0 !important; margin: 0 0 0 4px !important; border: 0 !important; background: none !important; font-size: 12px !important; line-height: 16px !important; color: var(--text-cite) !important; opacity: .5; }
 .result-actions-toggle:hover, .result-actions-toggle[aria-expanded="true"] { opacity: 1; }
-[id^="result-action-score-"], [id^="result-action-refresh-"], [id^="result-action-replace-"] { display: none !important; }
-.result-actions-menu .result-actions-item { font-size: 13px !important; padding: 6px 12px !important; }
-.result-item.ct-moved { animation: ct-flash 1.2s ease; }
-@keyframes ct-flash { from { background: rgba(137, 180, 250, .12); } to { background: transparent; } }
+.result-actions-menu:has(.ct-seg) > .result-actions-item { display: none !important; }
+.ct-seg { display: grid; grid-template-columns: repeat(4, 1fr); margin: 6px; border: 1px solid rgba(88, 91, 112, .7); border-radius: 999px; overflow: hidden; min-width: 280px; }
+.ct-seg-b { font: inherit; font-size: 13px; line-height: 18px; padding: 7px 10px; min-height: 32px; border: 0; background: none; color: var(--text-secondary); cursor: pointer; white-space: nowrap; }
+.ct-seg-b + .ct-seg-b { border-left: 1px solid rgba(88, 91, 112, .7); }
+.ct-seg-b:hover { color: var(--text-primary); }
+.ct-seg-b[aria-pressed="true"] { background: rgba(205, 214, 244, .14); color: var(--text-primary); font-weight: 600; }
+.ct-seg-b:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.ct-seg-note { font-size: 12.5px; line-height: 18px; padding: 0 14px 8px; color: var(--text-secondary); }
+@media (max-width: 767px) { .ct-seg { min-width: 300px; } .ct-seg-b { min-height: 44px; } }
 
 /* People also ask: Google's layout, sized like your results (heading = title size, answer = description, source = link line + title) */
 #ct-qa { margin: 12px 0 12px; }

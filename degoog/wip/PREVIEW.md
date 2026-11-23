@@ -25,5 +25,10 @@ Run the normal installer from main, as usual. It puts v49 back. A leftover `/pub
 4. Scroll fast on an image-heavy search: thumbnails sharpen without blinking or moving.
 5. Any typo search (`teh wether tommorow`): if the fix shows, it shows together with the results.
 
+## Sites: Prefer / Normal / Lower / Hide (M2, first part)
+Each result's ⋮ menu now has one group of four: **Prefer · Normal · Lower · Hide** (it replaces Rank higher / Rank lower / Block). The choice is for the whole site (support.apple.com → apple.com) and is saved in degoog's own Block and Score lists, so degoog applies it on every tab. Prefer also lets that site show more than 2 results. Your old Block and Rank entries show up as Hide / Prefer / Lower.
+- It needs your Settings sign-in, like degoog's own menu. If you aren't signed in, the menu says "Sign in to Settings first" and nothing changes.
+- Try: Hide a site on one search, then search something else where it usually shows up.
+
 ## Not in this preview yet
-Prefer/Normal/Lower/Hide for sites (M2). Until then the old Rank higher / Rank lower / Block menu is still there. Answer cards (M3/M4) and the rest of the spec come after that.
+Anti-SEO auto-Lower, the Paywall tag and the Images-only blocklist (rest of M2). Then answer cards (M3/M4) and the rest of the spec.
