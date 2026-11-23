@@ -36,6 +36,16 @@ old = 'Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $t\ndocker rest
 assert out.count(old) == 1, 'restart step changed on main'
 out = out.replace(old, '[IO.File]::WriteAllText("$t\\aittl.js", @\'\n' + aittl + "\n'@)\n"
                   'docker cp "$t\\aittl.js" "${c}:/tmp/aittl.js"; docker exec $c bun /tmp/aittl.js; docker exec $c rm -f /tmp/aittl.js\n' + old)
+# No one-time setup in the installer (spec): the typo fixer's word lists and Wikipedia names are fetched by the
+# plugin itself when missing (index.js ensureData); names.js just ships next to index.js as a plugin file
+names = open('files/names.js', encoding='utf-8').read()
+assert "\n'@" not in names
+m = re.search(r"# English word list for the typo fixer.*?docker exec \$c rm -f /tmp/ct-names\.js /tmp/ct-titles\.gz\n\}\n", out, flags=re.S)
+assert m, 'word list / names block changed on main'
+out = out[:m.start()] + ('# Typo fixer data (word lists, Wikipedia names) is fetched by the plugin itself the first time; names.js is its helper\n'
+    '[IO.File]::WriteAllText("$t\\names.js", @\'\n' + names + "\n'@)\n"
+    'docker cp "$t\\names.js" "${c}:/app/data/plugins/clean-titles/names.js"\n') + out[m.end():]
+assert 'Invoke-WebRequest' not in out, 'a download is still in the installer'
 # The self-check (files/ctcheck.js) replaces main's check: every outside source tried live through the page's bridge,
 # one PASS/FAIL table with feature names only (main's version printed a search and its answer)
 chk = open('files/ctcheck.js', encoding='utf-8').read()

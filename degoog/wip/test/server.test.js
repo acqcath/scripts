@@ -419,3 +419,16 @@ test("inline stars: rating + time for recipes, rating for reviews; blocking site
   expect(n).toBe(before); // not asked any more
   expect(srv.qvBlocked("good.com")).toBe(false);
 });
+
+test("typo fixer data is fetched by the plugin when missing (not by the installer); names made in a separate process", async () => {
+  const srv = await import("../files/index.js");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ct-data-"));
+  fs.writeFileSync(path.join(dir, "names.js"), "// helper");
+  const asked = [], spawned = [];
+  srv.default.init({ id: "clean-titles", dir, fetch: async (u) => { asked.push(u); return new Response(Array.from({ length: /bigram/.test(u) ? 200001 : 50001 }, (_, i) => `w${i} ${i}`).join("\n")); } });
+  const ok = await srv.ensureData((cmd) => { spawned.push(cmd); fs.writeFileSync(path.join(dir, "names.txt"), "openai"); return { exited: Promise.resolve(0) }; });
+  expect(ok).toBe(true);
+  expect(asked.map((u) => u.split("/").pop())).toEqual(["frequency_dictionary_en_82_765.txt", "frequency_bigramdictionary_en_243_342.txt"]);
+  expect(spawned[0]).toEqual(["bun", path.join(dir, "names.js")]);
+  expect(fs.readFileSync(path.join(dir, "words.txt"), "utf8").split("\n").length).toBe(50001);
+});

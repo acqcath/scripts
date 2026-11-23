@@ -850,6 +850,27 @@ const save = () => {
     fs.renameSync(`${DIR}/learned.json.tmp`, `${DIR}/learned.json`);
   } catch {}
 };
+// Typo fixer data, fetched by the plugin itself the first time it's missing (spec: no one-time setup in the
+// installer): SymSpell's English words and word pairs, then names from Wikipedia's article titles, made by
+// names.js (shipped next to this file) in its own bun process so degoog never waits on it. Retried a day later
+// if a download fails. Nothing about searches is sent anywhere.
+const SYMSPELL = "https://raw.githubusercontent.com/wolfgarbe/SymSpell/master/SymSpell";
+const DATA_FILES = [["words.txt", `${SYMSPELL}/frequency_dictionary_en_82_765.txt`, 50000], ["pairs.txt", `${SYMSPELL}/frequency_bigramdictionary_en_243_342.txt`, 200000]];
+const hasFile = (f) => { try { return fs.statSync(`${DIR}/${f}`).size > 0; } catch { return false; } };
+let _dataRun = null;
+export const ensureData = (spawn = (cmd) => Bun.spawn(cmd, { stdout: "ignore", stderr: "ignore" })) => (_dataRun ||= (async () => {
+  let got = false;
+  for (const [f, url, minLines] of DATA_FILES) {
+    if (hasFile(f)) continue;
+    const r = await net(url, { timeout: 120000, max: 20_000_000, accept: "text/plain" });
+    if (r.status === 200 && r.text.split("\n").length >= minLines) { try { fs.writeFileSync(`${DIR}/${f}.tmp`, r.text); fs.renameSync(`${DIR}/${f}.tmp`, `${DIR}/${f}`); got = true; } catch {} }
+  }
+  if (got) { loaded = false; WORDS.clear(); PAIRS.clear(); TOTAL = 0; PTOTAL = 0; } // read again on next use
+  if (hasFile("words.txt") && !hasFile("names.txt") && hasFile("names.js")) { try { await spawn(["bun", `${DIR}/names.js`]).exited; loaded = false; NAMES.clear(); } catch {} }
+  const ok = DATA_FILES.every(([f]) => hasFile(f));
+  if (!ok) setTimeout(() => { _dataRun = null; }, 86400000).unref?.();
+  return ok;
+})());
 const load = () => {
   if (loaded) return;
   loaded = true;
@@ -1449,7 +1470,7 @@ export default {
     if (ctx && ctx.dir) DIR = ctx.dir;
     if (ctx && typeof ctx.signProxyUrl === "function") _sign = ctx.signProxyUrl;
     if (ctx && typeof ctx.fetch === "function") _fetch = ctx.fetch;
-    if (!process.env.CT_NO_TIMERS) { aiSchedule(); fxSchedule(); }
+    if (!process.env.CT_NO_TIMERS) { aiSchedule(); fxSchedule(); const t = setTimeout(() => ensureData(), 90000); if (t.unref) t.unref(); }
   },
 
   // Bridge: the page reaches the routes above through degoog's command address (/api/command),
