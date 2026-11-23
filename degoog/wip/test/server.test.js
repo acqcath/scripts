@@ -432,3 +432,19 @@ test("typo fixer data is fetched by the plugin when missing (not by the installe
   expect(spawned[0]).toEqual(["bun", path.join(dir, "names.js")]);
   expect(fs.readFileSync(path.join(dir, "words.txt"), "utf8").split("\n").length).toBe(50001);
 });
+
+test("page part check: a degoog update that wiped layout.html's block or the psl file is reported in Settings", async () => {
+  const srv = await import("../files/index.js");
+  const ok = '<body>x<script defer src="/public/ct/psl.0123456789ab.js" id="ct-psl"></script>\n<script type="module" id="ct-inline">const a=1;\n</script>\n</body>';
+  const yes = () => true, no = () => false;
+  expect(srv.pagePartMissing(ok, yes)).toBe(false);
+  expect(srv.pagePartMissing(ok, no)).toBe(true); // psl file gone
+  expect(srv.pagePartMissing("<body>stock degoog page</body>", yes)).toBe(true);
+  expect(srv.pagePartMissing('<script type="module" id="ct-inline">x\n</script>', yes)).toBe(true); // v49 block, no psl tag
+  expect(srv.pagePartMissing(undefined, yes)).toBe(false); // unreadable: no warning
+  // Same tags inline.js writes
+  const inl = fs.readFileSync(new URL("../files/inline.js", import.meta.url), "utf8");
+  expect(inl).toContain('id="ct-psl"></script>\\n<script type="module" id="ct-inline">');
+  expect(srv.PAGE_MISSING).toBe(false); // no layout.html in tests
+  expect(srv.default.description.startsWith("Google-style")).toBe(true);
+});

@@ -73,5 +73,11 @@ Bing suggestions back off from 1 minute (doubling, up to an hour) when Bing stop
 ## Other meanings (M5)
 When a search's words mean several things but all your results are about one of them, a line above the results offers the others: `python` → "Also: snakes · Monty Python" (tap to search that). `mercury` gets no line: its results already cover the planet, the element and the bank.
 
+## Self-check (M6) — please paste it back
+At the end the installer prints one table, "Feature  PASS|FAIL|SKIP  note", and copies it to your clipboard. It tries every outside source live from your server (currency, versions, Wikidata, CMU, ESPN, knowledge panel, archives, quick view, AI-image list). Paste it into the main chat: each FAIL gets fixed or cut before v50 ships.
+
+## After a degoog update
+A degoog image update replaces the page files this plugin adds (it can't write them back itself). If that happens, the plugin's entry in Settings starts with "Run the installer again"; running it puts everything back.
+
 ## Not in this preview yet
-M6 (full test pass, installer self-check of every outside source: currency, versions, Wikidata, CMU, ESPN, knowledge panel, archives, quick view).
+Featured snippet for fact/how-to searches (needs about 10 real "what is / how to / who is" searches recorded from your server first).
