@@ -444,7 +444,11 @@ test("page part check: a degoog update that wiped layout.html's block or the psl
   expect(srv.pagePartMissing(undefined, yes)).toBe(false); // unreadable: no warning
   // Same tags inline.js writes
   const inl = fs.readFileSync(new URL("../files/inline.js", import.meta.url), "utf8");
-  expect(inl).toContain('id="ct-psl"></script>\\n<script type="module" id="ct-inline">');
+  expect(inl).toContain('id="ct-psl"></script>\\n<script type="module" src="${ctUrl}" id="ct-inline"></script>');
+  // Page script as a cached file (current installs)
+  const ext = '<head><link rel="modulepreload" href="/public/ct/ct.aaaaaaaaaaaa.js" id="ct-pre">\n</head><body><script defer src="/public/ct/psl.0123456789ab.js" id="ct-psl"></script>\n<script type="module" src="/public/ct/ct.aaaaaaaaaaaa.js" id="ct-inline"></script></body>';
+  expect(srv.pagePartMissing(ext, yes)).toBe(false);
+  expect(srv.pagePartMissing(ext, (p) => !p.includes("/ct.aaaa"))).toBe(true); // page script file gone
   expect(srv.PAGE_MISSING).toBe(false); // no layout.html in tests
   expect(srv.default.description.startsWith("Google-style")).toBe(true);
 });

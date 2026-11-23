@@ -478,6 +478,27 @@ const topicOf = (rel, words) => {
   return (r) => { const hits = [...new Set(topicToks(`${r.title} ${r.snippet || ""}`))].filter((t) => topic.has(t)); return hits.length >= 2 && hits.some((t) => titled.has(t)); };
 };
 
+// ===== Shouting text: an ALL-CAPS title reads as yelling next to normal ones =====
+// Title-cased when most of its letters are capitals (12+ letters, 3+ words); short words stay lower inside a title,
+// tokens with digits or 2-letter ones (US, UK, AI) stay as they are.
+const SMALL = new Set("a an and as at but by for from in into nor of on or per the to vs via with".split(" "));
+const calmCaps = (t) => {
+  const s = String(t || "");
+  const letters = s.match(/\p{L}/gu) || [];
+  const upper = letters.filter((c) => c !== c.toLowerCase()).length;
+  if (letters.length < 12 || upper / letters.length < 0.85 || s.trim().split(/\s+/).length < 3) return s;
+  let first = true;
+  return s.replace(/[\p{L}\p{N}][\p{L}\p{N}'’]*/gu, (w, i) => {
+    const after = s.slice(0, i).trimEnd();
+    const start = first || /[:—–\-|?!.]$/.test(after);
+    first = false;
+    if (/\d/.test(w) || w.length <= 2 && !SMALL.has(w.toLowerCase())) return w;
+    const lw = w.toLowerCase();
+    if (!start && SMALL.has(lw)) return lw;
+    return lw[0].toUpperCase() + lw.slice(1);
+  });
+};
+
 // ===== Answer card, local part (no network): math, units incl. cooking, tip / percent, date math, patterns =====
 // answer(q, now) -> null, or { kind, label, value | title + href, detail, copy, swatch? }. Pure: the page draws it in
 // the same pass that starts the search, so it never arrives late and needs no reserved space.
@@ -1264,7 +1285,7 @@ const featuredSnippet = (q, results) => {
   return null;
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, related, topicOf, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippet };
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, related, topicOf, calmCaps, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippet };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -1699,7 +1720,7 @@ const row = (el) => {
   let u = null;
   try { u = new URL(a.href); } catch {}
   // Engines leave spaces where they bolded the search words ("slang ?", "\" shit \""): core tidyText, every tab
-  const out = CT.tidyText(cleanTitle(text, a.href) || text.replace(/\s+/g, " ").trim());
+  const out = CT.calmCaps(CT.tidyText(cleanTitle(text, a.href) || text.replace(/\s+/g, " ").trim()));
   if (out && out !== text.replace(/\s+/g, " ").trim()) { a.title = text.trim(); a.textContent = out; }
   // Link line: just the site name, like Google on phones (the full address shows on hover)
   const cite = el.querySelector(".result-cite");

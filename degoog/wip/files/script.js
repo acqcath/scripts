@@ -431,7 +431,7 @@ const row = (el) => {
   let u = null;
   try { u = new URL(a.href); } catch {}
   // Engines leave spaces where they bolded the search words ("slang ?", "\" shit \""): core tidyText, every tab
-  const out = CT.tidyText(cleanTitle(text, a.href) || text.replace(/\s+/g, " ").trim());
+  const out = CT.calmCaps(CT.tidyText(cleanTitle(text, a.href) || text.replace(/\s+/g, " ").trim()));
   if (out && out !== text.replace(/\s+/g, " ").trim()) { a.title = text.trim(); a.textContent = out; }
   // Link line: just the site name, like Google on phones (the full address shows on hover)
   const cite = el.querySelector(".result-cite");
