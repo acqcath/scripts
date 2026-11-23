@@ -12,6 +12,7 @@
 ## Rule for each run (the schedule fires hourly; fires that exit should take seconds)
 1. If LOCK is fresh → exit.
 2. If READY TO SHIP → exit.
+2b. If degoog/wip/WAITING exists → exit (nothing left that can be built without the user; the main chat deletes WAITING when the user supplies the self-check table or recorded searches).
 3. Sum the logged work minutes since the last Wednesday 12:00 PM ET. If >= the weekly cap → exit.
 4. If now is inside a DAY window and the run limit (100 - minutes logged in that window, max 90) is < 10 → exit.
 5. Otherwise work until the run's limit (NIGHT 90; DAY window as above) or the weekly cap, whichever comes first. Add a log line at the start. After EVERY commit, update its work minutes (a run cut off by the session limit still has to count), and finish it at the end.
@@ -22,4 +23,4 @@
 - 2026-11-23 06:17, (cut off, no commits after lock), ~1, ~0, none
 - 2026-11-23 09:17, 10:05, ~2, ~46, M2 done (Sites list in Settings, anti-SEO auto-Lower, Paywall tag, Images-tab AI list, shared fetch helper); M3 done (local answer card, ai-summary TTL patch, AI spot); M4 currency, endoflife.date, Wikidata facts, CMU card, sports, knowledge panel server part (took over stale 06:16 LOCK)
 - 2026-11-23 10:16, 10:56, ~2, ~38, M4 knowledge panel page UI; preview installer + PREVIEW.md for M4; M5 same-shape results, !deepl, carried-over values, archive, images row, quick view + inline stars, meaning line (M5 done); preview installer + PREVIEW.md; M6 installer self-check table, per-feature Settings switches, design audit fixes, NeurIPS dedupe, line-by-line audit, installer downloads moved into the plugin
-- 2026-11-23 11:16, (running), ~2, ~10, page-part notice after degoog updates; PREVIEW self-check note
+- 2026-11-23 11:16, 11:18, ~4, ~12, page-part notice after degoog updates; PREVIEW self-check note
