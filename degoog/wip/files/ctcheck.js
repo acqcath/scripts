@@ -23,8 +23,10 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
 
 (async () => {
   // Code
-  const page = /<script type="module" id="ct-inline">([\s\S]*?)\n<\/script>/.exec(fs.readFileSync("/app/src/public/themes/degoog-theme/layout.html", "utf8"));
-  row("Page code", !!page && parse(page[1]));
+  const lay = fs.readFileSync("/app/src/public/themes/degoog-theme/layout.html", "utf8");
+  const src = /<script type="module" src="\/public\/ct\/(ct\.[0-9a-f]+\.js)" id="ct-inline"><\/script>/.exec(lay);
+  const pageCode = (() => { try { return src ? fs.readFileSync(`/app/src/public/ct/${src[1]}`, "utf8") : ""; } catch { return ""; } })();
+  row("Page code", !!pageCode && parse(pageCode) && lay.includes('id="ct-pre"'));
   row("Server code", parse(fs.readFileSync(`${DIR}/index.js`, "utf8")));
   let dg = false;
   for (const base of ["/app/src", `${process.cwd()}/src`]) {
@@ -36,6 +38,8 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
   row("Sites list in Settings (degoog's list code)", dg, dg ? "" : "Settings list read-only; menu still works");
   const ai = (() => { try { return /clean-titles: same as degoog's TTL_MS/.test(fs.readdirSync("/app/data/plugins").filter((d) => /ai-summary/.test(d)).map((d) => fs.readFileSync(`/app/data/plugins/${d}/index.js`, "utf8")).join("\n")); } catch { return false; } })();
   row("AI summary cache patch", ai ? true : "SKIP", ai ? "" : "ai-summary not installed or its line changed");
+  const emp = (() => { try { return fs.readFileSync("/app/src/server/search/engine-cache.ts", "utf8").includes("clean-titles: empty runs retried soon"); } catch { return false; } })();
+  row("Empty results asked again after 2 min", emp, emp ? "" : "degoog's cache line changed");
 
   // Bridge round trip (the page's only way to the server)
   const p0 = await bridge("prefs");
@@ -94,7 +98,7 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
     try { for (const d of fs.readdirSync(process.env.DEGOOG_ENGINES_DIR || `${DATA}/engines`, { withFileTypes: true })) if (d.isDirectory() && !/-(?:images|news|videos)$/i.test(d.name)) ids.push(d.name.toLowerCase().endsWith("-engine") ? d.name.toLowerCase() : `${d.name.toLowerCase()}-engine`); } catch {}
     const qs = ["pittsburgh steelers schedule", "how to reset airpods", "python list comprehension"];
     for (const id of ids) {
-      let n = 0, ms = 0, got = 0, name = id.replace(/^degoog-org-official-extensions-/, "").replace(/-engine$/, "");
+      let why = "", n = 0, ms = 0, got = 0, name = id.replace(/^degoog-org-official-extensions-/, "").replace(/-engine$/, "");
       for (const q of qs) {
         const p = new URLSearchParams({ q });
         for (const o of ids) p.set(o, o === id ? "true" : "false");
@@ -107,10 +111,11 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
           const e = ts[0] || {};
           n += Number(e.count ?? (j.results || []).length) || 0; ms += Number(e.time) || (Date.now() - t0); got++;
           if (e.name) name = e.name;
+          if (!Number(e.count ?? e.resultCount)) why = [e.status, e.httpStatus ? `http ${e.httpStatus}` : "", e.errorReason].filter((x) => x && x !== "ok").join(" ").slice(0, 60) || why;
         } catch { ms += Date.now() - t0; }
       }
       const avgN = got ? Math.round(n / qs.length) : 0, avgMs = Math.round(ms / qs.length);
-      rows.push([`Engine: ${name}`, avgN >= 8 && avgMs <= 2500 ? "GOOD" : avgN === 0 ? "NONE" : "WEAK", `${avgN} results · ${avgMs} ms per search`]);
+      rows.push([`Engine: ${name}`, avgN >= 8 && avgMs <= 2500 ? "GOOD" : avgN === 0 ? "NONE" : "WEAK", `${avgN} results · ${avgMs} ms per search${!avgN && why ? ` · ${why}` : ""}`]);
     }
   } catch {}
   // Safe Search off on every engine that has it (set by the installer just before the restart)
