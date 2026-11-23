@@ -496,6 +496,8 @@ const earlyStart = () => {
     // CMU course card: "15-213" (and "15213", which the server answers only if that course exists: it's also a ZIP)
     const cq = cmuQ(q);
     if (cq && cq.level) ask("cmu", key, { id: cq.id });
+    // A team's game (ESPN): short searches made of words only go to this server, which knows the team names
+    if (!eq && !wq && !cq && /^[a-z][a-z .'&-]*$/i.test(q) && q.split(/\s+/).length <= 6 && !CT.answer(q, Date.now(), { fx: FX })) ask("sports", key, { q });
     // Top stories: the News search starts now, in parallel, only for a search that looked like news last time
     if (SHOW.news && newsy.has(qHash(q))) {
       const e = { key, data: undefined };
@@ -1217,18 +1219,38 @@ document.addEventListener("click", (e) => {
 const ansCard = (a) => {
   const box = mk("div", "ct-ans");
   box.dataset.kind = a.kind;
-  if (a.copy) { box.tabIndex = 0; box.setAttribute("role", "button"); box.dataset.copy = a.copy; box.setAttribute("aria-label", `${a.value || a.title}. Copy`); }
+  if (a.copy) { box.tabIndex = 0; box.setAttribute("role", "button"); box.dataset.copy = a.copy; box.setAttribute("aria-label", `${a.value || a.title || a.copy}. Copy`); }
   const label = mk("div", "ct-ans-label");
   label.append(mk("span", "ct-ans-l", a.src ? `${a.label} · ${a.src}` : a.label), mk("span", "ct-ans-copied", "Copied"));
   box.append(label);
   if (a.href) { const t = mk("a", "ct-ans-title", a.title); t.href = a.href; t.rel = "noopener"; box.append(t); }
-  else {
+  else if (a.kind !== "sports") {
     const v = mk("div", "ct-ans-value");
     if (a.swatch) { const sw = mk("span", "ct-ans-sw"); sw.style.background = a.swatch; v.append(sw); }
     v.append(a.value);
     box.append(v);
   }
-  if (a.detail) box.append(mk("div", "ct-ans-detail", a.detail));
+  if (a.detail && a.kind !== "sports") box.append(mk("div", "ct-ans-detail", a.detail));
+  if (a.kind === "sports") {
+    // Label line: "NFL · Final" or "NFL · ● Live · Q3 4:12" (pulsing red dot); then logos, teams and scores
+    const l = box.querySelector(".ct-ans-l");
+    l.textContent = `${a.label} · `;
+    if (a.live) l.append(mk("span", "ct-live-dot"), "Live · ");
+    l.append(mk("span", "ct-sp-status", a.status));
+    const row = mk("div", "ct-sp");
+    a.teams.forEach((t, i) => {
+      const side = mk("span", `ct-sp-team${t.winner ? " ct-win" : ""}`);
+      const logo = mk("span", "ct-sp-logo");
+      if (t.logo) { const im = new Image(); im.alt = ""; im.decoding = "async"; im.onload = () => im.classList.add("ct-on"); im.src = t.logo; logo.append(im); }
+      side.append(logo, mk("span", "ct-sp-abbr", t.abbr));
+      if (a.showScore) side.append(mk("span", "ct-sp-score", t.score));
+      if (i === 0) side.classList.add("ct-sp-away");
+      row.append(side);
+      if (i === 0) row.append(mk("span", "ct-sp-dash", a.showScore ? "–" : "at"));
+    });
+    box.append(row);
+    if (a.detail) box.append(mk("div", "ct-ans-detail", a.detail));
+  }
   if (a.kind === "cmu") {
     // Facts line: "12 units · 14.3 hrs/wk · 4.0 ★★★★☆ · prereq 15-122"; people line: "Spring 2026 · Railing 4.3 · +N"
     const facts = mk("div", "ct-ans-detail ct-fit ct-fit-drop");
@@ -1248,6 +1270,26 @@ const ansCard = (a) => {
     if (a.prof) box.append(people, facts); else box.append(facts, people);
   }
   return box;
+};
+// Live game: score and status refreshed in place (same size: tabular digits, fixed logo boxes) while the game is on
+// and this tab is visible, every 60 s: the server keeps a live game for 60 s, so asking more often gets the same.
+let liveT = 0;
+const livePoll = (key, q) => {
+  clearTimeout(liveT);
+  liveT = setTimeout(async () => {
+    if (searchId(location.href) !== key) return;
+    if (document.visibilityState !== "visible") { document.addEventListener("visibilitychange", () => livePoll(key, q), { once: true }); return; }
+    const j = await bridge("sports", { q }).catch(() => null);
+    const a = j && j.g && CT.sportsAnswer(j.g);
+    const box = document.querySelector("#at-a-glance > .ct-ans[data-kind=sports]");
+    if (!a || !box || searchId(location.href) !== key) return;
+    ansVal = a;
+    box.querySelectorAll(".ct-sp-score").forEach((el, i) => { el.textContent = a.teams[i].score; });
+    box.querySelectorAll(".ct-sp-team").forEach((el, i) => el.classList.toggle("ct-win", !!a.teams[i].winner));
+    const st = box.querySelector(".ct-sp-status");
+    if (st) st.textContent = a.status;
+    if (!a.live) box.querySelector(".ct-live-dot")?.remove(); else livePoll(key, q);
+  }, 60000);
 };
 // One line, items never cut (re-measured when the width changes): people that don't fit fold into "+N"; mixed
 // facts (units, hours, rating, prereq) that don't fit are dropped whole from the end, never a bare "+N"
@@ -1281,6 +1323,7 @@ const ansPass = () => {
     if (j && j.cycles) ansVal = CT.eolAnswer(CT.eolQuery(q), j.cycles);
     else if (w && w.d) ansVal = CT.wdAnswer(CT.wdQuery(q), w.d);
     else if (cm && cm.c) ansVal = CT.cmuAnswer(cmuQ(q), cm.c.course, cm.c.fces);
+    else { const sp = ready("sports", key); if (sp && sp.g) { ansVal = CT.sportsAnswer(sp.g); if (ansVal && ansVal.live) livePoll(key, q); } }
   }
   aiPass(g, key);
   if (!ansVal || g.querySelector(".ct-ans")) return;

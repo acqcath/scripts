@@ -427,3 +427,21 @@ test("page: CMU card for '15-213' and '15213' (server says the course exists), n
   expect(calls.some((x) => x.route === "cmu")).toBe(false);
   expect(m.document.querySelector(".ct-ans")).toBeNull();
 });
+
+test("page: sports card for 'steelers' drawn with the results when in hand: logos boxed, scores, winner, status", async () => {
+  const g = { state: "post", detail: "Final", date: "2026-11-22T18:00Z", league: "NFL", away: { abbr: "CLE", score: "17", record: "3-7", logo: "/api/proxy/image?url=x&sig=1" }, home: { abbr: "PIT", score: "24", winner: true, record: "7-3", logo: "/api/proxy/image?url=y&sig=2" } };
+  const calls = [];
+  const a = await run("steelers", { engines: 40, calls, bridge: { sports: { data: { g }, delay: 5 } } });
+  expect(calls.find((x) => x.route === "sports").params.get("q")).toBe("steelers");
+  const card = a.document.querySelector("#at-a-glance .ct-ans[data-kind=sports]");
+  expect(card.querySelector(".ct-ans-l").textContent).toBe("NFL · Final");
+  expect([...card.querySelectorAll(".ct-sp-team")].map((x) => x.textContent)).toEqual(["CLE17", "PIT24"]);
+  expect(card.querySelectorAll(".ct-sp-logo").length).toBe(2);
+  expect(card.querySelector(".ct-win .ct-sp-abbr").textContent).toBe("PIT");
+  expect(card.querySelector(".ct-ans-value")).toBeNull();
+  expect(card.querySelectorAll(".ct-ans-detail").length).toBe(1);
+  expect(a.errors).toEqual([]);
+  // A word that isn't a team: asked (the server knows team names) but no card
+  const b = await run("python", { engines: 40, bridge: { sports: { data: { g: null }, delay: 5 } } });
+  expect(b.document.querySelector(".ct-ans")).toBeNull();
+});

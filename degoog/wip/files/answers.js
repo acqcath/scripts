@@ -593,6 +593,16 @@ export const cmuAnswer = (c, course, fces) => {
   return { kind: "cmu", label: "CMU Courses", title: `${c.id} ${course.name}`, href: `https://cmucourses.com/course/${c.id}`, parts, sem: agg ? agg.sem : "", profs, prof: !!c.prof, copy: "" };
 };
 
+// ----- Sports card from the server's ESPN game ({state pre|in|post, detail, date, away, home, league}) -----
+export const sportsAnswer = (g, now = Date.now()) => {
+  if (!g || !g.away || !g.home || !g.away.abbr || !g.home.abbr || !["pre", "in", "post"].includes(g.state)) return null;
+  const t = Date.parse(g.date);
+  const when = Number.isFinite(t) ? new Date(t).toLocaleString("en-US", g.state === "pre" ? { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" } : { weekday: "short", month: "short", day: "numeric" }) : "";
+  const status = g.state === "in" ? (g.detail || "Live") : g.state === "post" ? (g.detail || "Final") : "Next game";
+  const rec = [g.away, g.home].filter((x) => x.record).map((x) => `${x.abbr} ${x.record.replace(/-/g, "–")}`).join(" · ");
+  return { kind: "sports", label: g.league || "", live: g.state === "in", status, teams: [g.away, g.home], showScore: g.state !== "pre", detail: [when, rec].filter(Boolean).join(" · "), copy: g.state === "pre" ? "" : `${g.away.abbr} ${g.away.score} – ${g.home.score} ${g.home.abbr}` };
+};
+
 // ----- The one local answer for a search, or null. CMU course numbers are left to the CMU card (network). -----
 export const answer = (q, now = Date.now(), data = {}) => {
   const s = String(q || "").trim();

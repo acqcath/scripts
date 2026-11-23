@@ -274,3 +274,23 @@ test("server: CMU course data cached in the plugin folder until the next semeste
   const r = await (await srv.routes.find((x) => x.path === "/cmu").handler(new Request("http://l/cmu?id=15213"))).json();
   expect(r.c.course.name).toBe("Introduction to Computer Systems");
 });
+
+test("server: sports: team names from ESPN's lists (search stays here), live > recent > next game, logos signed", async () => {
+  const srv = await import("../files/index.js");
+  const teams = (arr) => ({ sports: [{ leagues: [{ teams: arr.map(([id, abbreviation, displayName, name, location]) => ({ team: { id, abbreviation, displayName, name, location } })) }] }] });
+  const list = [...srv.espnTeams(teams([["23", "PIT", "Pittsburgh Steelers", "Steelers", "Pittsburgh"], ["19", "NYG", "New York Giants", "Giants", "New York"]]), "football/nfl", "NFL"), ...srv.espnTeams(teams([["26", "SF", "San Francisco Giants", "Giants", "San Francisco"]]), "baseball/mlb", "MLB")];
+  expect(srv.teamFor("steelers", list).abbr).toBe("PIT");
+  expect(srv.teamFor("pittsburgh steelers score", list).abbr).toBe("PIT");
+  expect(srv.teamFor("giants", list)).toBe(null); // NFL and MLB: ambiguous
+  expect(srv.teamFor("giants mlb", list).abbr).toBe("SF");
+  expect(srv.teamFor("python", list)).toBe(null);
+  const ev = (date, state, ps, os, detail) => ({ date, competitions: [{ status: { type: { state, shortDetail: detail } }, competitors: [{ homeAway: "home", winner: ps > os, score: { value: ps, displayValue: String(ps) }, team: { abbreviation: "PIT", shortDisplayName: "Steelers", logos: [{ href: "https://a.espncdn.com/i/teamlogos/nfl/500/pit.png" }] }, record: [{ displayValue: "7-3" }] }, { homeAway: "away", winner: os > ps, score: { value: os, displayValue: String(os) }, team: { abbreviation: "CLE", shortDisplayName: "Browns", logo: "https://a.espncdn.com/i/teamlogos/nfl/500/cle.png" } }] }] });
+  const now = Date.parse("2026-11-23T10:00:00Z");
+  const evs = [ev("2026-11-16T18:00Z", "post", 20, 10, "Final"), ev("2026-11-22T18:00Z", "post", 24, 17, "Final"), ev("2026-11-30T18:00Z", "pre", 0, 0, "Sun 1:00 PM")];
+  expect(srv.pickGame(evs, now).date).toBe("2026-11-22T18:00Z");
+  expect(srv.pickGame(evs, Date.parse("2026-11-26T10:00:00Z")).date).toBe("2026-11-30T18:00Z");
+  expect(srv.pickGame([...evs, ev("2026-11-23T09:00Z", "in", 7, 3, "Q2 4:12")], now).date).toBe("2026-11-23T09:00Z");
+  const g = srv.espnGame(evs[1], (u) => `/api/proxy/image?url=${encodeURIComponent(u)}&sig=x`);
+  expect(g).toMatchObject({ state: "post", detail: "Final", home: { abbr: "PIT", score: "24", winner: true, record: "7-3" }, away: { abbr: "CLE", score: "17", winner: false } });
+  expect(g.home.logo.startsWith("/api/proxy/image?url=")).toBe(true);
+});
