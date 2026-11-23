@@ -118,6 +118,20 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
       rows.push([`Engine: ${name}`, avgN >= 8 && avgMs <= 2500 ? "GOOD" : avgN === 0 ? "NONE" : "WEAK", `${avgN} results · ${avgMs} ms per search${!avgN && why ? ` · ${why}` : ""}`]);
     }
   } catch {}
+  // Wikipedia's API asked directly from this server, the way the Wikipedia engine asks it (its headers, its URL)
+  {
+    const t0 = Date.now();
+    let note = "";
+    let ok = false;
+    try {
+      const r = await fetch("https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=pittsburgh%20steelers&format=json&srlimit=15&sroffset=0&utf8=1", { headers: { "User-Agent": "degoog/1.0 (+https://github.com/degoog-org/degoog)", "Api-User-Agent": "degoog/1.0 (+https://github.com/degoog-org/degoog)" }, signal: AbortSignal.timeout(8000) });
+      const txt = await r.text();
+      let n = -1; try { n = (JSON.parse(txt).query?.search || []).length; } catch {}
+      ok = r.status === 200 && n > 0;
+      note = `http ${r.status} · ${n >= 0 ? `${n} results` : `not JSON: ${txt.slice(0, 40).replace(/\s+/g, " ")}`} · ${Date.now() - t0} ms`;
+    } catch (e) { note = `no answer: ${String(e && e.message || e).slice(0, 50)}`; }
+    rows.push(["Wikipedia API from this server", ok ? "PASS" : "INFO", note]);
+  }
   // Safe Search off on every engine that has it (set by the installer just before the restart)
   let safe = [];
   try {

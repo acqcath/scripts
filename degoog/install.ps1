@@ -5719,14 +5719,15 @@ for (const code of sx) {
 //   ~1.3 s for the web engines, so 2 s keeps those and caps a bad case at 2 s instead of degoog's default 10 s.
 // - outgoing client: the engine's own setting is kept (the user picked what works); unset -> "curl-fallback".
 //   Brave always "curl-impersonate": measured on the user's server, Brave returned 0 results with curl-fallback
-//   (it turns away anything that doesn't look like a browser).
+//   (it turns away anything that doesn't look like a browser). Wikipedia "fetch": an official API that wants its own
+//   User-Agent header, which the curl retry path can't be relied on to keep; it returned 0 results on curl-fallback.
 const SPECIAL = /(?:^|-)(?:wikipedia|reddit|hacker-news|lemmy|the-guardian|internet-archive|wikimedia-commons|openverse|nasa-images|immich)$/i;
 const tuned = [];
 for (const d of dirs) {
   const id = d.toLowerCase().endsWith("-engine") ? d.toLowerCase() : `${d.toLowerCase()}-engine`;
   const key = Object.keys(store).find((k) => k.toLowerCase() === id) || id;
   const cur = store[key] && typeof store[key] === "object" ? store[key] : {};
-  const want = { score: SPECIAL.test(d) ? "0.25" : "1", timeoutMs: "2000", outgoingTransport: /(?:^|-)brave(?:-|$)/i.test(d) ? "curl-impersonate" : String(cur.outgoingTransport || "curl-fallback") };
+  const want = { score: SPECIAL.test(d) ? "0.25" : "1", timeoutMs: "2000", outgoingTransport: /(?:^|-)brave(?:-|$)/i.test(d) ? "curl-impersonate" : /(?:^|-)wikipedia$/i.test(d) ? "fetch" : String(cur.outgoingTransport || "curl-fallback") };
   const diff = Object.entries(want).filter(([k, v]) => String(cur[k] ?? "") !== v);
   if (!diff.length) continue;
   store[key] = { ...cur, ...want };
@@ -5748,7 +5749,7 @@ docker restart $c | Out-Null
 $null = docker exec $c sh -c 'for i in $(seq 1 40); do curl -fs -o /dev/null http://127.0.0.1:${DEGOOG_PORT:-4444}/readyz && exit 0; sleep 1; done'
 
 $ss = docker exec $c cat /app/data/server-settings.json | Out-String | ConvertFrom-Json
-"plugin code inside the page (should be v50): " + (docker exec $c sh -c 'grep -h -o -m1 "clean-titles v[0-9a-z-]*" /app/src/public/ct/ct.*.js' | Select-Object -First 1)
+"plugin code inside the page (should be v50): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
 "page files (should be a ct and a psl file): " + (docker exec $c sh -c 'ls /app/src/public/ct/')
 "progressive results off (should be False): $($ss.settings.streamingEnabled -eq $true)"
 "typo fixer word list (should be about 82800): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/words.txt')
@@ -5878,6 +5879,20 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
       rows.push([`Engine: ${name}`, avgN >= 8 && avgMs <= 2500 ? "GOOD" : avgN === 0 ? "NONE" : "WEAK", `${avgN} results · ${avgMs} ms per search${!avgN && why ? ` · ${why}` : ""}`]);
     }
   } catch {}
+  // Wikipedia's API asked directly from this server, the way the Wikipedia engine asks it (its headers, its URL)
+  {
+    const t0 = Date.now();
+    let note = "";
+    let ok = false;
+    try {
+      const r = await fetch("https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=pittsburgh%20steelers&format=json&srlimit=15&sroffset=0&utf8=1", { headers: { "User-Agent": "degoog/1.0 (+https://github.com/degoog-org/degoog)", "Api-User-Agent": "degoog/1.0 (+https://github.com/degoog-org/degoog)" }, signal: AbortSignal.timeout(8000) });
+      const txt = await r.text();
+      let n = -1; try { n = (JSON.parse(txt).query?.search || []).length; } catch {}
+      ok = r.status === 200 && n > 0;
+      note = `http ${r.status} · ${n >= 0 ? `${n} results` : `not JSON: ${txt.slice(0, 40).replace(/\s+/g, " ")}`} · ${Date.now() - t0} ms`;
+    } catch (e) { note = `no answer: ${String(e && e.message || e).slice(0, 50)}`; }
+    rows.push(["Wikipedia API from this server", ok ? "PASS" : "INFO", note]);
+  }
   // Safe Search off on every engine that has it (set by the installer just before the restart)
   let safe = [];
   try {
