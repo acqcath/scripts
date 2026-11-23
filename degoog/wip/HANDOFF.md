@@ -211,3 +211,7 @@ Everything else in FEATURES 1-15, RULES, LOADING and DESIGN SYSTEM is built and 
 ## Assumptions (run 2026-11-23 11:16)
 - WebFetch was again not in this run's tools, so no live checks; the installer self-check stays the live check.
 - Not built, kept as open audit items (excellent-or-cut, no real data to verify): Wikipedia opening sentence, content-farm tag. If the user's self-check/recordings don't supply data for them, cut them at ship time.
+
+## Featured snippet test set (user, live, 2026-11-23 ~14:40 UTC)
+The user's 10 searches, all in (keep the noose one; user's call, it's their engine): how to tie a noose · where is the capital of assyria · how much wood can a woodchuck chuck · how many pages is the entire harry potter series · how long is a footlong sandwich · when is dad coming home with the milk · why does no one love me · how long to microwave shin ramen red · how many ways are there to skin a cat · who are you who do you work for.
+User wants to see which of these actually get a snippet. Still needs their server's recorded results for these (same format as rec/ct-recordings.json.gz) before the picker can be judged; WAITING stays until those or the self-check table arrive.
