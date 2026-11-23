@@ -26,7 +26,7 @@ new = ('[IO.File]::WriteAllText("$t\\psl.enc", @\'\n' + psl + "\n'@)\n"
 out = out.replace(old, new)
 old = '"plugin code inside the page (should be v49): " + (docker exec $c grep -o \'clean-titles v[0-9]*\' /app/src/public/themes/degoog-theme/layout.html)'
 assert old in out, 'version check changed on main'
-out = out.replace(old, f'"plugin code inside the page (should be {ver}): " + (docker exec $c sh -c \'grep -h -o -m1 "clean-titles v[0-9a-z-]*" /app/src/public/ct/ct.*.js\' | Select-Object -First 1)\n'
+out = out.replace(old, f'"plugin code inside the page (should be {ver}): " + (docker exec $c sh -c \'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js\' | Select-Object -First 1)\n'
                   '"page files (should be a ct and a psl file): " + (docker exec $c sh -c \'ls /app/src/public/ct/\')\n'
                   '"progressive results off (should be False): $($ss.settings.streamingEnabled -eq $true)"')
 # ai-summary keeps answers as long as degoog keeps results (files/aittl.js), patched before the restart
