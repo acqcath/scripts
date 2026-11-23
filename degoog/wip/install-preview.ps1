@@ -82,9 +82,11 @@ let DIR = "/app/data/plugins/clean-titles";
 export const PAGE_FILE = "/app/src/public/themes/degoog-theme/layout.html";
 export const pagePartMissing = (html, exists = (p) => fs.existsSync(p)) => {
   if (typeof html !== "string") return false; // can't read it: say nothing rather than guess
-  if (!html.includes('<script type="module" id="ct-inline">')) return true;
   const m = /<script defer src="\/public\/ct\/(psl\.[0-9a-f]+\.js)" id="ct-psl"><\/script>/.exec(html);
-  return !m || !exists(`/app/src/public/ct/${m[1]}`);
+  if (!m || !exists(`/app/src/public/ct/${m[1]}`)) return true;
+  if (html.includes('<script type="module" id="ct-inline">')) return false; // older installs: page script inline
+  const c = /<script type="module" src="\/public\/ct\/(ct\.[0-9a-f]+\.js)" id="ct-inline"><\/script>/.exec(html);
+  return !c || !exists(`/app/src/public/ct/${c[1]}`);
 };
 let _pageHtml; try { _pageHtml = fs.readFileSync(PAGE_FILE, "utf8"); } catch {}
 export const PAGE_MISSING = pagePartMissing(_pageHtml);
@@ -2063,6 +2065,27 @@ const topicOf = (rel, words) => {
   return (r) => { const hits = [...new Set(topicToks(`${r.title} ${r.snippet || ""}`))].filter((t) => topic.has(t)); return hits.length >= 2 && hits.some((t) => titled.has(t)); };
 };
 
+// ===== Shouting text: an ALL-CAPS title reads as yelling next to normal ones =====
+// Title-cased when most of its letters are capitals (12+ letters, 3+ words); short words stay lower inside a title,
+// tokens with digits or 2-letter ones (US, UK, AI) stay as they are.
+const SMALL = new Set("a an and as at but by for from in into nor of on or per the to vs via with".split(" "));
+const calmCaps = (t) => {
+  const s = String(t || "");
+  const letters = s.match(/\p{L}/gu) || [];
+  const upper = letters.filter((c) => c !== c.toLowerCase()).length;
+  if (letters.length < 12 || upper / letters.length < 0.85 || s.trim().split(/\s+/).length < 3) return s;
+  let first = true;
+  return s.replace(/[\p{L}\p{N}][\p{L}\p{N}'’]*/gu, (w, i) => {
+    const after = s.slice(0, i).trimEnd();
+    const start = first || /[:—–\-|?!.]$/.test(after);
+    first = false;
+    if (/\d/.test(w) || w.length <= 2 && !SMALL.has(w.toLowerCase())) return w;
+    const lw = w.toLowerCase();
+    if (!start && SMALL.has(lw)) return lw;
+    return lw[0].toUpperCase() + lw.slice(1);
+  });
+};
+
 // ===== Answer card, local part (no network): math, units incl. cooking, tip / percent, date math, patterns =====
 // answer(q, now) -> null, or { kind, label, value | title + href, detail, copy, swatch? }. Pure: the page draws it in
 // the same pass that starts the search, so it never arrives late and needs no reserved space.
@@ -2849,7 +2872,7 @@ const featuredSnippet = (q, results) => {
   return null;
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, related, topicOf, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippet };
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, related, topicOf, calmCaps, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippet };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -3284,7 +3307,7 @@ const row = (el) => {
   let u = null;
   try { u = new URL(a.href); } catch {}
   // Engines leave spaces where they bolded the search words ("slang ?", "\" shit \""): core tidyText, every tab
-  const out = CT.tidyText(cleanTitle(text, a.href) || text.replace(/\s+/g, " ").trim());
+  const out = CT.calmCaps(CT.tidyText(cleanTitle(text, a.href) || text.replace(/\s+/g, " ").trim()));
   if (out && out !== text.replace(/\s+/g, " ").trim()) { a.title = text.trim(); a.textContent = out; }
   // Link line: just the site name, like Google on phones (the full address shows on hover)
   const cite = el.querySelector(".result-cite");
@@ -4746,21 +4769,33 @@ const fs = require("fs");
 const crypto = require("crypto");
 const f = "/app/src/public/themes/degoog-theme/layout.html";
 let h = fs.readFileSync(f, "utf8");
-const code = fs.readFileSync("/tmp/ct.js", "utf8").replace(/<\/script/gi, "<\\/script");
-// Public suffix list (which part of a host is the site: bbc.co.uk, user.github.io): a static file degoog serves
-// with a 1-year immutable cache, named by its content so a new list gets a new name. Loaded with defer before the
-// module (both run in page order, before results arrive); not inlined, as degoog doesn't compress pages (76 KB)
-const psl = fs.readFileSync("/tmp/psl.enc", "utf8").trim();
-const hash = crypto.createHash("sha256").update(psl).digest("hex").slice(0, 12);
+const code = fs.readFileSync("/tmp/ct.js", "utf8");
 const dir = "/app/src/public/ct";
 fs.mkdirSync(dir, { recursive: true });
-for (const old of fs.readdirSync(dir)) if (/^psl\.[0-9a-f]+\.js$/.test(old) && old !== `psl.${hash}.js`) fs.rmSync(`${dir}/${old}`);
-fs.writeFileSync(`${dir}/psl.${hash}.js`, `window.CT_PSL=${JSON.stringify(psl)};\n`);
-const block = `<script defer src="/public/ct/psl.${hash}.js" id="ct-psl"></script>\n<script type="module" id="ct-inline">const __PLUGIN_ID__="clean-titles";\n` + code + "\n</script>";
-const re = /(?:<script defer src="\/public\/ct\/psl\.[0-9a-f]+\.js" id="ct-psl"><\/script>\n)?<script type="module" id="ct-inline">[\s\S]*?\n<\/script>/;
+// Static files degoog serves with a 1-year immutable cache (/public/*.js), named by their content so a new version
+// gets a new name. degoog doesn't compress pages, so these used to cost ~280 KB on every page load (the page script
+// was inlined, 208 KB): as files the browser downloads them once and keeps them (and their compiled code).
+const put = (name, body) => {
+  const hash = crypto.createHash("sha256").update(body).digest("hex").slice(0, 12);
+  for (const old of fs.readdirSync(dir)) if (new RegExp(`^${name}\\.[0-9a-f]+\\.js$`).test(old) && old !== `${name}.${hash}.js`) fs.rmSync(`${dir}/${old}`);
+  fs.writeFileSync(`${dir}/${name}.${hash}.js`, body);
+  return `/public/ct/${name}.${hash}.js`;
+};
+// Public suffix list (which part of a host is the site: bbc.co.uk, user.github.io), then the page script; defer and
+// module scripts run in page order, before results arrive. modulepreload starts the page script's download with the
+// page's head instead of at its end.
+const psl = fs.readFileSync("/tmp/psl.enc", "utf8").trim();
+const pslUrl = put("psl", `window.CT_PSL=${JSON.stringify(psl)};\n`);
+const ctUrl = put("ct", `const __PLUGIN_ID__="clean-titles";\n${code}\n`);
+const block = `<script defer src="${pslUrl}" id="ct-psl"></script>\n<script type="module" src="${ctUrl}" id="ct-inline"></script>`;
+const re = /(?:<script defer src="\/public\/ct\/psl\.[0-9a-f]+\.js" id="ct-psl"><\/script>\n)?(?:<script type="module" id="ct-inline">[\s\S]*?\n<\/script>|<script type="module" src="\/public\/ct\/ct\.[0-9a-f]+\.js" id="ct-inline"><\/script>)/;
 h = re.test(h) ? h.replace(re, () => block) : h.replace("</body>", () => block + "\n</body>");
+const pre = `<link rel="modulepreload" href="${ctUrl}" id="ct-pre">`;
+const preRe = /<link rel="modulepreload" href="\/public\/ct\/ct\.[0-9a-f]+\.js" id="ct-pre">/;
+h = preRe.test(h) ? h.replace(preRe, () => pre) : h.replace("</head>", () => `${pre}\n</head>`);
 fs.writeFileSync(f, h);
-console.log(`public suffix list: /public/ct/psl.${hash}.js (${psl.length} chars)`);
+console.log(`public suffix list: ${pslUrl} (${psl.length} chars)`);
+console.log(`page script: ${ctUrl} (${code.length} chars, cached by the browser)`);
 
 '@)
 [IO.File]::WriteAllText("$t\psl.enc", @'
@@ -5569,6 +5604,11 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 :is(.ct-grp, #ct-qa, #ct-related) + :is(.ct-grp, #ct-qa, #ct-related) { margin-top: 12px !important; }
 .ct-gh, #ct-qa h3, #ct-related h3 { margin: 0 0 12px !important; }
 
+/* Line breaks that read well: titles that wrap split into even lines (no lone "Vu" on a second line), descriptions
+   avoid a single word on their last line where the browser can (Chromium "pretty"; others keep normal wrapping). */
+.result-item .result-title, .ct-ct, .ct-ans-text, .ct-ans-title, .ct-gh, #ct-qa summary, .ct-sl-t, .ct-kp :is(h2, h3), .ct-sc .ct-ct { text-wrap: balance; }
+.result-snippet, .ct-ans-text, .ct-ai-text, .ct-kp p { text-wrap: pretty; }
+
 '@)
 [IO.File]::WriteAllText("$t\setcss.js", @'
 const fs = require("fs");
@@ -5591,6 +5631,23 @@ docker exec $c bun /tmp/setcss.js; docker exec $c rm -f /tmp/custom.css /tmp/set
 // (TTL_MS, 12 h unless DEGOOG_CACHE_TTL_MS says otherwise), instead of its hard-coded 2 minutes. RAM/valkey cache
 // only, like the results. Exactly one matching line is changed; 0 or several -> nothing changed, and it says so.
 const fs = require("fs");
+// Empty answers: degoog keeps an engine's run for 12 h when the engine "succeeded" with 0 results (a blocked or
+// captcha page parses as nothing), so a search that once came back empty stays "No results found" on every refresh.
+// Patched in degoog's engine cache: an empty run is kept only as long as a failed one (SHORT_TTL_MS, 2 min), so the
+// next search after that asks the engine again. Same safety as above: exactly one matching line, else nothing.
+(() => {
+  const f = `${process.env.DEGOOG_SRC_DIR || "/app/src"}/server/search/engine-cache.ts`;
+  const MARK2 = "/* clean-titles: empty runs retried soon */";
+  let src = "";
+  try { src = fs.readFileSync(f, "utf8"); } catch { console.log("Empty results: degoog's engine-cache.ts not found, nothing changed (NOTICE)"); return; }
+  if (src.includes(MARK2)) { console.log("Empty results: asked again after 2 minutes instead of 12 hours (OK)"); return; }
+  const OLD = "engineErrored(timing.status) ? SHORT_TTL_MS : TTL_MS;";
+  const n = src.split(OLD).length - 1;
+  if (n !== 1) { console.log(`Empty results: NOTICE found ${n} copies of degoog's cache line (expected 1), nothing changed. degoog may have been updated.`); return; }
+  fs.writeFileSync(f + ".ct-tmp", src.replace(OLD, `engineErrored(timing.status) || !timing.resultCount ? SHORT_TTL_MS : TTL_MS; ${MARK2}`));
+  fs.renameSync(f + ".ct-tmp", f);
+  console.log("Empty results: asked again after 2 minutes instead of 12 hours (OK)");
+})();
 const root = process.env.DEGOOG_PLUGINS_DIR || "/app/data/plugins";
 const MARK = "/* clean-titles: same as degoog's TTL_MS */";
 const LINE = /^const SHORT_TTL_MS = 2 \* 60 \* 1000;[ \t]*$/gm;
@@ -5667,14 +5724,16 @@ for (const code of sx) {
 //   cutting a healthy answer. Measured worst cases on this server: Bing 674 ms, Startpage 625 ms (60 searches each),
 //   Brave News 1,029 ms. A blocked first try retried with curl ("curl-fallback") takes about two normal requests,
 //   ~1.3 s for the web engines, so 2 s keeps those and caps a bad case at 2 s instead of degoog's default 10 s.
-// - outgoing client "curl-fallback" (plain fetch, retried with curl when a site answers 403/429/5xx)
+// - outgoing client: the engine's own setting is kept (the user picked what works); unset -> "curl-fallback".
+//   Brave always "curl-impersonate": measured on the user's server, Brave returned 0 results with curl-fallback
+//   (it turns away anything that doesn't look like a browser).
 const SPECIAL = /(?:^|-)(?:wikipedia|reddit|hacker-news|lemmy|the-guardian|internet-archive|wikimedia-commons|openverse|nasa-images|immich)$/i;
 const tuned = [];
 for (const d of dirs) {
   const id = d.toLowerCase().endsWith("-engine") ? d.toLowerCase() : `${d.toLowerCase()}-engine`;
   const key = Object.keys(store).find((k) => k.toLowerCase() === id) || id;
   const cur = store[key] && typeof store[key] === "object" ? store[key] : {};
-  const want = { score: SPECIAL.test(d) ? "0.25" : "1", timeoutMs: "2000", outgoingTransport: "curl-fallback" };
+  const want = { score: SPECIAL.test(d) ? "0.25" : "1", timeoutMs: "2000", outgoingTransport: /(?:^|-)brave(?:-|$)/i.test(d) ? "curl-impersonate" : String(cur.outgoingTransport || "curl-fallback") };
   const diff = Object.entries(want).filter(([k, v]) => String(cur[k] ?? "") !== v);
   if (!diff.length) continue;
   store[key] = { ...cur, ...want };
@@ -5696,8 +5755,8 @@ docker restart $c | Out-Null
 $null = docker exec $c sh -c 'for i in $(seq 1 40); do curl -fs -o /dev/null http://127.0.0.1:${DEGOOG_PORT:-4444}/readyz && exit 0; sleep 1; done'
 
 $ss = docker exec $c cat /app/data/server-settings.json | Out-String | ConvertFrom-Json
-"plugin code inside the page (should be v50-preview): " + (docker exec $c grep -o -m1 'clean-titles v[0-9a-z-]*' /app/src/public/themes/degoog-theme/layout.html | Select-Object -First 1)
-"public suffix file (should be a psl file): " + (docker exec $c sh -c 'ls /app/src/public/ct/')
+"plugin code inside the page (should be v50-preview): " + (docker exec $c sh -c 'grep -h -o -m1 "clean-titles v[0-9a-z-]*" /app/src/public/ct/ct.*.js' | Select-Object -First 1)
+"page files (should be a ct and a psl file): " + (docker exec $c sh -c 'ls /app/src/public/ct/')
 "progressive results off (should be False): $($ss.settings.streamingEnabled -eq $true)"
 "typo fixer word list (should be about 82800): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/words.txt')
 "typo fixer word pairs (should be about 243000): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/pairs.txt')
@@ -5731,8 +5790,10 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
 
 (async () => {
   // Code
-  const page = /<script type="module" id="ct-inline">([\s\S]*?)\n<\/script>/.exec(fs.readFileSync("/app/src/public/themes/degoog-theme/layout.html", "utf8"));
-  row("Page code", !!page && parse(page[1]));
+  const lay = fs.readFileSync("/app/src/public/themes/degoog-theme/layout.html", "utf8");
+  const src = /<script type="module" src="\/public\/ct\/(ct\.[0-9a-f]+\.js)" id="ct-inline"><\/script>/.exec(lay);
+  const pageCode = (() => { try { return src ? fs.readFileSync(`/app/src/public/ct/${src[1]}`, "utf8") : ""; } catch { return ""; } })();
+  row("Page code", !!pageCode && parse(pageCode) && lay.includes('id="ct-pre"'));
   row("Server code", parse(fs.readFileSync(`${DIR}/index.js`, "utf8")));
   let dg = false;
   for (const base of ["/app/src", `${process.cwd()}/src`]) {
@@ -5744,6 +5805,8 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
   row("Sites list in Settings (degoog's list code)", dg, dg ? "" : "Settings list read-only; menu still works");
   const ai = (() => { try { return /clean-titles: same as degoog's TTL_MS/.test(fs.readdirSync("/app/data/plugins").filter((d) => /ai-summary/.test(d)).map((d) => fs.readFileSync(`/app/data/plugins/${d}/index.js`, "utf8")).join("\n")); } catch { return false; } })();
   row("AI summary cache patch", ai ? true : "SKIP", ai ? "" : "ai-summary not installed or its line changed");
+  const emp = (() => { try { return fs.readFileSync("/app/src/server/search/engine-cache.ts", "utf8").includes("clean-titles: empty runs retried soon"); } catch { return false; } })();
+  row("Empty results asked again after 2 min", emp, emp ? "" : "degoog's cache line changed");
 
   // Bridge round trip (the page's only way to the server)
   const p0 = await bridge("prefs");
@@ -5802,7 +5865,7 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
     try { for (const d of fs.readdirSync(process.env.DEGOOG_ENGINES_DIR || `${DATA}/engines`, { withFileTypes: true })) if (d.isDirectory() && !/-(?:images|news|videos)$/i.test(d.name)) ids.push(d.name.toLowerCase().endsWith("-engine") ? d.name.toLowerCase() : `${d.name.toLowerCase()}-engine`); } catch {}
     const qs = ["pittsburgh steelers schedule", "how to reset airpods", "python list comprehension"];
     for (const id of ids) {
-      let n = 0, ms = 0, got = 0, name = id.replace(/^degoog-org-official-extensions-/, "").replace(/-engine$/, "");
+      let why = "", n = 0, ms = 0, got = 0, name = id.replace(/^degoog-org-official-extensions-/, "").replace(/-engine$/, "");
       for (const q of qs) {
         const p = new URLSearchParams({ q });
         for (const o of ids) p.set(o, o === id ? "true" : "false");
@@ -5815,10 +5878,11 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
           const e = ts[0] || {};
           n += Number(e.count ?? (j.results || []).length) || 0; ms += Number(e.time) || (Date.now() - t0); got++;
           if (e.name) name = e.name;
+          if (!Number(e.count ?? e.resultCount)) why = [e.status, e.httpStatus ? `http ${e.httpStatus}` : "", e.errorReason].filter((x) => x && x !== "ok").join(" ").slice(0, 60) || why;
         } catch { ms += Date.now() - t0; }
       }
       const avgN = got ? Math.round(n / qs.length) : 0, avgMs = Math.round(ms / qs.length);
-      rows.push([`Engine: ${name}`, avgN >= 8 && avgMs <= 2500 ? "GOOD" : avgN === 0 ? "NONE" : "WEAK", `${avgN} results · ${avgMs} ms per search`]);
+      rows.push([`Engine: ${name}`, avgN >= 8 && avgMs <= 2500 ? "GOOD" : avgN === 0 ? "NONE" : "WEAK", `${avgN} results · ${avgMs} ms per search${!avgN && why ? ` · ${why}` : ""}`]);
     }
   } catch {}
   // Safe Search off on every engine that has it (set by the installer just before the restart)
