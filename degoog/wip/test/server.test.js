@@ -1,4 +1,5 @@
 // Server plugin (files/index.js) routes that need no network
+process.env.CT_NO_TIMERS = "1";
 import { test, expect } from "bun:test";
 import fs from "node:fs";
 import os from "node:os";
@@ -100,4 +101,51 @@ test("server: anti-SEO lowers a site with signs on most of 5+ searches; your cho
   await send(["new.com"], { "new.com": ["ai"] });
   expect(JSON.parse(fs.readFileSync(path.join(dir, "sites-auto.json"), "utf8"))["new.com"]).toBeUndefined();
   srv.default.configure({});
+});
+
+test("server: shared fetch helper survives slow, empty, malformed and error answers", async () => {
+  const srv = await import("../files/index.js");
+  const answers = {
+    "https://t/slow": (init) => new Promise((r, no) => { const t = setTimeout(() => r(new Response("late")), 300); init.signal.addEventListener("abort", () => { clearTimeout(t); no(init.signal.reason); }); }),
+    "https://t/empty": () => new Response(""),
+    "https://t/500": () => new Response("x", { status: 500 }),
+    "https://t/throw": () => { throw new Error("dns"); },
+    "https://t/etag": (init) => (init.headers["If-None-Match"] === '"v1"' ? new Response(null, { status: 304 }) : new Response("body", { headers: { etag: '"v1"' } })),
+    "https://t/big": () => new Response("x".repeat(3000)),
+  };
+  srv.default.init({ id: "clean-titles", fetch: async (u, init) => answers[u](init) });
+  expect((await srv.net("https://t/slow", { timeout: 50 })).status).toBe(0);
+  expect(await srv.net("https://t/empty")).toEqual({ status: 200, text: "", etag: "" });
+  expect((await srv.net("https://t/500")).status).toBe(500);
+  expect((await srv.net("https://t/throw")).status).toBe(0);
+  expect(await srv.net("https://t/etag")).toEqual({ status: 200, text: "body", etag: '"v1"' });
+  expect((await srv.net("https://t/etag", { etag: '"v1"' })).status).toBe(304);
+  expect((await srv.net("https://t/big", { max: 1000 })).status).toBe(0);
+});
+
+test("server: AI-image list: every list format parsed; downloaded again only when changed; a bad download keeps the old list", async () => {
+  const srv = await import("../files/index.js");
+  expect(srv.aiDomains("! comment\n*://*.aiart.com/*\n*://pics.gen.io/*\n0.0.0.0 www.fake.net\n||slop.org^\ngoogle.com##.g:has(a[href*=\"aislop.co\"])\nplain.ai\n# x\n[Adblock]")).toEqual(["aiart.com", "aislop.co", "fake.net", "pics.gen.io", "plain.ai", "slop.org"]);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ct-ai-"));
+  const big = Array.from({ length: 1116 }, (_, i) => `*://*.ai${i}.com/*`).join("\n");
+  let calls = [], mode = "ok";
+  srv._setDegoog(null, dir);
+  srv.default.init({ id: "clean-titles", dir, fetch: async (u, init) => {
+    calls.push([u, init.headers["If-None-Match"] || ""]);
+    if (mode === "down") throw new Error("offline");
+    if (mode === "tiny") return new Response("<html>rate limited</html>", { headers: { etag: '"t"' } });
+    if (init.headers["If-None-Match"] === '"e1"') return new Response(null, { status: 304 });
+    return new Response(big, { headers: { etag: '"e1"' } });
+  } });
+  const a = await srv.aiRefresh();
+  expect(a.list.length).toBe(1116);
+  expect(calls.length).toBe(1);
+  const route = srv.routes.find((x) => x.path === "/aiimg");
+  const full = await (await route.handler(new Request("http://l/aiimg?v="))).json();
+  expect(full.list.length).toBe(1116);
+  expect(await (await route.handler(new Request(`http://l/aiimg?v=${full.v}`))).json()).toEqual({ v: full.v });
+  calls = [];
+  await srv.aiRefresh();
+  expect(calls).toEqual([[a.url, '"e1"']]); // unchanged: one small request, nothing downloaded
+  for (mode of ["down", "tiny"]) { await srv.aiRefresh(); expect(JSON.parse(fs.readFileSync(path.join(dir, "ai-images.json"), "utf8")).list.length).toBe(1116); }
 });
