@@ -7,6 +7,7 @@ import zlib from "node:zlib";
 import { Window } from "happy-dom";
 const REC = JSON.parse(zlib.gunzipSync(fs.readFileSync(new URL("../rec/ct-recordings.json.gz", import.meta.url))));
 const TPL = fs.readFileSync(new URL("./fixtures/result.html", import.meta.url), "utf8");
+const IMG_TPL = fs.readFileSync(new URL("./fixtures/image-card.html", import.meta.url), "utf8");
 const PSL = fs.readFileSync(new URL("../psl.enc", import.meta.url), "utf8");
 const CODE = fs.readFileSync(new URL("../files/ct-page.js", import.meta.url), "utf8");
 const { render, ctx } = require("./render.js");
@@ -74,7 +75,10 @@ const run = async (q, opts = {}) => {
   if (document.readyState === "loading") await new Promise((r) => document.addEventListener("DOMContentLoaded", r, { once: true }));
   await new Promise((r) => setTimeout(r, opts.engines || 0)); // the engines' time, while early answers arrive
   const list = document.getElementById("results-list");
-  list.innerHTML = res.map((r, i) => render(TPL, ctx(r, i))).join("");
+  // Images tab: degoog's own image-card.html in a .image-card each (render-media.tsx _mediaCard), host without www.
+  list.innerHTML = opts.type === "images"
+    ? res.map((r, i) => `<div class="image-card" data-idx="${i}">${render(IMG_TPL, { title: r.title, url: r.url, thumbnail_url: r.thumbnail || "", fallback_url: r.thumbnail || "", hostname: (() => { try { return new URL(r.url).hostname.replace(/^www\./, ""); } catch { return ""; } })() })}</div>`).join("")
+    : res.map((r, i) => render(TPL, ctx(r, i))).join("");
   fire([...list.children]);
   const items = [...document.querySelectorAll("#results-list .result-item")];
   const visible = items.filter((el) => el.style.display !== "none" && !el.classList.contains("ct-grouped"));
@@ -290,4 +294,18 @@ test("page: real '$AAPL' results from wsj.com carry the Paywall word on the sour
   expect(tagged[0].querySelector(".ct-paywall").textContent).toBe("Paywall");
   expect(items.filter((el) => el.style.display !== "none" && /(^|\.)wsj\.com$/.test(host(el))).every((el) => el.querySelector(".ct-paywall"))).toBe(true);
   expect(errors).toEqual([]);
+});
+
+test("page: Images tab hides AI-image sites from the server's list before paint; the Web tab never uses it", async () => {
+  const store = { "ct-aiimg": JSON.stringify({ v: "a1", list: ["canva.com", "magnific.com"] }) };
+  const calls = [];
+  const { document, errors } = await run("eiffel tower", { type: "images", store, calls });
+  const cards = [...document.querySelectorAll(".image-card")];
+  const src = (c) => c.querySelector(".image-source").textContent;
+  expect(cards.filter((c) => c.style.display === "none").map(src).sort()).toEqual(cards.map(src).filter((h) => /(^|\.)(canva|magnific)\.com$/.test(h)).sort());
+  expect(cards.some((c) => src(c) === "unsplash.com" && c.style.display !== "none")).toBe(true);
+  expect(calls.find((c) => c.route === "aiimg").params.get("v")).toBe("a1");
+  expect(errors).toEqual([]);
+  const w = await run("how to reset airpods", { store, calls: [] });
+  expect(w.errors).toEqual([]);
 });

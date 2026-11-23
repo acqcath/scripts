@@ -349,6 +349,15 @@ const row = (el) => {
   if (img) { if (/[?&]type=news\b/.test(location.search)) lowres(el, img); work.set(el, () => hdImg(img)); near.observe(el); }
 };
 
+// AI-image sites (laylavish's list, from the server; Images tab only): this browser's copy, checked each page load
+let AIIMG = null, AIV = "";
+try { const c = JSON.parse(localStorage.getItem("ct-aiimg") || "null"); if (c && Array.isArray(c.list)) { AIIMG = new Set(c.list); AIV = c.v || ""; } } catch {}
+if (/[?&]type=images\b/.test(location.search)) bridge("aiimg", { v: AIV }).then((j) => {
+  if (!j || typeof j.v !== "string") return;
+  if (!j.v) { AIIMG = null; try { localStorage.removeItem("ct-aiimg"); } catch {} return; }
+  if (Array.isArray(j.list)) { AIIMG = new Set(j.list); try { localStorage.setItem("ct-aiimg", JSON.stringify({ v: j.v, list: j.list })); } catch {} }
+}).catch(() => {});
+const aiImg = (host) => { if (!AIIMG || !host) return false; for (let h = host; h.includes("."); h = h.slice(h.indexOf(".") + 1)) if (AIIMG.has(h)) return true; return false; };
 const card = (el, isImage) => {
   const src = el.querySelector(isImage ? ".image-source" : ".video-source");
   const t = el.querySelector(isImage ? ".image-title" : ".video-title");
@@ -357,6 +366,7 @@ const card = (el, isImage) => {
   const text = t && t.textContent || "";
   if (adult(host, text)) { el.style.display = "none"; return; }
   if (!isImage) return;
+  if (aiImg(host)) { el.style.display = "none"; el.dataset.ctAi = "1"; return; }
   if (src && host !== raw) src.textContent = host;
   if (t && host) {
     const out = cleanTitle(text, `https://${host}/`);

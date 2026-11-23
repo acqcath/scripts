@@ -37,5 +37,8 @@ Each search's first page is checked for SEO signs (scraper copies of another res
 ## Paywall tag (M2)
 Results from sites where most articles need a subscription (nytimes.com incl. Wirecutter and Cooking, wsj.com, ft.com, bloomberg.com, …) show a gray **Paywall** word on the source line. Try `$AAPL` or `best laptop 2026`.
 
+## AI pictures on the Images tab (M2)
+The Images tab hides pictures from AI-image sites (laylavish's AI blocklist, checked by your server once a day and downloaded only when it changes). Web results never use it. It starts working from the second Images search after install (the first one fetches the list).
+
 ## Not in this preview yet
-The Paywall tag's archive link (M5) and the Images-only blocklist (rest of M2). Then answer cards (M3/M4) and the rest of the spec.
+The Paywall tag's archive link (M5). Then answer cards (M3/M4) and the rest of the spec.

@@ -159,6 +159,73 @@ export const sitesFromSettings = (raw) => queueSites(async () => {
 });
 export const _sitesIdle = () => _sitesQ;
 
+// ===== Shared fetch helper: every outside request goes through here (timeout, size cap, never throws) =====
+// -> {status, text, etag} or {status: 0} on any failure. 304 when the If-None-Match tag still matches.
+export const net = async (url, { etag = "", timeout = 10000, max = 2_000_000, accept = "*/*" } = {}) => {
+  try {
+    const f = _fetch || fetch;
+    const r = await f(url, { headers: { Accept: accept, ...(etag ? { "If-None-Match": etag } : {}) }, signal: AbortSignal.timeout(timeout), redirect: "follow" });
+    if (r.status === 304) return { status: 304, text: "", etag };
+    if (!r.ok) return { status: r.status, text: "", etag: "" };
+    const text = await r.text();
+    if (text.length > max) return { status: 0, text: "", etag: "" };
+    return { status: r.status, text, etag: r.headers.get("etag") || "" };
+  } catch { return { status: 0, text: "", etag: "" }; }
+};
+
+// ===== AI-image sites, Images tab only (laylavish's HUGE AI Blocklist) =====
+// Checked once a day; downloaded again only when it changed (ETag). Kept here as ai-images.json; the page keeps a
+// copy and hides those sites' pictures on the Images tab before paint. Web results are never touched by it.
+const AI_URLS = [
+  "https://raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/main/list_uBlacklist.txt",
+  "https://raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/main/noai_hosts.txt",
+  "https://raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/main/list.txt",
+];
+// Domains from any of the list's formats: uBlacklist "*://*.x.com/*", hosts "0.0.0.0 x.com", uBlock "||x.com^"
+// and href*="x.com" rules, or a bare domain per line. Comments skipped.
+export const aiDomains = (text) => {
+  const out = new Set();
+  const add = (d) => { d = String(d || "").toLowerCase().replace(/^www\./, "").replace(/\.$/, ""); if (plainHost(d) && d.length < 100) out.add(d); };
+  for (const raw of String(text || "").split("\n")) {
+    const l = raw.trim();
+    if (!l || /^[!#\[]/.test(l)) continue;
+    let m;
+    if ((m = /^\*:\/\/(?:\*\.)?([^/*]+)\/\*?$/.exec(l))) add(m[1]);
+    else if ((m = /^(?:0\.0\.0\.0|127\.0\.0\.1)\s+(\S+)/.exec(l))) add(m[1]);
+    else if ((m = /^\|\|([^\^/$]+)\^/.exec(l))) add(m[1]);
+    else if (/href\*?=/.test(l)) { for (const h of l.matchAll(/href\*?=\s*["']?(?:https?:\/\/)?(?:\*\.)?([a-z0-9.-]+\.[a-z]{2,})/gi)) add(h[1]); }
+    else if (/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(l)) add(l);
+  }
+  return [...out].sort();
+};
+const aiFile = () => `${DIR}/ai-images.json`;
+let AIIMG = null;
+const readAi = () => { if (AIIMG) return AIIMG; try { const j = JSON.parse(fs.readFileSync(aiFile(), "utf8")); AIIMG = j && Array.isArray(j.list) ? j : { list: [] }; } catch { AIIMG = { list: [] }; } return AIIMG; };
+const aiVersion = (list) => { let h = 2166136261; for (const c of list.join(",")) h = Math.imul(h ^ c.charCodeAt(0), 16777619) >>> 0; return h.toString(36); };
+// One check: kept as is on any failure or on a list that doesn't look like the real one (under 300 domains)
+export const aiRefresh = async () => {
+  const cur = readAi();
+  const urls = cur.url ? [cur.url, ...AI_URLS.filter((u) => u !== cur.url)] : AI_URLS;
+  for (const url of urls) {
+    const r = await net(url, { etag: url === cur.url ? cur.etag || "" : "", timeout: 20000 });
+    if (r.status === 304) { AIIMG = { ...cur, at: Date.now() }; break; }
+    if (r.status !== 200) continue;
+    const list = aiDomains(r.text);
+    if (list.length < 300) continue;
+    AIIMG = { url, etag: r.etag, at: Date.now(), v: aiVersion(list), list };
+    break;
+  }
+  if (AIIMG && AIIMG !== cur) try { fs.writeFileSync(aiFile(), JSON.stringify(AIIMG)); } catch {}
+  return readAi();
+};
+let _aiTimer = null;
+const aiSchedule = () => {
+  if (_aiTimer) return;
+  const due = Math.max(60000, (readAi().at || 0) + 86400000 - Date.now());
+  _aiTimer = setTimeout(async () => { _aiTimer = null; await aiRefresh(); aiSchedule(); }, Math.min(due, 86400000));
+  if (_aiTimer.unref) _aiTimer.unref();
+};
+
 // ===== Anti-SEO auto-Lower =====
 // Each search's first page sends its signs (core seoSigns: copies, SEO-bait wording, stale "best 20XX" lists, AI
 // tells, essay-writing services). Per site: searches it was in, and how many of those showed a sign. A site with
@@ -670,6 +737,16 @@ export const routes = [
     },
   },
   {
+    // AI-image sites for the Images tab: the whole list only when the page's copy (v) is out of date
+    method: "get",
+    path: "/aiimg",
+    handler(req) {
+      const a = readAi(), v = new URL(req.url).searchParams.get("v") || "";
+      const body = !a.list.length ? { v: "" } : v === a.v ? { v } : { v: a.v, list: a.list };
+      return new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+    },
+  },
+  {
     // Anti-SEO signs from one search (see seoReport); answers at once, the counting happens after
     method: "post",
     path: "/seo",
@@ -755,6 +832,7 @@ export default {
     if (ctx && ctx.dir) DIR = ctx.dir;
     if (ctx && typeof ctx.signProxyUrl === "function") _sign = ctx.signProxyUrl;
     if (ctx && typeof ctx.fetch === "function") _fetch = ctx.fetch;
+    if (!process.env.CT_NO_TIMERS) aiSchedule();
   },
 
   // Bridge: the page reaches the routes above through degoog's command address (/api/command),
@@ -1488,6 +1566,15 @@ const row = (el) => {
   if (img) { if (/[?&]type=news\b/.test(location.search)) lowres(el, img); work.set(el, () => hdImg(img)); near.observe(el); }
 };
 
+// AI-image sites (laylavish's list, from the server; Images tab only): this browser's copy, checked each page load
+let AIIMG = null, AIV = "";
+try { const c = JSON.parse(localStorage.getItem("ct-aiimg") || "null"); if (c && Array.isArray(c.list)) { AIIMG = new Set(c.list); AIV = c.v || ""; } } catch {}
+if (/[?&]type=images\b/.test(location.search)) bridge("aiimg", { v: AIV }).then((j) => {
+  if (!j || typeof j.v !== "string") return;
+  if (!j.v) { AIIMG = null; try { localStorage.removeItem("ct-aiimg"); } catch {} return; }
+  if (Array.isArray(j.list)) { AIIMG = new Set(j.list); try { localStorage.setItem("ct-aiimg", JSON.stringify({ v: j.v, list: j.list })); } catch {} }
+}).catch(() => {});
+const aiImg = (host) => { if (!AIIMG || !host) return false; for (let h = host; h.includes("."); h = h.slice(h.indexOf(".") + 1)) if (AIIMG.has(h)) return true; return false; };
 const card = (el, isImage) => {
   const src = el.querySelector(isImage ? ".image-source" : ".video-source");
   const t = el.querySelector(isImage ? ".image-title" : ".video-title");
@@ -1496,6 +1583,7 @@ const card = (el, isImage) => {
   const text = t && t.textContent || "";
   if (adult(host, text)) { el.style.display = "none"; return; }
   if (!isImage) return;
+  if (aiImg(host)) { el.style.display = "none"; el.dataset.ctAi = "1"; return; }
   if (src && host !== raw) src.textContent = host;
   if (t && host) {
     const out = cleanTitle(text, `https://${host}/`);
