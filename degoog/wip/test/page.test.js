@@ -554,7 +554,8 @@ test("page: Quick view opens under the result on tap (recipe: facts, 8 ingredien
   await new Promise((res) => setTimeout(res, 30));
   expect(calls.find((c) => c.route === "qv").params.get("u")).toBe(el.querySelector("a.result-title").href);
   const box = el.querySelector(".result-body > .ct-qv");
-  expect(box.querySelector(".ct-qv-facts").textContent).toBe("4.9 ★ (3,120) · 1 hr 15 min · Serves 24");
+  expect([...box.querySelector(".ct-qv-facts").children].map((x) => x.textContent)).toEqual(["4.9 ★★★★★ (3,120)", "1 hr 15 min", "Serves 24"]);
+  expect(box.querySelector(".ct-qv-facts .ct-stars").style.getPropertyValue("--r")).toBe("4.9");
   const [ing, st] = box.querySelectorAll(".ct-qv-list");
   expect([...ing.children].filter((x) => !x.hidden).length).toBe(8);
   expect(box.querySelector(".ct-qv-more").textContent).toBe("3 more ingredients ⌄");
@@ -579,7 +580,7 @@ test("page: recipe search: stars + time on the source line from this browser's c
   const calls = [];
   const r = await run("chocolate chip cookie recipe", { engines: 0, store, calls, bridge: { qvs: { data: { s: { [res[1].url]: "4.7 ★ · 40 min" } }, delay: 1 } } });
   const lines = [...r.document.querySelectorAll(".ct-stars-l")].map((x) => x.textContent);
-  expect(lines).toEqual(["4.9 ★ · 1 hr 15 min"]);
+  expect(lines).toEqual(["4.9 ★★★★★ · 1 hr 15 min"]);
   await new Promise((res2) => setTimeout(res2, 30));
   const c = calls.find((x) => x.route === "qvs");
   expect(c).toBeTruthy();

@@ -153,6 +153,8 @@ The spec is the user's handoff text (they paste it into each new chat). These no
 
   - M6 audit fix (spec RULES "one toggle per feature in Settings, default on"): 9 new switches, all default on, reaching the page the existing way (/prefs -> ct-show, applies from the next page load): Instant answers (local + network cards; network asks skipped too), Knowledge panel, Other meanings, Images row (no image search when off), Plain lists (shape + Only line + official docs first), Paywall tag, Quick view, Ratings on recipe/review results, Archived copy. AI spot stays governed by ai-summary's own switch. Page test: switches off -> no card / no Quick view item / no Paywall word.
 
+  - M6 audit fixes (design system): no site icons/favicons anywhere (degoog's .result-favicon* and the boxes' .ct-fav hidden by CSS; source line now starts at the title's edge; screenshot checked at 390); quick view's headline rating and the source-line rating are "4.9" + 5 amber stars filled to the value (ct-stars), count after; quick view facts are one dot-line (fitLine drops whole items from the end); menu lines 44px tall on phones.
+
 ## Verified this run
 - Real recordings, dedupe -> cap (results in -> after dedupe -> shown): airpods 29 -> 26 -> 21; mdn array map 28 -> 28 -> 17 before the site-word fix (mozilla.org 10 folded), now uncapped; is windows 10 supported 28 -> 28 -> 22 (6 microsoft.com folded under end-of-support). No recorded search reproduces "18 -> 6"; that figure came from an earlier hand-picked set. Real numbers are in the tests instead.
 - On airpods, sitelinks + Discussions + Videos boxes take every capped result, so no fold line appears: correct (nothing shown twice).
