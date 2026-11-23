@@ -1729,7 +1729,33 @@ const siteItems = (el) => {
   }
   menu.prepend(seg);
   if (cur === "lower" && SITES_AUTO.includes(siteOf(host))) seg.after(mk("div", "ct-seg-note", "Lowered automatically (SEO signs). Your choice here wins."));
+  // Archived copy (spec 10): nothing is asked until you tap it
+  const ar = mk("button", "degoog-menu-item ct-arch", "Open archived copy");
+  ar.type = "button";
+  ar.setAttribute("role", "menuitem");
+  menu.append(ar);
 };
+// Tap: a new tab opens at once (so the browser allows it) and goes to the copy the server found: archive.today first
+// for paywalled sites, else the Wayback Machine, else Ghostarchive; none -> archive.today's save page
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest && e.target.closest(".ct-arch");
+  if (!b) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const el = b.closest(".result-item");
+  const a = el && el.querySelector("a.result-title");
+  const u = (el && el.dataset.resultUrl) || (a && a.href) || "";
+  if (!u) return;
+  let pw = false;
+  try { pw = CT.paywalled(new URL(u).hostname, PSL()); } catch {}
+  const menu = b.closest(".result-actions-menu");
+  if (menu) menu.hidden = true;
+  const w = window.open("", "_blank");
+  if (w) { try { w.opener = null; w.document.title = "Archived copy"; w.document.body.textContent = "Finding an archived copy…"; } catch {} }
+  const j = await bridge("arch", { u, ...(pw ? { pw: 1 } : {}) }).catch(() => null);
+  const to = (j && j.a && /^https:\/\//.test(j.a.url) && j.a.url) || `https://archive.ph/?url=${encodeURIComponent(u)}`;
+  if (w && !w.closed) w.location.replace(to); else location.assign(to);
+}, true);
 const settingsFetch = (path, body) => {
   let tok = null;
   try { tok = sessionStorage.getItem("degoog-settings-token"); } catch {}

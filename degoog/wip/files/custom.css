@@ -721,3 +721,6 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 /* "Only reddit.com results ›": one line above the results; taps run the site: search */
 .ct-only { display: flex; align-items: center; min-height: 44px; margin: 0 0 4px; font-size: 14px; line-height: 20px; color: var(--text-link) !important; text-decoration: none; }
 .ct-only:hover { text-decoration: underline; }
+/* "Open archived copy": a plain menu line under the site choices */
+.ct-arch { display: block; width: 100%; margin: 2px 0 0; padding: 10px 14px; min-height: 40px; border: 0; background: none; font: inherit; font-size: 14px; line-height: 20px; text-align: left; color: var(--text-primary); cursor: pointer; border-radius: 8px; }
+.ct-arch:hover, .ct-arch:focus-visible { background: var(--bg-hover); }

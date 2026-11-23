@@ -334,3 +334,30 @@ test("Bing suggestions: exponential backoff from 1 minute, capped at 1 hour", as
   const srv = await import("../files/index.js");
   expect([1, 2, 3, 4, 6, 7, 20].map(srv.bingBackoff)).toEqual([60000, 120000, 240000, 480000, 1920000, 3600000, 3600000]);
 });
+
+test("archived copy: parallel lookup, paywall order, save page when none has it", async () => {
+  const srv = await import("../files/index.js");
+  const seen = [];
+  const fake = (have) => async (u, init) => {
+    seen.push(u);
+    const q = new URL(u);
+    if (q.hostname === "archive.ph") return have.today ? new Response(null, { status: 302, headers: { location: "https://archive.ph/AbC12" } }) : new Response("", { status: 404 });
+    if (q.hostname === "archive.org") return new Response(JSON.stringify({ archived_snapshots: have.wb ? { closest: { available: true, url: "http://web.archive.org/web/20240101000000/https://x.com/a", timestamp: "20240101000000", status: "200" } } : {} }));
+    if (q.hostname === "ghostarchive.org") return new Response(have.ghost ? '<a href="/archive/Zy9x1">x</a>' : "<p>No archives</p>");
+    return new Response("", { status: 404 });
+  };
+  srv.default.init({ id: "clean-titles", fetch: fake({ today: true, wb: true, ghost: true }) });
+  expect(await srv.archFind("https://www.nytimes.com/2026/1/a.html", true)).toEqual({ url: "https://archive.ph/AbC12", src: "archive.today" });
+  expect(await srv.archFind("https://x.com/a", false)).toEqual({ url: "https://web.archive.org/web/20240101000000/https://x.com/a", src: "Wayback Machine" });
+  const n = seen.length;
+  await srv.archFind("https://x.com/a", false); // cached
+  expect(seen.length).toBe(n);
+  srv.default.init({ id: "clean-titles", fetch: fake({ ghost: true }) });
+  expect(await srv.archFind("https://y.com/b", false)).toEqual({ url: "https://ghostarchive.org/archive/Zy9x1", src: "Ghostarchive" });
+  srv.default.init({ id: "clean-titles", fetch: fake({}) });
+  expect(await srv.archFind("https://z.com/c?d=1", true)).toEqual({ url: "https://archive.ph/?url=https%3A%2F%2Fz.com%2Fc%3Fd%3D1", src: "save" });
+  expect(await srv.archFind("javascript:alert(1)", true)).toBeNull();
+  // A redirect elsewhere (captcha page) is not a copy
+  srv.default.init({ id: "clean-titles", fetch: async (u) => (new URL(u).hostname === "archive.ph" ? new Response(null, { status: 302, headers: { location: "https://archive.ph/challenge?x" } }) : new Response("{}")) });
+  expect((await srv.archFind("https://w.com/e", true)).src).toBe("save");
+});

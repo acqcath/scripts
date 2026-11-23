@@ -159,11 +159,13 @@ export const _sitesIdle = () => _sitesQ;
 
 // ===== Shared fetch helper: every outside request goes through here (timeout, size cap, never throws) =====
 // -> {status, text, etag} or {status: 0} on any failure. 304 when the If-None-Match tag still matches.
-export const net = async (url, { etag = "", timeout = 10000, max = 2_000_000, accept = "*/*", headers = {} } = {}) => {
+// redirect: "manual" returns a 3xx as is, with its Location (archive.today answers a found copy that way)
+export const net = async (url, { etag = "", timeout = 10000, max = 2_000_000, accept = "*/*", headers = {}, redirect = "follow" } = {}) => {
   try {
     const f = _fetch || fetch;
-    const r = await f(url, { headers: { Accept: accept, ...headers, ...(etag ? { "If-None-Match": etag } : {}) }, signal: AbortSignal.timeout(timeout), redirect: "follow" });
+    const r = await f(url, { headers: { Accept: accept, ...headers, ...(etag ? { "If-None-Match": etag } : {}) }, signal: AbortSignal.timeout(timeout), redirect });
     if (r.status === 304) return { status: 304, text: "", etag };
+    if (redirect === "manual" && r.status >= 300 && r.status < 400) return { status: r.status, text: "", etag: "", location: r.headers.get("location") || "" };
     if (!r.ok) return { status: r.status, text: "", etag: "" };
     const text = await r.text();
     if (text.length > max) return { status: 0, text: "", etag: "" };
@@ -460,6 +462,43 @@ export const kpFor = async (q) => {
   } catch { v = null; }
   if (_kp.size > 1000) _kp.clear();
   _kp.set(key, { t: v ? Date.now() : Date.now() - TTL + 600000, v });
+  return v;
+};
+
+// ===== Archived copy (spec 10): asked only when you tap "Open archived copy" in a result's menu =====
+// archive.today, the Wayback Machine and Ghostarchive are asked in parallel; the first that has the page in this
+// order wins: archive.today first for paywalled sites (it keeps the full text), else Wayback first (dead pages).
+// None has it -> archive.today's save page for that address. Endpoints from knowledge, NOT live-checked here.
+const ARCH_UA = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36" };
+export const archSave = (u) => `https://archive.ph/?url=${encodeURIComponent(u)}`;
+const _arch = new Map();
+export const archFind = async (u, paywall) => {
+  let url;
+  try { url = new URL(u); } catch { return null; }
+  if (!/^https?:$/.test(url.protocol) || u.length > 2000) return null;
+  const key = createHash("sha256").update(`arch\n${u}`).digest("hex").slice(0, 24);
+  const hit = _arch.get(key);
+  if (hit && Date.now() - hit.t < (hit.v.src === "save" ? 600000 : TTL)) return hit.v;
+  const today = async () => {
+    const r = await net(`https://archive.ph/newest/${u}`, { timeout: 4000, redirect: "manual", headers: ARCH_UA, max: 400000 });
+    const loc = r.location || "";
+    return r.status >= 300 && r.status < 400 && /^https:\/\/archive\.(?:ph|today|is|li|vn|fo|md)\/(?:[A-Za-z0-9]{4,6}$|\d{14}\/|\d{4}\.\d{2}\.\d{2}-\d{6}\/)/.test(loc) ? loc : "";
+  };
+  const wayback = async () => {
+    const r = await net(`https://archive.org/wayback/available?url=${encodeURIComponent(u)}`, { timeout: 4000, accept: "application/json", max: 100000 });
+    try { const c = JSON.parse(r.text).archived_snapshots.closest; return c && c.available && /^https?:\/\/web\.archive\.org\/web\/\d+/.test(c.url) ? c.url.replace(/^http:/, "https:") : ""; } catch { return ""; }
+  };
+  const ghost = async () => {
+    const r = await net(`https://ghostarchive.org/search?term=${encodeURIComponent(u)}`, { timeout: 4000, headers: ARCH_UA, max: 600000 });
+    const m = /href="(\/archive\/[A-Za-z0-9]+)"/.exec(r.text || "");
+    return m ? `https://ghostarchive.org${m[1]}` : "";
+  };
+  const [a, w, g] = await Promise.all([today(), wayback(), ghost()]);
+  const order = paywall ? [[a, "archive.today"], [w, "Wayback Machine"], [g, "Ghostarchive"]] : [[w, "Wayback Machine"], [a, "archive.today"], [g, "Ghostarchive"]];
+  const f = order.find(([x]) => x);
+  const v = f ? { url: f[0], src: f[1] } : { url: archSave(u), src: "save" };
+  if (_arch.size > 500) _arch.clear();
+  _arch.set(key, { t: Date.now(), v });
   return v;
 };
 
@@ -1059,6 +1098,14 @@ export const routes = [
       const u = new URL(req.url).searchParams;
       const d = await wdFor(u.get("f") || "", u.get("s") || "", u.get("s2") || "");
       return new Response(JSON.stringify({ d }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+    },
+  },
+  {
+    method: "get",
+    path: "/arch",
+    async handler(req) {
+      const p = new URL(req.url).searchParams;
+      return new Response(JSON.stringify({ a: await archFind((p.get("u") || "").slice(0, 2000), p.get("pw") === "1") }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
     },
   },
   {
