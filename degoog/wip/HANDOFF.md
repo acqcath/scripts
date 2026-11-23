@@ -60,6 +60,8 @@ The spec is the user's handoff text (they paste it into each new chat). These no
   - Preview installer (M1 item 4): `python3 build.py && python3 build_installer.py preview` -> install-preview.ps1. It takes main's install.ps1 (git show main:…) as the skeleton and swaps in files/* (script.js = ct-page.js); asserts every here-string is placed and none contains a line starting with '@. Checks added: version (grep first `clean-titles v…`, should be v50-preview), the psl file, progressive results off. `build_installer.py release` writes ../install.ps1 at v50 (only at READY TO SHIP). Round-trip verified: every embedded file equals its source. Not run through PowerShell here (no pwsh in this sandbox).
   - ct-page.js starts with `// clean-titles <version>` (build.py, CT_VERSION, default v50-preview); the stray "v49" comment and core's "v50" header are gone so the installer's version check reads the right one.
   - PREVIEW.md written (M1 item 6).
+  - M1 item 5 headless check: `node test/headless/run.cjs <outdir>` (Playwright, the user's recorded page HTML + recorded CSS + this build's custom.css + ct-page.js; recorded results inserted with one innerHTML like degoog; PerformanceObserver layout-shift summed from after that insert, plus a scroll down/up). 5 cases x 390/1280: layout shift 0 in all 10, no page-script errors. Folds: react useEffect cleanup 1; alts: attention pdf 1. test/render.js is now shared by page.test.js and the headless check.
+    - Harness lessons: degoog's style.css link spans lines (regex must allow \s before rel); fonts 404 here and the fallback swap re-flows text ~20 ms later (looked like 0.012 CLS), so the check waits for document.fonts first; pictures get a real 200x120 PNG (a failing picture makes degoog's own inline onerror hide its frame).
   - Story card picture that fails to load: hidden with visibility (keeps its box) instead of removed (the card changed shape after paint).
 
 ## Verified this run
@@ -84,7 +86,6 @@ The spec is the user's handoff text (they paste it into each new chat). These no
   - Rank higher / Rank lower menu click moves rows: user-initiated, so allowed; it gets replaced by Prefer/Normal/Lower/Hide in M2.
   - Title cleanup audit (cleanTitle runs in row() before paint: OK; check nothing else rewrites titles later).
 - Site prefs UI (Prefer/Normal/Lower/Hide in the result menu and Settings) + server compiling CT_DATA.sites into the inline block.
-- Headless Chrome check of fold line, date on source line, crossfade at 390/1280 with the recorded CSS (rec `css`), CLS = 0.
 - Still to do for core: repost (same title + author), translations beyond locale paths, proceedings copies. FedEx check digit is not implemented: find a verified algorithm and a known-valid number before shipping, or require "fedex" in the search.
 - Live source report: SOURCES.md does not exist yet. Rerun that check (WebFetch, one fetch per source).
 
