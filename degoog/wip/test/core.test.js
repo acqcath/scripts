@@ -197,3 +197,16 @@ test("dedupe: NeurIPS proceedings copies (old nips.cc host, page and its PDF) ar
   expect(C.docKey("https://papers.nips.cc/paper/7181-attention-is-all-you-need")).toBe(C.docKey("https://papers.neurips.cc/paper/7181-attention-is-all-you-need.pdf"));
   expect(C.docKey("https://papers.neurips.cc/paper/7181-a")).not.toBe(C.docKey("https://papers.neurips.cc/paper/7182-a"));
 });
+
+test("tidyText: the engines' stray spaces around bolded words go; inch marks, times and real quotes stay", async () => {
+  const { tidyText, doiPublisher } = await import("../files/core.js");
+  expect(tidyText('Is "No Shit " our slang?')).toBe('Is "No Shit" our slang?');
+  expect(tidyText('Why is it called: " taking" a shit ?')).toBe('Why is it called: "taking" a shit?');
+  expect(tidyText("Shit , and its plural Shits, can be a physical Shit , or")).toBe("Shit, and its plural Shits, can be a physical Shit, or");
+  expect(tidyText("It 's here ( really ) .")).toBe("It's here (really).");
+  expect(tidyText('a 2" pipe')).toBe('a 2" pipe');
+  expect(tidyText("time 3 : 00 pm")).toBe("time 3 : 00 pm");
+  expect(tidyText('she said,"yes" and left')).toBe('she said,"yes" and left');
+  expect(doiPublisher("https://doi.org/10.1016/j.annals.2024.103800")).toBe("Elsevier");
+  expect(doiPublisher("https://example.com/10.1016/x")).toBe("");
+});
