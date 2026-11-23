@@ -456,7 +456,7 @@ const matchShare = (words, text) => {
   const toks = [...new Set(relToks(text))];
   return words.filter((w) => toks.some((t) => relHit(w, t))).length / words.length;
 };
-// A search made mostly of common words (a quote, "why does no one love me") can't be judged by its words: no check
+// A search made mostly of common words (a quote, "who are you who do you work for") can't be judged by its words: no check
 const relJudgeable = (q) => { const t = relToks(q); return t.length > 0 && relWords(q).length * 2 >= t.length; };
 const related = (words, ident, text, engines, pos) => matchShare(words, text) > 0 || engines >= 2 || (ident && pos < 3);
 // Second look before a result is folded: words the related results share (in 15%+ of them, at least 3; one also in
