@@ -26,6 +26,20 @@ for (const d of dirs) {
   store[key] = { ...cur, safeSearch: "off" };
   changed.push(`${d.replace(/^degoog-org-official-extensions-/, "")} (was ${cur.safeSearch || "its default"})`);
 }
+// SearXNG engines degoog runs through its compatibility layer: one <code>.py each, settings id searx-<code>-engine;
+// every one has the Safe Search setting (default "moderate" for image/video engines)
+const SX = process.env.DEGOOG_SEARX_ENGINES_DIR || `${DATA}/searx/engines`;
+let sx = [];
+try { sx = fs.readdirSync(SX).filter((f) => /\.py$/.test(f) && !f.startsWith("_")).map((f) => f.slice(0, -3)); } catch {}
+for (const code of sx) {
+  found++;
+  const id = `searx-${code}-engine`.toLowerCase();
+  const key = Object.keys(store).find((k) => k.toLowerCase() === id) || id;
+  const cur = store[key] && typeof store[key] === "object" ? store[key] : {};
+  if (cur.safeSearch === "off") continue;
+  store[key] = { ...cur, safeSearch: "off" };
+  changed.push(`searx ${code} (was ${cur.safeSearch || "its default"})`);
+}
 if (changed.length) {
   fs.writeFileSync(SF + ".ct-tmp", JSON.stringify(store, null, 2));
   fs.renameSync(SF + ".ct-tmp", SF);

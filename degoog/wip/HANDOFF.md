@@ -204,6 +204,10 @@ Everything else in FEATURES 1-15, RULES, LOADING and DESIGN SYSTEM is built and 
 
 - Video cards blank (user screenshot "something", 14:58): 0 of 65 recorded YouTube web results have a thumbnail. Fix: route /yt?id=<11 chars> -> 302 signed i.ytimg.com/vi/<id>/hqdefault.jpg; videoCard asks it when the result has no picture or the picture errors; img fades in (.ct-late/.ct-in, opacity only) inside the fixed 16:9 box. Headless CLS still 0 on all 10 cases.
 
+## Self-check round 2 (user, ~15:10 UTC): population + KP PASS now; FAIL: WD height "no Wikidata item" + meanings "wbsearchentities http 429" (throttling), ESPN teams http 403, qv page http 403, safe search searx-youtube_noapi.
+- Fixes: WD_UA names degoog's project URL (NOT the user's repo: identifying the user to third parties was refused), max 2 concurrent Wikidata requests, 1 s retry on 429/0, JSON error bodies reported. net({imp:true}) retries 403/429/503 once via ctx.fetch(url, init, "curl-impersonate") (degoog image ships it; outgoingFetch's 3rd arg picks the transport); used for ESPN (+ browser UA) and quick view. safeoff.js also covers $DATA/searx/engines/<code>.py -> searx-<code>-engine.
+- Touchy searches: PASS (27/19, 29/26, 30/20 results/sites).
+
 ## Next
 - **Status 2026-11-23 14:56 UTC (live run 14:48):** waiting for the user's 2nd self-check table (round-1 fixes + reasons) and the recordings of their 10 snippet searches (list below). Then fix/cut remaining FAILs, build the featured snippet, install.ps1 at v50, READY TO SHIP.
 - **Status 2026-11-23 11:18 UTC (run 11:16):** startup notice when a degoog update wiped the page part (the old "restore at startup" todo; restore itself is impossible, see below). Tests 89 pass. Still blocked on the user: (a) self-check table from install-preview.ps1, (b) ~10 recorded fact/how-to searches for the featured snippet. Nothing else unblocked is left that passes "works on real data"; runs should exit quickly until the user replies.

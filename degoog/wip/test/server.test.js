@@ -480,3 +480,13 @@ test("video still for YouTube cards: only an 11-character id, signed for degoog'
   const bad = await srv.default.execute("bridge yt id=..%2Fetc");
   expect(JSON.parse(bad.html).status).toBe(400);
 });
+
+test("net: a 403 is asked once more through degoog's curl-impersonate transport (only when asked for)", async () => {
+  const srv = await import("../files/index.js");
+  const seen = [];
+  srv.default.init({ id: "clean-titles", fetch: async (u, init, transport) => { seen.push(transport || "fetch"); return transport === "curl-impersonate" ? new Response("ok") : new Response("", { status: 403 }); } });
+  expect((await srv.net("https://x.test/", { imp: true })).text).toBe("ok");
+  expect(seen).toEqual(["fetch", "curl-impersonate"]);
+  expect((await srv.net("https://x.test/")).status).toBe(403);
+  expect(seen.length).toBe(3);
+});

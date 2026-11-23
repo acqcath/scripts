@@ -179,10 +179,15 @@ export const _sitesIdle = () => _sitesQ;
 // ===== Shared fetch helper: every outside request goes through here (timeout, size cap, never throws) =====
 // -> {status, text, etag} or {status: 0} on any failure. 304 when the If-None-Match tag still matches.
 // redirect: "manual" returns a 3xx as is, with its Location (archive.today answers a found copy that way)
-export const net = async (url, { etag = "", timeout = 10000, max = 2_000_000, accept = "*/*", headers = {}, redirect = "follow" } = {}) => {
+// imp: on 403/429/503 ask once more through degoog's curl-impersonate transport (a browser's TLS fingerprint; the
+// degoog image ships it), for sites that turn away plain server requests (ESPN, recipe sites). Only with degoog's
+// own fetch (ctx.fetch = outgoingFetch, whose 3rd argument picks the transport).
+export const net = async (url, { etag = "", timeout = 10000, max = 2_000_000, accept = "*/*", headers = {}, redirect = "follow", imp = false } = {}) => {
   try {
     const f = _fetch || fetch;
-    const r = await f(url, { headers: { Accept: accept, ...headers, ...(etag ? { "If-None-Match": etag } : {}) }, signal: AbortSignal.timeout(timeout), redirect });
+    const init = () => ({ headers: { Accept: accept, ...headers, ...(etag ? { "If-None-Match": etag } : {}) }, signal: AbortSignal.timeout(timeout), redirect });
+    let r = await f(url, init());
+    if (imp && _fetch && [403, 429, 503].includes(r.status)) { try { const r2 = await _fetch(url, init(), "curl-impersonate"); if (r2 && typeof r2.status === "number") r = r2; } catch {} }
     if (r.status === 304) return { status: 304, text: "", etag };
     if (redirect === "manual" && r.status >= 300 && r.status < 400) return { status: r.status, text: "", etag: "", location: r.headers.get("location") || "" };
     if (!r.ok) return { status: r.status, text: "", etag: "" };
@@ -325,13 +330,26 @@ export const WHY = {};
 const why = (k, r) => { WHY[k] = r; return null; };
 const WD = { height: "P2048", population: "P1082", born: "P569", age: "P569", died: "P570", founded: "P571", ceo: "P169", released: "P577", distance: "P625" };
 const WD_API = "https://www.wikidata.org/w/api.php";
-const WD_UA = { "User-Agent": "degoog-clean-titles/50 (self-hosted search; one lookup per search)" };
+// Wikimedia's User-Agent policy asks for a project link; requests without one get throttled (429). degoog's public
+// project page is used: nothing that identifies this server or its owner.
+const WD_UA = { "User-Agent": "degoog-clean-titles/50 (+https://github.com/degoog-org/degoog; self-hosted search plugin)" };
+// At most 2 Wikidata requests at a time from this server (their API etiquette: no parallel bursts)
+let _wdBusy = 0; const _wdWait = [];
+const wdSlot = async () => { if (_wdBusy >= 2) await new Promise((ok) => _wdWait.push(ok)); _wdBusy++; };
+const wdFree = () => { _wdBusy--; const n = _wdWait.shift(); if (n) n(); };
 const wdGet = async (params) => {
   const u = `${WD_API}?${new URLSearchParams({ ...params, format: "json" })}`;
-  let r = await net(u, { timeout: 3000, max: 4_000_000, accept: "application/json", headers: WD_UA });
-  if (r.status === 429 || r.status === 0) { await new Promise((ok) => setTimeout(ok, 400)); r = await net(u, { timeout: 3000, max: 4_000_000, accept: "application/json", headers: WD_UA }); }
+  await wdSlot();
+  let r;
+  try {
+    r = await net(u, { timeout: 3000, max: 4_000_000, accept: "application/json", headers: WD_UA });
+    if (r.status === 429 || r.status === 0) { await new Promise((ok) => setTimeout(ok, 1000)); r = await net(u, { timeout: 3000, max: 4_000_000, accept: "application/json", headers: WD_UA }); }
+  } finally { wdFree(); }
   if (r.status !== 200) { wdGet.last = `wikidata ${params.action} ${r.status ? `http ${r.status}` : "no answer"}`; return null; }
-  try { return JSON.parse(r.text); } catch { wdGet.last = `wikidata ${params.action} not JSON`; return null; }
+  let j;
+  try { j = JSON.parse(r.text); } catch { wdGet.last = `wikidata ${params.action} not JSON`; return null; }
+  if (j && j.error) { wdGet.last = `wikidata ${params.action} error ${String(j.error.code || j.error.info || "").slice(0, 40)}`; return null; }
+  return j;
 };
 const rankOrder = { preferred: 0, normal: 1 };
 // Claims -> best ones first: preferred rank, still current (no end time), newest "point in time"
@@ -689,7 +707,7 @@ export const qvFor = async (u, check = publicUrl) => {
   let v = null, at = u;
   for (let hop = 0; hop < 4; hop++) {
     if (!(await check(at))) { why("qv", "address not public (DNS)"); at = ""; break; }
-    const r = await net(at, { timeout: 5000, max: 3_000_000, accept: "text/html,application/xhtml+xml", headers: QV_UA, redirect: "manual" });
+    const r = await net(at, { timeout: 6000, max: 3_000_000, accept: "text/html,application/xhtml+xml", headers: QV_UA, redirect: "manual", imp: true });
     if (r.status >= 300 && r.status < 400 && r.location) { try { at = new URL(r.location, at).toString(); } catch { at = ""; break; } continue; }
     if (r.status === 200 && r.text) { v = qvFrom(r.text, at); why("qv", v ? `ok (${v.kind})` : "page has nothing to show"); }
     else why("qv", r.status >= 300 && r.status < 400 ? "redirect without address" : r.status ? `page http ${r.status}` : "no answer");
@@ -747,7 +765,7 @@ export const espnTeams = (j, league, tag) => {
 };
 const teamsList = async () => {
   if (_teams.list.length && Date.now() - _teams.t < 86400000) return _teams.list;
-  const all = await Promise.all(LEAGUES.map(async ([l, tag]) => { const r = await net(`${ESPN}/${l}/teams`, { timeout: 4000, max: 3_000_000, accept: "application/json" }); if (r.status !== 200) teamsList.last = r.status ? `http ${r.status}` : "no answer"; try { return r.status === 200 ? espnTeams(JSON.parse(r.text), l, tag) : []; } catch { teamsList.last = "not JSON"; return []; } }));
+  const all = await Promise.all(LEAGUES.map(async ([l, tag]) => { const r = await net(`${ESPN}/${l}/teams`, { timeout: 4000, max: 3_000_000, accept: "application/json", headers: QV_UA, imp: true }); if (r.status !== 200) teamsList.last = r.status ? `http ${r.status}` : "no answer"; try { return r.status === 200 ? espnTeams(JSON.parse(r.text), l, tag) : []; } catch { teamsList.last = "not JSON"; return []; } }));
   const list = all.flat();
   _teams = { t: list.length ? Date.now() : Date.now() - 86400000 + 600000, list: list.length ? list : _teams.list };
   return _teams.list;
@@ -791,7 +809,7 @@ export const sportsFor = async (q, now = Date.now()) => {
   if (!t) return why("sports", "no single team matched");
   const hit = _games.get(t.id + t.league);
   if (hit && now - hit.t < (hit.v && hit.v.state === "in" ? 60000 : 600000)) return hit.v;
-  const r = await net(`${ESPN}/${t.league}/teams/${t.id}/schedule`, { timeout: 4000, max: 5_000_000, accept: "application/json" });
+  const r = await net(`${ESPN}/${t.league}/teams/${t.id}/schedule`, { timeout: 4000, max: 5_000_000, accept: "application/json", headers: QV_UA, imp: true });
   let v = null;
   try {
     const evs = r.status === 200 ? JSON.parse(r.text).events : null;
@@ -5275,6 +5293,20 @@ for (const d of dirs) {
   if (cur.safeSearch === "off") continue;
   store[key] = { ...cur, safeSearch: "off" };
   changed.push(`${d.replace(/^degoog-org-official-extensions-/, "")} (was ${cur.safeSearch || "its default"})`);
+}
+// SearXNG engines degoog runs through its compatibility layer: one <code>.py each, settings id searx-<code>-engine;
+// every one has the Safe Search setting (default "moderate" for image/video engines)
+const SX = process.env.DEGOOG_SEARX_ENGINES_DIR || `${DATA}/searx/engines`;
+let sx = [];
+try { sx = fs.readdirSync(SX).filter((f) => /\.py$/.test(f) && !f.startsWith("_")).map((f) => f.slice(0, -3)); } catch {}
+for (const code of sx) {
+  found++;
+  const id = `searx-${code}-engine`.toLowerCase();
+  const key = Object.keys(store).find((k) => k.toLowerCase() === id) || id;
+  const cur = store[key] && typeof store[key] === "object" ? store[key] : {};
+  if (cur.safeSearch === "off") continue;
+  store[key] = { ...cur, safeSearch: "off" };
+  changed.push(`searx ${code} (was ${cur.safeSearch || "its default"})`);
 }
 if (changed.length) {
   fs.writeFileSync(SF + ".ct-tmp", JSON.stringify(store, null, 2));

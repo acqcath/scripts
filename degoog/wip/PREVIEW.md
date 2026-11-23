@@ -89,3 +89,8 @@ Featured snippet for fact/how-to searches (needs about 10 real "what is / how to
 - The self-check now runs the checks one at a time (Wikidata dislikes bursts) and accepts image addresses when degoog runs under a base path.
 - **Safe Search off:** the installer sets Safe Search to *off* on every installed engine that has the setting (Bing Images was "moderate" by default). Its line: "Safe Search: now off for … (OK)". Two new rows in the table: "Safe Search off on all engines" and "Touchy searches get full results" (3 blunt searches from your list must each return at least 8 results from 5+ sites; only counts are printed). The plugin itself never filters by topic.
 - **Video pictures:** the Videos box showed empty grey cards: on your engines no YouTube result carries a picture (0 of 65 in your recordings). Each YouTube card now gets the video's own still through degoog's image proxy (your server asks YouTube, not your browser), fading into the box that's already there, so nothing moves. Try `something` or `python tutorial`.
+
+## After your second self-check (5 FAIL)
+- **Wikidata (height, other meanings):** Wikidata was throttling ("429"). The plugin now names itself with degoog's project link (Wikimedia asks for one), sends at most 2 requests at a time, waits 1 s and retries once, and shows Wikidata's own error if it answers with one.
+- **Sports, Quick view (http 403):** ESPN and recipe sites turn away plain server requests. On a 403 the plugin now asks once more through degoog's built-in curl-impersonate (looks like a normal browser).
+- **Safe Search:** SearXNG engines (your youtube_noapi) are now switched off too.
