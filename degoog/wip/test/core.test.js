@@ -262,9 +262,12 @@ test("relevance second look: synonyms of the page's own topic stay (UPS tracking
   expect(same({ title: "Wendy's 2 for $3 Biggie Bundles", snippet: "Get a burger and fries" })).toBe(false);
 });
 
-test("polish: shouting titles calmed", async () => {
-  const { calmCaps } = await import("../files/core.js");
-  expect(calmCaps("SOMETHING OLD, SOMETHING NEW: A LONGITUDINAL STUDY OF SEARCH BEHAVIOR")).toBe("Something Old, Something New: A Longitudinal Study of Search Behavior");
-  expect(calmCaps("NASA Launches")).toBe("NASA Launches");
-  expect(calmCaps("US ELECTION 2024 RESULTS LIVE")).toBe("US Election 2024 Results Live");
+test("polish: one clean-up for every title and description", async () => {
+  const { tidyText, tidyTitle } = await import("../files/core.js");
+  expect(tidyText("Tom &amp; Jerry &quot;live&quot;")).toBe('Tom & Jerry "live"');
+  expect(tidyText("Travis Scott in GTA >>>>>> 🔥🔥🔥🔥🔥")).toBe("Travis Scott in GTA 🔥");
+  expect(tidyText("WOW!!!!! really????")).toBe("WOW! really?");
+  expect(tidyText("and so on.... more")).toBe("and so on… more");
+  expect(tidyText("bold word ")).toBe("bold word "); // text pieces keep their edge spaces
+  expect(tidyTitle(" | Something - ")).toBe("Something");
 });
