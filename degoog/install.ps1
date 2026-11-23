@@ -2026,6 +2026,43 @@ const tabLow = (tab, host, title, seen) => {
   return false;
 };
 
+// ===== Relevance (one rule for every topic; no lists, nothing to train or maintain) =====
+// A result has to show it's about the search: it contains one of the search's words (title, address or
+// description), or 2+ engines returned it (they agree), or the search is an identifier (15213, an ISBN, a tracking
+// number: every word has a digit) and the result is in the engines' top 3 (they look identifiers up directly).
+const REL_STOP = new Set("the and for with from what whats how who whos why when where which this that these those are was were you your can does did will about into than then there many much".split(" "));
+// "15-213", "10.1038" are one token (digit groups joined); words match by shared start (love / loves / lover)
+const relToks = (t) => String(t || "").toLowerCase().replace(/(\d)[-.\/](?=\d)/g, "$1").split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+const relWords = (q) => [...new Set(relToks(q).filter((w) => (/\p{L}/u.test(w) ? w.length >= 3 && !REL_STOP.has(w) : w.length >= 4)))];
+const relIdent = (q) => { const t = relToks(q); return t.length > 0 && t.every((w) => /\d/.test(w)); };
+const relHit = (w, t) => t === w || (w.length >= 4 && t.length >= 4 && (t.startsWith(w) || w.startsWith(t)));
+const matchShare = (words, text) => {
+  if (!words.length) return 1;
+  const toks = [...new Set(relToks(text))];
+  return words.filter((w) => toks.some((t) => relHit(w, t))).length / words.length;
+};
+// A search made mostly of common words (a quote, "who are you who do you work for") can't be judged by its words: no check
+const relJudgeable = (q) => { const t = relToks(q); return t.length > 0 && relWords(q).length * 2 >= t.length; };
+const related = (words, ident, text, engines, pos) => matchShare(words, text) > 0 || engines >= 2 || (ident && pos < 3);
+// Second look before a result is folded: words the related results share (in 15%+ of them, at least 3; one also in
+// 2+ of their titles) are the topic of this search ("tracking", "package" for a UPS number; "attention", "encoder"
+// for an arXiv id; "football", "pittsburgh" for steelers on Science). A result with 2+ of them stays: it uses other
+// words for the same thing. Built from this page's own results each time: nothing stored, nothing to maintain.
+const TOPIC_STOP = new Set("that this your with from have more about what when where which their there they them will been were into also just like only some than then these those other such most many much number word words meaning definition best free online official home page site http https html".split(" "));
+const topicToks = (t) => relToks(t).filter((w) => w.length >= 4 && /\p{L}/u.test(w) && !TOPIC_STOP.has(w));
+const topicOf = (rel, words) => {
+  const df = new Map(), dt = new Map();
+  for (const r of rel) {
+    for (const t of new Set(topicToks(`${r.title} ${r.snippet || ""}`))) df.set(t, (df.get(t) || 0) + 1);
+    for (const t of new Set(topicToks(r.title))) dt.set(t, (dt.get(t) || 0) + 1);
+  }
+  const need = Math.max(3, Math.ceil(rel.length * 0.15));
+  const own = (t) => words.some((w) => relHit(w, t));
+  const topic = new Set([...df].filter(([t, n]) => n >= need && !own(t)).map(([t]) => t));
+  const titled = new Set([...dt].filter(([t, n]) => n >= 2 && topic.has(t)).map(([t]) => t));
+  return (r) => { const hits = [...new Set(topicToks(`${r.title} ${r.snippet || ""}`))].filter((t) => topic.has(t)); return hits.length >= 2 && hits.some((t) => titled.has(t)); };
+};
+
 // ===== Answer card, local part (no network): math, units incl. cooking, tip / percent, date math, patterns =====
 // answer(q, now) -> null, or { kind, label, value | title + href, detail, copy, swatch? }. Pure: the page draws it in
 // the same pass that starts the search, so it never arrives late and needs no reserved space.
@@ -2812,7 +2849,7 @@ const featuredSnippet = (q, results) => {
   return null;
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippet };
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, related, topicOf, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippet };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -2849,6 +2886,22 @@ window.fetch = async (input, init) => {
 };
 // One look for everything the plugin adds: it enters with degoog's own result fade (once, not again when
 // re-attached after a redraw), and lines that sit above results start exactly where the results' text starts
+// Browser history: degoog's endless scroll rewrites the address with &loaded=2, 3, … as pages load, and Firefox-
+// based browsers (Zen) record each rewrite as another history entry for the same search. Same search -> the address
+// stays as it is; history.state still carries the page count, which back/forward restore from.
+try {
+  const rs = history.replaceState.bind(history);
+  history.replaceState = function (st, t, url) {
+    try {
+      if (url != null) {
+        const n = new URL(url, location.href), c = new URL(location.href);
+        const strip = (u) => { const p = new URLSearchParams(u.search); p.delete("loaded"); return `${u.pathname}?${p}`; };
+        if (n.origin === c.origin && strip(n) === strip(c)) return rs(st, t);
+      }
+    } catch {}
+    return rs(st, t, url);
+  };
+} catch {}
 const fadeIn = (e) => { e.classList.add("ct-in"); e.addEventListener("animationend", () => e.classList.remove("ct-in"), { once: true }); return e; };
 // The tab row ends where the search bar ends (Tools sits under the bar's → button, in the same column as results)
 const tabsEdge = () => {
@@ -2939,36 +2992,27 @@ const cleanTitle = (raw, href) => {
   }
 };
 
-// Adult results by relevance (user's rule, 2026-11-23: anything may show if it's really about the search; no one
-// else's filter). Web: shown when the search asks for that kind of thing, or when the result is about the search
-// itself (every word of the search in its title or address). Specialised tabs (News, Science, Forums, Images,
-// Videos) are meant to be about one kind of thing, so there they show only when the search asks for it.
-const ADULT_HOST = /(porn|xvideos|xnxx|xhamster|redtube|youporn|spankbang|eporner|onlyfans|fansly|chaturbate|stripchat|camsoda|bongacams|livejasmin|rule34|hentai|motherless|txxx|brazzers|bangbros|realitykings|erome|thothub|fapello|nudostar|xxx)|(^|[.-])(sex|nsfw|nudes?|escorts?)([.-]|$)/i;
-const ADULT_TEXT = /\b(xxx|nsfw|hentai|milfs?|blowjobs?|cumshots?|creampies?|gangbangs?|deepthroat|(?:free|hd|amateur) porn|porn (?:videos?|clips?|pics?|tube|stars?)|sex (?:videos?|tapes?|cams?|chat)|camgirls?|onlyfans leaks?|nudes? leak(?:ed|s)?)\b/i;
-const WANTS_ADULT = /\b(porn\w*|sex\w*|nude\w*|naked|nsfw|xxx|hentai|onlyfans|erotic\w*|milfs?|boobs?|tits?|pussy|dick|cock|fap\w*|r34|rule ?34|lewd)\b/i;
-let href = "", wantsAdult = false, webTab = true, wantsDict = true, qWords = [];
+let href = "", webTab = true, wantsDict = true, qWords = [], qIdent = false;
 // Dictionary pages only when the search is about a word (Bing adds them for words like "under" or "fix")
 const DICT = /(^|\.)(merriam-webster\.com|thefreedictionary\.com|dictionary\.cambridge\.org|dictionary\.com|collinsdictionary\.com|oxfordlearnersdictionaries\.com|vocabulary\.com|wordreference\.com|yourdictionary\.com|wiktionary\.org|urbandictionary\.com)$/i;
 const readQuery = () => {
   if (location.href === href) return;
   href = location.href;
-  try { wantsAdult = WANTS_ADULT.test(new URL(href).searchParams.get("q") || ""); } catch { wantsAdult = false; }
+  try { qIdent = CT.relIdent(new URL(href).searchParams.get("q") || ""); } catch { qIdent = false; }
   try { webTab = !new URL(href).searchParams.get("type"); } catch { webTab = true; }
-  try { qWords = [...new Set((new URL(href).searchParams.get("q") || "").toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 3 && !/^(?:the|and|for|with|from|what|how|who|why|when|where|this|that|are|was|you|your)$/.test(w)))]; } catch { qWords = []; }
+  try { qWords = CT.relWords(new URL(href).searchParams.get("q") || ""); } catch { qWords = []; }
   try {
     const q = (new URL(href).searchParams.get("q") || "").trim();
     wantsDict = q.split(/\s+/).length <= 2 || /\b(define|definition|meaning|means?|synonyms?|antonyms?|pronounc\w*|spell\w*|dictionary|word|etymology|slang)\b/i.test(q);
   } catch { wantsDict = true; }
 };
-const aboutSearch = (host, text) => { if (!qWords.length) return false; const t = `${host} ${text}`.toLowerCase(); return qWords.every((w) => t.includes(w)); };
-const adult = (host, text) => !wantsAdult && (ADULT_HOST.test(host) || ADULT_TEXT.test(text)) && !(webTab && aboutSearch(host, text));
-// Results the page never shows: adult ones the search didn't ask for, dictionary pages for non-word searches
+// Results the page never shows: dictionary pages for non-word searches (Bing adds them for words like "under")
 const junk = (el) => {
   const a = el.querySelector("a.result-title");
   if (!a) return false;
   let h = "";
   try { h = new URL(a.href).hostname; } catch {}
-  return adult(h, a.textContent || "") || (!wantsDict && DICT.test(h.replace(/^www\./, "")));
+  return !wantsDict && DICT.test(h.replace(/^www\./, ""));
 };
 
 // ===== List pass (Web tab): dedupe -> site prefs -> 2 per site with folds, planned by core.js before paint =====
@@ -3026,10 +3070,57 @@ const tabPass = () => {
     const t = (a.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
     if (TP.titles.has(`${h}|${t}`)) { el.style.display = "none"; el.dataset.ctDup = "1"; continue; }
     TP.titles.add(`${h}|${t}`);
+    // Off-kind for this tab, or about something else entirely (no word of the search anywhere in it): moves down
     if (CT.tabLow(tab, h, a.textContent, TP.seen)) low.push(el);
   }
   const last = fresh[fresh.length - 1];
   if (low.length && low.length < fresh.length) { let at = last; for (const el of low) { if (el !== at) at.after(el); at = el; } }
+};
+// Relevance, one rule for every topic and tab (core related): a result that shows no sign of being about the
+// search (none of its words, one engine only, not an identifier lookup's top 3) goes to the end of the batch it came
+// in, folded under "N unrelated results ⌄" (one tap shows them). Decided before paint; nothing is filtered by topic.
+const relPlanned = new WeakSet();
+let RP = { key: "", n: 0, rel: [] };
+const relPass = () => {
+  const list = document.getElementById("results-list");
+  if (!list) return;
+  const fresh = [...list.querySelectorAll(":scope > .result-item")].filter((el) => !relPlanned.has(el));
+  if (!fresh.length) return;
+  const key = searchId(location.href);
+  if (RP.key !== key) RP = { key, n: 0, rel: [] };
+  // Words of the corrected search too, when degoog searched a typo fix ("Showing results for …")
+  const words = [...new Set([...qWords, ...CT.relWords(document.querySelector("#ct-fix a")?.textContent || "")])];
+  let q0 = "";
+  try { q0 = new URL(location.href).searchParams.get("q") || ""; } catch {}
+  if (!CT.relJudgeable(q0)) { fresh.forEach((el) => relPlanned.add(el)); return; }
+  let out = [];
+  for (const el of fresh) {
+    relPlanned.add(el);
+    if (el.style.display === "none" || el.classList.contains("ct-grouped")) continue;
+    const pos = RP.n++;
+    const a = el.querySelector("a.result-title");
+    if (!a) continue;
+    const r = { title: a.textContent || "", snippet: el.querySelector(".result-snippet")?.textContent || "" };
+    const anchor = el.nextElementSibling?.classList.contains("ct-fold"); // a fold's anchor stays put
+    if (anchor || CT.related(words, qIdent, `${el.dataset.resultUrl || a.href} ${r.title} ${r.snippet}`, el.querySelectorAll(".result-engine-tag").length, pos)) RP.rel.push(r);
+    else out.push([el, r]);
+  }
+  // Second look: results that use other words for the same topic as the related ones stay (core topicOf)
+  if (out.length) { const same = CT.topicOf(RP.rel, words); out = out.filter(([, r]) => !same(r)); }
+  out = out.map(([el]) => el);
+  const shown = fresh.filter((el) => !out.includes(el) && el.style.display !== "none" && !el.classList.contains("ct-grouped"));
+  if (!out.length || !shown.length) return;
+  for (const el of out) { el.style.display = "none"; el.dataset.ctUnrel = "1"; }
+  const row = mk("div", "ct-fold");
+  const b = mk("button", "ct-fold-b", `${out.length} unrelated result${out.length > 1 ? "s" : ""}`);
+  b.type = "button";
+  b.setAttribute("aria-expanded", "false");
+  b.append(mk("span", "ct-chev", "⌄"));
+  row.append(b);
+  const last = fresh[fresh.length - 1];
+  last.after(row);
+  row.after(...out);
+  b.addEventListener("click", () => { for (const el of out) { el.style.display = ""; delete el.dataset.ctUnrel; fadeIn(el); } row.remove(); }, { once: true });
 };
 const listPass = () => {
   if (!webTab) return;
@@ -3090,7 +3181,7 @@ const foldPass = () => {
   LP.pend = [];
   for (const f of pend) {
     const els = f.els.filter((el) => el.isConnected && !el.classList.contains("ct-grouped"));
-    if (!els.length || !f.after.isConnected || f.after.classList.contains("ct-grouped")) continue;
+    if (!els.length || !f.after.isConnected || f.after.classList.contains("ct-grouped") || f.after.dataset.ctUnrel) continue;
     const row = mk("div", "ct-fold");
     const b = mk("button", "ct-fold-b", `${els.length} more from ${f.site}`);
     b.type = "button";
@@ -3257,7 +3348,6 @@ const card = (el, isImage) => {
   const raw = (src && src.textContent || "").trim();
   const host = raw.toLowerCase().replace(/^www\./, "");
   const text = t && t.textContent || "";
-  if (adult(host, text)) { el.style.display = "none"; return; }
   if (t && !t.dataset.ctTidy) { t.dataset.ctTidy = "1"; const x = CT.tidyText(text.replace(/\s+/g, " ").trim()); if (x !== text.trim()) t.textContent = x; }
   if (!isImage) return;
   if (aiImg(host)) { el.style.display = "none"; el.dataset.ctAi = "1"; return; }
@@ -4579,6 +4669,7 @@ const init = () => {
   safe("answer", ansPass);
   safe("list", listPass);
   safe("tabs", tabPass);
+  safe("rel", relPass);
   safe("scan", () => scan(document.body));
   safe("skeleton", () => skel(document.body));
   safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools);
@@ -4591,6 +4682,7 @@ const init = () => {
     safe("answer", ansPass);
     safe("list", listPass);
     safe("tabs", tabPass);
+    safe("rel", relPass);
     for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { safe("scan", () => scan(n)); safe("skeleton", () => skel(n)); safe("usage", () => noUsage(n)); }
     safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("card", glance);
     safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass);
@@ -5662,7 +5754,7 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
   }
 
   // Touchy searches still get real results (user's rule: no one else's filter). Counts only, never the results.
-  const touchy = ["how to tie a noose", "why does no one love me", "how many ways are there to skin a cat"];
+  const touchy = ["how to tie a noose", "how to pick a lock", "how many ways are there to skin a cat"];
   const counts = [];
   let blocked = "";
   for (const q of touchy) {
