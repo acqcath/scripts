@@ -356,6 +356,32 @@ export const wdFor = async (fact, s, s2) => {
   return v;
 };
 
+// ===== CMU course data (ScottyLabs' public CMU Courses API, no login) =====
+// One course at a time, when a course number is searched; kept in this plugin's folder until the next semester's
+// course evaluations can exist (boundaries Jan 1 / Jun 1 / Sep 1), so most searches cost nothing.
+const CMU_API = "https://course.apis.scottylabs.org";
+const semStart = (now) => { const d = new Date(now), y = d.getUTCFullYear(); return [Date.UTC(y, 8, 1), Date.UTC(y, 5, 1), Date.UTC(y, 0, 1), Date.UTC(y - 1, 8, 1)].find((t) => t <= now); };
+const _cmu = new Map();
+export const cmuFor = async (id, now = Date.now()) => {
+  if (!/^\d{2}-\d{3}$/.test(id)) return null;
+  const hit = _cmu.get(id);
+  if (hit && hit.t >= semStart(now) && (hit.v || now - hit.t < 86400000)) return hit.v;
+  const file = `${DIR}/cmu-${id}.json`;
+  try { const j = JSON.parse(fs.readFileSync(file, "utf8")); if (j && j.t >= semStart(now) && j.v) { _cmu.set(id, j); return j.v; } } catch {}
+  const get = async (path) => { const r = await net(`${CMU_API}${path}`, { timeout: 4000, max: 3_000_000, accept: "application/json" }); if (r.status !== 200) return undefined; try { return JSON.parse(r.text); } catch { return undefined; } };
+  const [c, f] = await Promise.all([get(`/course/${id}`), get(`/fces?courseID=${id}`)]);
+  const course = c && (c.course || c);
+  const fces = Array.isArray(f) ? f : f && Array.isArray(f.fces) ? f.fces : [];
+  let v = null;
+  if (course && typeof course === "object" && (course.name || course.title)) {
+    v = { course: { name: String(course.name || course.title), units: course.units != null ? String(course.units) : "", prereqs: String(course.prereqString || course.prereqs || "") }, fces: fces.slice(0, 400).map((r) => ({ year: r.year, semester: r.semester, instructor: r.instructor, numRespondents: r.numRespondents, responseRate: r.responseRate, hrsPerWeek: r.hrsPerWeek, rating: Array.isArray(r.rating) ? r.rating.slice(0, 10) : [], location: r.location })) };
+  }
+  const e = { t: now, v };
+  _cmu.set(id, e);
+  if (v) try { fs.writeFileSync(file, JSON.stringify(e)); } catch {}
+  return v;
+};
+
 // ===== Will ai-summary answer? (so the page reserves its spot only when the summary is sure to come) =====
 // Mirrors its slot trigger(): a model is set, it isn't switched off, and "only for questions" (a search ending in
 // "?") if that's on. Read from degoog's plugin-settings.json; only these two yes/no values leave the server.
@@ -886,6 +912,14 @@ export const routes = [
       const u = new URL(req.url).searchParams;
       const d = await wdFor(u.get("f") || "", u.get("s") || "", u.get("s2") || "");
       return new Response(JSON.stringify({ d }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+    },
+  },
+  {
+    method: "get",
+    path: "/cmu",
+    async handler(req) {
+      const id = (new URL(req.url).searchParams.get("id") || "").replace(/^(\d{2})(\d{3})$/, "$1-$2");
+      return new Response(JSON.stringify({ c: await cmuFor(id) }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
     },
   },
   {
