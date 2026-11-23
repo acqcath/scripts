@@ -1,5 +1,7 @@
 # clean-titles v50: build notes (branch v50-wip)
 
+**Read PLAN.md first: its work order overrides the "Next" section below. M1 (morning preview) comes first.**
+
 The spec is the user's handoff text (they paste it into each new chat). These notes cover only what has been decided or verified since then.
 
 ## Decisions (made with the user)
