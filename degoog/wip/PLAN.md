@@ -1,5 +1,7 @@
 # v50 work order (overrides "Next" in HANDOFF.md)
 
+Pacing: see BUDGET.md (hourly fires, real caps, a log of every run).
+
 The user checks a preview build on Tuesday morning before deeper work. Everything is ordered so nothing is built twice and each step unblocks the next.
 
 ## How to work (cuts wasted effort)
