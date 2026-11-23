@@ -493,6 +493,7 @@ const earlyStart = () => {
   const dl = CT.deeplUrl(q);
   if (dl) { location.replace(dl); return; }
   const from = (u.searchParams.get("ct_from") || "").trim();
+  if (u.searchParams.get("type") === "images" && !q.startsWith("!")) visualSeen.add(qHash(q));
   ask("fix", key, { q, ...(u.searchParams.has("ct_keep") ? { keep: 1 } : {}), ...(u.searchParams.has("ct_acc") && from ? { acc: from } : {}) });
   if (webTab && Number(u.searchParams.get("page") || 1) <= 1 && !q.startsWith("!")) {
     ask("qs", key, { q });
@@ -509,6 +510,14 @@ const earlyStart = () => {
     if (!eq && !wq && !cq && /^[a-z][a-z .'&-]*$/i.test(q) && q.split(/\s+/).length <= 6 && !CT.answer(q, Date.now(), { fx: FX })) ask("sports", key, { q });
     // Knowledge panel: only the name is sent (this server asks Wikidata/Wikipedia); shown only if the results agree
     if (!eq && !wq && !cq && kpWanted(q)) ask("kp", key, { q: CT.kpQuery(q) });
+    // Images row (spec 12): the image search starts now, in parallel, for clearly visual searches: picture words, or
+    // a search you opened the Images tab for in the last 12 h (degoog still has that image search cached)
+    if (!shaped(q) && (CT.visualQ(q) || visualSeen.has(qHash(q)))) {
+      const e = { key, data: undefined };
+      early.set("img", e);
+      fetch(`/api/search?q=${encodeURIComponent(q)}&type=images`).then((x) => (x.ok ? x.json() : null))
+        .then((j) => { e.data = j && Array.isArray(j.results) ? j : null; }, () => { e.data = null; });
+    }
     // Top stories: the News search starts now, in parallel, only for a search that looked like news last time
     if (SHOW.news && !shaped(q) && newsy.has(qHash(q))) {
       const e = { key, data: undefined };
@@ -988,9 +997,9 @@ const hot = (rows) => new Set(rows.filter((r) => r.w && r.w.exact && Date.now() 
 // the same time degoog keeps engine answers. Only these start a News search early on the next visit.
 const NEWSY_KEY = "ct-newsy";
 const qHash = (q) => { let h = 2166136261; for (const c of String(q).trim().toLowerCase()) h = Math.imul(h ^ c.codePointAt(0), 16777619); return (h >>> 0).toString(36); };
-const newsy = (() => {
+const hashStore = (KEY) => {
   let m = {};
-  try { const c = JSON.parse(localStorage.getItem(NEWSY_KEY) || "{}"); if (c && typeof c === "object") m = c; } catch {}
+  try { const c = JSON.parse(localStorage.getItem(KEY) || "{}"); if (c && typeof c === "object") m = c; } catch {}
   const now = Date.now();
   for (const k of Object.keys(m)) if (!(now - m[k] < 432e5)) delete m[k];
   return {
@@ -998,10 +1007,13 @@ const newsy = (() => {
     add: (h) => {
       m[h] = Date.now();
       const ks = Object.keys(m); if (ks.length > 300) ks.sort((a, b) => m[a] - m[b]).slice(0, ks.length - 300).forEach((k) => delete m[k]);
-      try { localStorage.setItem(NEWSY_KEY, JSON.stringify(m)); } catch {}
+      try { localStorage.setItem(KEY, JSON.stringify(m)); } catch {}
     },
   };
-})();
+};
+const newsy = hashStore(NEWSY_KEY);
+// Searches you opened the Images tab for (same hash, 12 h = degoog's cache, so their image search is still cached)
+const visualSeen = hashStore("ct-visual");
 const _info = new WeakMap();
 const info = (el) => {
   if (_info.has(el)) return _info.get(el);
@@ -1108,7 +1120,7 @@ const groups = () => {
   if (G.key !== key) {
     list.querySelectorAll(".ct-grp, .ct-sl").forEach((x) => x.remove());
     list.querySelectorAll(".ct-grouped").forEach((x) => x.classList.remove("ct-grouped"));
-    G = { key, sl: null, slTop: null, forum: null, video: null, news: false };
+    G = { key, sl: null, slTop: null, forum: null, video: null, news: false, img: false };
   }
   for (const k of ["forum", "video", "sl"]) if (G[k] && !G[k].isConnected) G[k] = null; // degoog redrew the list
   const rows = [...list.querySelectorAll(".result-item")].filter((x) => x.style.display !== "none" || x.dataset.ctCap).map(info).filter(Boolean);
@@ -1154,6 +1166,29 @@ const groups = () => {
   if (SHOW.forum) box("forum", (r) => !!r.forum, 4, forumRow, "Discussions and forums", "forums", "More discussions", false);
   if (SHOW.video) box("video", (r) => r.video, 8, videoCard, "Videos", "videos", "More videos", true);
 
+  // Images row: drawn after the first result in this same pass, only if the image search is already in hand
+  if (!G.img) {
+    G.img = true;
+    const j = ready("img", key);
+    const t = j && [...list.querySelectorAll(".result-item")].find(shown);
+    const pics = j ? (j.results || []).filter((x) => x && x.thumbnail && x.url && !aiImg((() => { try { return new URL(x.url).hostname.replace(/^www\./, ""); } catch { return ""; } })())).slice(0, 12) : [];
+    if (t && pics.length >= 4) {
+      const s = section("ct-imgs", "Images");
+      const [wrap, row] = scroller();
+      for (const x of pics) {
+        const a = mk("a", "ct-im"); a.href = x.url; a.rel = "noopener";
+        a.title = String(x.title || "");
+        const i = mk("img"); i.alt = String(x.title || ""); i.decoding = "async"; i.loading = "lazy";
+        i.onload = () => i.classList.add("ct-on"); i.onerror = () => { i.style.visibility = "hidden"; };
+        i.src = x.thumbnail;
+        a.append(i); row.append(a);
+      }
+      s.append(wrap);
+      const m = moreBtn("More images", "images"); if (m) s.append(m);
+      t.after(s);
+      wrap.upd();
+    }
+  }
   // Top stories: only when the results look like news (hot). Drawn in this same pass, before paint, and only if the
   // News answer started at page load is already in hand; otherwise nothing is added and the search is remembered,
   // so the next visit starts the News search early. Fresh stories only, one per outlet, none already shown.

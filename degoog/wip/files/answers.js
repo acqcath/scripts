@@ -640,6 +640,12 @@ export const kpMatch = (title, urls) => {
 // Phone line: up to 3 facts, short ("Born Dec 13, 1989 · Height 330 m (1,083 ft)"); the page drops what doesn't fit
 export const kpLine = (facts) => (facts || []).slice(0, 4).map((f) => `${f.k} ${f.v}`);
 
+// ----- Images row (spec 12): searches that clearly want pictures, from their words -----
+const VISUAL = /\b(?:pictures?|photos?|photographs?|images?|pics?|wallpapers?|logos?|aesthetic|tattoos?|outfits?|hairstyles?|haircuts?|drawings?|paintings?|memes?|gifs?|clipart|inspo|nail designs?|room ideas|decor ideas|cake ideas|what does .+ look like)\b/i;
+// …but not tasks about image files ("image processing python", "resize photo", "logo generator")
+const NOT_VISUAL = /\b(?:processing|python|javascript|java|css|html|api|upload|resize|crop|compress|convert|converter|format|size|editor|edit|search|generator|ai|dataset|recognition|classification|docker|file|files|link|url|tag|src|alt text|background remover|remove background|to pdf|to text|ocr)\b/i;
+export const visualQ = (q) => { const s = String(q || "").trim(); return !!s && !s.startsWith("!") && s.length <= 100 && VISUAL.test(s) && !NOT_VISUAL.test(s); };
+
 // ----- !deepl (spec 14): "!deepl text" or "!deepl de text" -> DeepL's translator with that text (target English
 // unless a DeepL target code comes first). URL form from knowledge (#source/target/text), not live-checked.
 const DEEPL_TO = new Set(["ar", "bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fr", "he", "hu", "id", "it", "ja", "ko", "lt", "lv", "nb", "nl", "pl", "pt", "ro", "ru", "sk", "sl", "sv", "th", "tr", "uk", "vi", "zh"]);

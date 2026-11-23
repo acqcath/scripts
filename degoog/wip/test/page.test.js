@@ -33,6 +33,14 @@ const run = async (q, opts = {}) => {
       await new Promise((r) => setTimeout(r, opts.news.delay || 0));
       return new win.Response(JSON.stringify({ results: nr.results }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
+    // The Images search (images row): opts.images = {delay}, answered with the recorded image results for this search
+    if (/^\/api\/search\?.*type=images/.test(String(url))) {
+      if (opts.imgCalls) opts.imgCalls.push(String(url));
+      const ir = opts.images && REC.searches.find((x) => x.type === "images" && q.includes(x.q));
+      if (!ir) return new win.Response("{}", { status: 404 });
+      await new Promise((r) => setTimeout(r, opts.images.delay || 0));
+      return new win.Response(JSON.stringify({ results: ir.results }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
     const query = init && init.body ? JSON.parse(init.body).query : "";
     const m = /^!cleantitles bridge (\w+)/.exec(query);
     // Another command (a card the page asks for, like "!weather pittsburgh"): opts.command = {html, delay}
@@ -512,4 +520,26 @@ test("page: 'Open archived copy' in each result's menu asks the server only on t
   expect(c.params.get("pw")).toBe("1");
   expect(opened).toEqual(["https://archive.ph/AbC12"]);
   expect(r.errors).toEqual([]);
+});
+
+test("page: images row for a search you opened the Images tab for (real 'golden gate bridge' pictures), drawn with the results or not at all", async () => {
+  const qh = (q) => { let h = 2166136261; for (const c of q) h = Math.imul(h ^ c.codePointAt(0), 16777619); return (h >>> 0).toString(36); };
+  const store = { "ct-visual": JSON.stringify({ [qh("golden gate bridge")]: Date.now() }) };
+  const imgCalls = [];
+  const a = await run("golden gate bridge", { engines: 40, store, imgCalls, images: { delay: 5 } });
+  expect(imgCalls.length).toBe(1);
+  const sec = a.document.querySelector(".ct-imgs");
+  expect(sec).not.toBeNull();
+  expect(sec.querySelectorAll(".ct-im").length).toBe(12);
+  expect(sec.previousElementSibling.classList.contains("result-item")).toBe(true); // after the first result
+  expect(a.errors).toEqual([]);
+  // Late: dropped
+  const b = await run("golden gate bridge", { engines: 0, store, images: { delay: 60 } });
+  await new Promise((r) => setTimeout(r, 80));
+  b.fire([]);
+  expect(b.document.querySelector(".ct-imgs")).toBeNull();
+  // Not visual (no picture words, never opened the Images tab): no image search at all
+  const c = [];
+  await run("golden gate bridge", { engines: 0, imgCalls: c, images: { delay: 0 } });
+  expect(c.length).toBe(0);
 });
