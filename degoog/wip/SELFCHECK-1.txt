@@ -1,0 +1,3 @@
+User's first install-preview.ps1 self-check (2026-11-23 ~14:45 UTC): all PASS except
+Facts (Wikidata) population FAIL 312 ms | Sports scores (ESPN) + logos FAIL 164 ms | Knowledge panel FAIL 402 ms | Quick view (recipe JSON-LD) FAIL 77 ms
+PASS: page/server code, sites list, AI cache patch, bridge 12 ms, ECB (2026-11-20), endoflife x2, Wikidata height, CMU, other meanings, archives, typo fix, PAA, AI-image list (1114 sites).
