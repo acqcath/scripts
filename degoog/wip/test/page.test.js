@@ -396,3 +396,14 @@ test("page: endoflife.date answer drawn with the results when in hand; dropped w
   expect(b.document.querySelector(".ct-ans")).toBeNull();
   expect(a.errors.concat(b.errors)).toEqual([]);
 });
+
+test("page: Wikidata fact drawn with the results when in hand (pittsburgh population)", async () => {
+  const calls = [];
+  const d = { label: "Pittsburgh", desc: "city in Pennsylvania", v: [{ amount: "+302971", asOf: "+2020-04-01T00:00:00Z" }] };
+  const a = await run("pittsburgh population", { engines: 40, calls, bridge: { wd: { data: { d }, delay: 5 } } });
+  const c = calls.find((x) => x.route === "wd");
+  expect([c.params.get("f"), c.params.get("s")]).toEqual(["population", "pittsburgh"]);
+  expect(a.document.querySelector("#at-a-glance .ct-ans .ct-ans-value").textContent).toBe("302,971");
+  expect(a.document.querySelector("#at-a-glance .ct-ans .ct-ans-l").textContent).toBe("Pittsburgh · population · Wikidata");
+  expect(a.errors).toEqual([]);
+});

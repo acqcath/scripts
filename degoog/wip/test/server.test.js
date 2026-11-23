@@ -228,3 +228,25 @@ test("server: endoflife.date cycles from either API shape, RAM-cached, failures 
   expect(await srv.eolFor("../etc")).toBe(null);
   expect(calls.length).toBe(2);
 });
+
+test("server: Wikidata lookup sends only the subject, picks the current preferred claim, caches in RAM", async () => {
+  const srv = await import("../files/index.js");
+  const claim = (amount, rank, at, ended) => ({ rank, mainsnak: { snaktype: "value", datavalue: { value: { amount, unit: "1" } } }, qualifiers: { ...(at ? { P585: [{ datavalue: { value: { time: at } } }] } : {}), ...(ended ? { P582: [{}] } : {}) } });
+  expect(srv.wdBest([claim("+1", "normal", "+2010-01-01T00:00:00Z"), claim("+2", "normal", "+2020-04-01T00:00:00Z"), claim("+3", "deprecated", "+2023-01-01T00:00:00Z")])[0].mainsnak.datavalue.value.amount).toBe("+2");
+  const urls = [];
+  srv.default.init({ id: "clean-titles", fetch: async (u, init) => {
+    urls.push(u);
+    expect(init.headers["User-Agent"]).toContain("degoog");
+    const p = new URL(u).searchParams;
+    if (p.get("action") === "wbsearchentities") return new Response(JSON.stringify({ search: [{ id: "Q1342", label: "Pittsburgh", description: "city in Pennsylvania" }] }));
+    if (p.get("action") === "wbgetclaims") return new Response(JSON.stringify({ claims: { P1082: [claim("+300000", "normal", "+2010-04-01T00:00:00Z"), claim("+302971", "preferred", "+2020-04-01T00:00:00Z")] } }));
+    return new Response("{}", { status: 500 });
+  } });
+  const d = await srv.wdFor("population", "pittsburgh");
+  expect(d).toEqual({ label: "Pittsburgh", desc: "city in Pennsylvania", v: [{ amount: "+302971", unit: "1", asOf: "+2020-04-01T00:00:00Z" }] });
+  expect(urls.length).toBe(2);
+  expect(urls.every((u) => !u.includes("population"))).toBe(true); // the search words aren't sent, only the subject
+  await srv.wdFor("population", "pittsburgh");
+  expect(urls.length).toBe(2);
+  expect(await srv.wdFor("shoe size", "pittsburgh")).toBe(null);
+});

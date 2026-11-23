@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import { createHash } from "node:crypto";
 
 const INFO_HTML =
   `<div class="command-result"><p>Tidies result titles and loads sharper news/video thumbnails on every search page.</p></div>`;
@@ -158,10 +159,10 @@ export const _sitesIdle = () => _sitesQ;
 
 // ===== Shared fetch helper: every outside request goes through here (timeout, size cap, never throws) =====
 // -> {status, text, etag} or {status: 0} on any failure. 304 when the If-None-Match tag still matches.
-export const net = async (url, { etag = "", timeout = 10000, max = 2_000_000, accept = "*/*" } = {}) => {
+export const net = async (url, { etag = "", timeout = 10000, max = 2_000_000, accept = "*/*", headers = {} } = {}) => {
   try {
     const f = _fetch || fetch;
-    const r = await f(url, { headers: { Accept: accept, ...(etag ? { "If-None-Match": etag } : {}) }, signal: AbortSignal.timeout(timeout), redirect: "follow" });
+    const r = await f(url, { headers: { Accept: accept, ...headers, ...(etag ? { "If-None-Match": etag } : {}) }, signal: AbortSignal.timeout(timeout), redirect: "follow" });
     if (r.status === 304) return { status: 304, text: "", etag };
     if (!r.ok) return { status: r.status, text: "", etag: "" };
     const text = await r.text();
@@ -292,6 +293,66 @@ export const eolFor = async (slug) => {
   }
   // A failure is remembered for 10 minutes only, so a short outage doesn't hide the answer for half a day
   _eol.set(slug, { t: v ? Date.now() : Date.now() - TTL + 600000, v });
+  return v;
+};
+
+// ===== Wikidata facts for the answer card =====
+// The page sends the fact asked (one of WD) and the subject's name, never the whole search. Subject -> top item
+// (wbsearchentities), then only that property (wbgetclaims). RAM cache under a hashed key for TTL_MS.
+const WD = { height: "P2048", population: "P1082", born: "P569", age: "P569", died: "P570", founded: "P571", ceo: "P169", released: "P577", distance: "P625" };
+const WD_API = "https://www.wikidata.org/w/api.php";
+const WD_UA = { "User-Agent": "degoog-clean-titles/50 (self-hosted search; one lookup per search)" };
+const wdGet = async (params) => {
+  const r = await net(`${WD_API}?${new URLSearchParams({ ...params, format: "json" })}`, { timeout: 3000, max: 2_000_000, accept: "application/json", headers: WD_UA });
+  if (r.status !== 200) return null;
+  try { return JSON.parse(r.text); } catch { return null; }
+};
+const rankOrder = { preferred: 0, normal: 1 };
+// Claims -> best ones first: preferred rank, still current (no end time), newest "point in time"
+export const wdBest = (claims) => (Array.isArray(claims) ? claims : [])
+  .filter((c) => c && c.rank !== "deprecated" && c.mainsnak && c.mainsnak.snaktype === "value" && c.mainsnak.datavalue)
+  .map((c) => ({ c, r: rankOrder[c.rank] ?? 1, ended: !!(c.qualifiers && c.qualifiers.P582), at: (c.qualifiers && c.qualifiers.P585 && c.qualifiers.P585[0].datavalue && c.qualifiers.P585[0].datavalue.value.time) || "" }))
+  .sort((a, b) => a.r - b.r || a.ended - b.ended || (b.at > a.at ? 1 : b.at < a.at ? -1 : 0))
+  .map((x) => x.c);
+const wdValue = (c) => {
+  const v = c.mainsnak.datavalue.value;
+  if (v && typeof v === "object" && "amount" in v) return { amount: v.amount, unit: String(v.unit || "").split("/").pop(), asOf: c.qualifiers && c.qualifiers.P585 ? c.qualifiers.P585[0].datavalue.value.time : undefined };
+  if (v && typeof v === "object" && "time" in v) return { time: v.time, prec: v.precision };
+  if (v && typeof v === "object" && "latitude" in v) return { lat: v.latitude, lon: v.longitude };
+  if (v && typeof v === "object" && v["entity-type"] === "item") return { id: v.id };
+  return null;
+};
+const wdOne = async (name, prop) => {
+  const s = await wdGet({ action: "wbsearchentities", search: name, language: "en", uselang: "en", type: "item", limit: "1" });
+  const hit = s && Array.isArray(s.search) && s.search[0];
+  if (!hit || !hit.id) return null;
+  const props = prop === "P569" ? ["P569", "P570"] : [prop];
+  const got = await Promise.all(props.map((p) => wdGet({ action: "wbgetclaims", entity: hit.id, property: p })));
+  const vals = wdBest(got[0] && got[0].claims && got[0].claims[prop]).map(wdValue).filter(Boolean).slice(0, 1);
+  if (!vals.length) return null;
+  const out = { label: hit.label || name, desc: hit.description || "", v: vals };
+  if (props[1]) { const d = wdBest(got[1] && got[1].claims && got[1].claims.P570).map(wdValue).filter(Boolean)[0]; if (d && d.time) out.died = d.time; }
+  // CEO is another item: its name
+  if (vals[0].id) {
+    const e = await wdGet({ action: "wbgetentities", ids: vals[0].id, props: "labels", languages: "en" });
+    const l = e && e.entities && e.entities[vals[0].id] && e.entities[vals[0].id].labels && e.entities[vals[0].id].labels.en;
+    if (!l || !l.value) return null;
+    out.v = [{ label: l.value }];
+  }
+  return out;
+};
+const _wd = new Map();
+export const wdFor = async (fact, s, s2) => {
+  const prop = WD[fact];
+  s = String(s || "").trim().slice(0, 80); s2 = String(s2 || "").trim().slice(0, 80);
+  if (!prop || s.length < 2 || (fact === "distance" && s2.length < 2)) return null;
+  const key = createHash("sha256").update(`${fact}\n${s}\n${s2}`).digest("hex").slice(0, 24);
+  const hit = _wd.get(key);
+  if (hit && Date.now() - hit.t < TTL) return hit.v;
+  let v = await wdOne(s, prop);
+  if (v && fact === "distance") { const b = await wdOne(s2, prop); v = b ? { ...v, b } : null; }
+  if (_wd.size > 1000) _wd.clear();
+  _wd.set(key, { t: v ? Date.now() : Date.now() - TTL + 600000, v });
   return v;
 };
 
@@ -816,6 +877,15 @@ export const routes = [
       const sites = sitesFromLists(block, score);
       mirrorTo(sites);
       return new Response(JSON.stringify({ sites, auto: autoList().filter((d) => sites[d] === "lower"), seo: SEO_ON, ai: aiStatus(data), fx: readFx().rates ? { date: FX.date, rates: FX.rates } : null }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+    },
+  },
+  {
+    method: "get",
+    path: "/wd",
+    async handler(req) {
+      const u = new URL(req.url).searchParams;
+      const d = await wdFor(u.get("f") || "", u.get("s") || "", u.get("s2") || "");
+      return new Response(JSON.stringify({ d }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
     },
   },
   {

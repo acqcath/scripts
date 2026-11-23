@@ -490,6 +490,9 @@ const earlyStart = () => {
     // Versions / support (endoflife.date): only the product name is sent; drawn with the results if in hand by then
     const eq = CT.eolQuery(q);
     if (eq) ask("eol", key, { p: eq.slug });
+    // Facts (Wikidata): only the fact asked and the subject's name are sent
+    const wq = !eq && !CT.answer(q, Date.now(), { fx: FX }) && CT.wdQuery(q);
+    if (wq) ask("wd", key, { f: wq.fact, s: wq.s, ...(wq.s2 ? { s2: wq.s2 } : {}) });
     // Top stories: the News search starts now, in parallel, only for a search that looked like news last time
     if (SHOW.news && newsy.has(qHash(q))) {
       const e = { key, data: undefined };
@@ -1155,6 +1158,7 @@ const TYPE_WORDS = /\b(?:pdf|paper|reddit|docs|documentation|recipe|github|lab|l
 const aiWanted = (q) => {
   if (!AI_ON.on || !q || q.startsWith("!") || (AI_ON.qmark && !q.trim().endsWith("?"))) return false;
   if (!AI_WORDS.test(q) || TYPE_WORDS.test(q) || /\bbest buy\b/i.test(q)) return false;
+  if (CT.eolQuery(q) || CT.wdQuery(q)) return false; // a fact or version answer comes first
   try { if (CT.namedSites(q, PSL()).size) return false; } catch {}
   return true;
 };
@@ -1237,8 +1241,11 @@ const ansPass = () => {
   // Network answers (endoflife.date...): only in the pass that draws the results, and only if already in hand;
   // later than that they're dropped for this page (the server keeps them for the next search)
   if (!ansVal && !aiVal && drawnFor !== key && document.querySelector("#results-list .result-item")) {
-    const j = ready("eol", key);
-    if (j && j.cycles) { let q = ""; try { q = new URL(key).searchParams.get("q") || ""; } catch {} ansVal = CT.eolAnswer(CT.eolQuery(q), j.cycles); }
+    let q = "";
+    try { q = new URL(key).searchParams.get("q") || ""; } catch {}
+    const j = ready("eol", key), w = ready("wd", key);
+    if (j && j.cycles) ansVal = CT.eolAnswer(CT.eolQuery(q), j.cycles);
+    else if (w && w.d) ansVal = CT.wdAnswer(CT.wdQuery(q), w.d);
   }
   aiPass(g, key);
   if (!ansVal || g.querySelector(".ct-ans")) return;
