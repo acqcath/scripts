@@ -695,8 +695,10 @@ const dist = (a, b) => {
 
 // Bing's suggestions for a search (cached a day)
 const _sug = new Map();
-// Bing answering with nothing at all (204, blocked, error) means it's down for this server: skip it for an hour
-let bingDownUntil = 0;
+// Bing answering with nothing at all (204, blocked, error) means it's down for this server: skip it for a while,
+// backing off exponentially from 1 minute (1, 2, 4 … capped at 1 hour), reset by the first good answer (spec 15)
+let bingDownUntil = 0, bingDowns = 0;
+export const bingBackoff = (n) => Math.min(60000 * 2 ** Math.max(0, n - 1), 3600000);
 const suggestions = async (q) => {
   const key = norm(q);
   if (!key) return [];
@@ -719,9 +721,9 @@ const suggestions = async (q) => {
         signal: AbortSignal.timeout(1500),
       });
       if (isBing && (!r.ok || r.status === 204)) bingBad++;
-      if (r.ok && r.status !== 204) { const j = JSON.parse(await r.text()); if (Array.isArray(j) && Array.isArray(j[1])) { s = j[1].filter((x) => typeof x === "string"); if (s.length) break got; } }
+      if (r.ok && r.status !== 204) { const j = JSON.parse(await r.text()); if (Array.isArray(j) && Array.isArray(j[1])) { if (isBing) bingDowns = 0; s = j[1].filter((x) => typeof x === "string"); if (s.length) break got; } }
     } catch { if (isBing) bingBad++; }
-    if (isBing && bingTries && bingBad === bingTries && bingTries >= 2) bingDownUntil = Date.now() + 3600000;
+    if (isBing && bingTries && bingBad === bingTries && bingTries >= 2 && Date.now() >= bingDownUntil) bingDownUntil = Date.now() + bingBackoff(++bingDowns);
   }
   if (s.length) { if (_sug.size > 2000) _sug.clear(); _sug.set(key, { s, t: Date.now() }); }
   return s;

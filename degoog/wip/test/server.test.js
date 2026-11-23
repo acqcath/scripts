@@ -329,3 +329,8 @@ test("server: knowledge panel data: type from P31, facts per type with labels, a
   await srv.kpFor("Eiffel Tower");
   expect(urls.length).toBe(4);
 });
+
+test("Bing suggestions: exponential backoff from 1 minute, capped at 1 hour", async () => {
+  const srv = await import("../files/index.js");
+  expect([1, 2, 3, 4, 6, 7, 20].map(srv.bingBackoff)).toEqual([60000, 120000, 240000, 480000, 1920000, 3600000, 3600000]);
+});
