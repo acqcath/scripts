@@ -1,26 +1,17 @@
-# Run budget (each run reads this and logs to it; Claude in the main chat recalibrates the caps from the user's real usage)
+# Run budget (each run reads this and logs to it)
 
-## Caps (recalibrated 2026-11-23 05:58 UTC from the user's usage page; these override the run prompt)
-- Measured 05:45 -> 05:58 UTC (13 min; this run worked ~6 of them, the main chat ran too): session 69% -> 79%, weekly 42% -> 44%. That's ~0.77% session and ~0.15% weekly per minute, combined. The weekly figure has +-1% rounding, so plan on the worse end: ~0.18% weekly per work-minute.
-- ET = UTC-5 (EST, until 2027-03-14).
-- User's rule (2026-11-23 01:15 ET, live): "keep building, make the most of the credits, but I need at least 20% session credits during 10am-10pm ET; any other time I don't care."
-- Session windows are anchored by the user's "limit breaker" task (fires 7:32 AM, 12:32 PM, 5:32 PM ET = 12:32, 17:32, 22:32 UTC). The three windows that touch 10 AM-10 PM ET are DAY windows: A 7:32 AM-12:32 PM, B 12:32-5:32 PM, C 5:32-10:32 PM ET (12:32-17:32, 17:32-22:32, 22:32-03:32 UTC).
-- DAY window: runs together may log at most 100 work-minutes inside it (~0.77%/min -> ~77%, leaving >= 20% for the user). Count each run's minutes that fall inside the window (a night run spilling past 7:32 AM ET counts its spill). A run's limit = min(90, 100 - minutes already logged in the window); if that's < 10, exit at the gate.
-- NIGHT = everything else (10:32 PM-7:32 AM ET = 03:32-12:32 UTC): no per-window limit, use it all. Each run at most 90 work-minutes (fresh context), then end cleanly; the next hourly fire carries on. Being cut off by the session limit is expected and fine.
-- Weekly: the window resets Wednesday 12:00 PM ET (17:00 UTC). The user keeps 10% of the week (lowered from 20% on 2026-11-23 at their request; kept so daytime is never locked out by the weekly limit), so runs may use up to 90% - 44% = 46% more. That's ~255 more work-minutes, so the cap is 270 logged work-minutes in total since the last reset (~15 were logged before this recalibration). After the reset: 400/week until the main chat recalibrates.
+## The user's limits
+- Daytime (10 AM-10 PM ET): keep at least 20% of the session for them. Other hours: use it all.
+- Weekly: keep the last 10% for them. The week resets Wednesday 12:00 PM ET.
 
-## Recalibrated 2026-11-23 ~16:25 UTC (user's usage page: weekly 70%, session 53%)
-- From 44% at 05:58 to 70% now = 26 points over ~179 logged work-minutes = at most 0.145% weekly per work-minute (an upper bound: other chats ran in the same hours). The 05:58 figure (0.18%/min) was ~25% too high: it came from a 13-minute window, a 2-point change with +-1 rounding, with the main chat running at the same time, then rounded to the worse end.
-- Rule from now on: never set a rate from a window under 60 minutes, or one where another chat was active; prefer the longest window available.
-- Room left before the user's 90% line: 20 points = ~138 work-minutes until Wednesday 12:00 PM ET (17:00 UTC). v50 is READY TO SHIP, so runs exit at the gate anyway.
+## How to decide
+- Cost per work-minute = measured, not assumed: (the user's latest usage reading - an earlier one) / work-minutes logged between them, over the longest span available. Latest: weekly 44% (2026-11-23 05:58 UTC) -> 70% (~16:25 UTC) over ~180 logged minutes = at most 0.145% weekly/min. Session cost per minute: unknown until two session readings span the same run; until then stop a daytime run after 60 work-minutes.
+- A run's limit = whatever keeps both reserves, at most 90 minutes. Update with each new reading the user shares.
 
-## Rule for each run (the schedule fires hourly; fires that exit should take seconds)
-1. If LOCK is fresh → exit.
-2. If READY TO SHIP → exit.
-2b. If degoog/wip/WAITING exists → exit (nothing left that can be built without the user; the main chat deletes WAITING when the user supplies the self-check table or recorded searches).
-3. Sum the logged work minutes since the last Wednesday 12:00 PM ET. If >= the weekly cap → exit.
-4. If now is inside a DAY window and the run limit (100 - minutes logged in that window, max 90) is < 10 → exit.
-5. Otherwise work until the run's limit (NIGHT 90; DAY window as above) or the weekly cap, whichever comes first. Add a log line at the start. After EVERY commit, update its work minutes (a run cut off by the session limit still has to count), and finish it at the end.
+## Rule for each run
+1. Exit if LOCK is fresh (< 100 min), HANDOFF says READY TO SHIP, or WAITING exists.
+2. Exit if the limit above is under 10 minutes.
+3. Otherwise log a start line, work, update the line after every commit, finish it at the end.
 
 ## Log (UTC start, UTC end, setup min, work min, items done)
 - 2026-11-23 05:10, 05:30, ~5, ~15, M1 item 1 + most of item 2 (first run, old instructions)
