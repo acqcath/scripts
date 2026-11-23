@@ -52,5 +52,21 @@ The installer now lets ai-summary keep its answers as long as degoog keeps searc
 ## Knowledge panel (M4)
 For a name-like search (`taylor swift`, `golden gate bridge`) a panel about it: on a wide PC window it sits in a right column next to the first result (photo, name, what it is, 2 lines from Wikipedia, key facts, "Wikipedia ↗ · Wikidata"); on a phone or narrower window it's a small card at the top (name, what it is, one line of facts, More ⌄). It replaces degoog's Wikipedia card. It shows only when the results back it up: your engines never return a Wikipedia result (none in 50 recorded searches), so a Britannica or Wikiwand article with the same title also counts. `jaguar`, `mercury`, `python` get no panel (the results are about several things). On a phone it shows from the first search if it's quick, otherwise from the next one; on a wide PC it can also appear a moment later beside the results, without moving them.
 
+## Plain lists for type and site searches (M5)
+A search that names a kind of result (`… pdf`, `… reddit`, `… recipe`, `… docs`, `… video`, `… github`, `… lecture`, `… slides`) or a site to filter by (`mdn …`, `npm …`) gets a plain list: no Discussions/Videos boxes, Top stories, People also ask, knowledge panel or AI on top. PDF files say "PDF" on the source line. If you name a site (`… reddit`) but few results come from it, a line "Only reddit.com results ›" runs a `site:` search when tapped. Programming searches put the official docs first (`react useEffect cleanup` → react.dev).
+
+## Quick view and archived copy (M5)
+Each result's ⋮ menu has **Quick view** and **Open archived copy**. Quick view opens under the result: a recipe's rating, time, ingredients and steps; a how-to's steps; a product's rating (never prices); FAQ answers; an article's author, date and reading time (and the Paywall word if the page says it's for subscribers); otherwise the page's first paragraphs. Tap again to close. Archived copy opens a new tab with archive.today (paywalled sites) or the Wayback Machine (others), else Ghostarchive, else archive.today's save page. Nothing is fetched until you tap. Try: `chocolate chip cookie recipe` → Quick view on the first result; `$AAPL` → archived copy of a wsj.com result.
+Recipe and review searches also show "4.9 ★ · 1 hr 15 min" on the source line of the first results, from the **second** time you search (it's looked up after the page is drawn and kept, so nothing pops in).
+
+## Images row (M5)
+Searches that clearly want pictures (`… photos`, `… wallpaper`, `… logo`, `… hairstyles`), or that you opened the Images tab for in the last 12 hours, get a row of 12 pictures after the first result (swipe on a phone). Try: open `golden gate bridge` on the Images tab, then go back to All.
+
+## !deepl (M5)
+`!deepl guten Morgen` opens DeepL with the text (to English); `!deepl de good morning` translates to German.
+
+## Smaller changes (M5)
+Bing suggestions back off from 1 minute (doubling, up to an hour) when Bing stops answering, instead of a flat hour.
+
 ## Not in this preview yet
-The Paywall tag's archive link and the rest of M5 (same-shape results, quick view, images row, !deepl), then M6 (full test pass, installer self-check of every outside source).
+The meaning line for searches with several meanings (M5), then M6 (full test pass, installer self-check of every outside source: currency, versions, Wikidata, CMU, ESPN, knowledge panel, archives, quick view).

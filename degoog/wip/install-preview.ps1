@@ -3,6 +3,7 @@ $t = "$env:TEMP\ct-new"; New-Item -ItemType Directory -Force $t | Out-Null
 [IO.File]::WriteAllText("$t\index.js", @'
 import * as fs from "node:fs";
 import { createHash } from "node:crypto";
+import { lookup } from "node:dns/promises";
 
 const INFO_HTML =
   `<div class="command-result"><p>Tidies result titles and loads sharper news/video thumbnails on every search page.</p></div>`;
@@ -162,11 +163,13 @@ export const _sitesIdle = () => _sitesQ;
 
 // ===== Shared fetch helper: every outside request goes through here (timeout, size cap, never throws) =====
 // -> {status, text, etag} or {status: 0} on any failure. 304 when the If-None-Match tag still matches.
-export const net = async (url, { etag = "", timeout = 10000, max = 2_000_000, accept = "*/*", headers = {} } = {}) => {
+// redirect: "manual" returns a 3xx as is, with its Location (archive.today answers a found copy that way)
+export const net = async (url, { etag = "", timeout = 10000, max = 2_000_000, accept = "*/*", headers = {}, redirect = "follow" } = {}) => {
   try {
     const f = _fetch || fetch;
-    const r = await f(url, { headers: { Accept: accept, ...headers, ...(etag ? { "If-None-Match": etag } : {}) }, signal: AbortSignal.timeout(timeout), redirect: "follow" });
+    const r = await f(url, { headers: { Accept: accept, ...headers, ...(etag ? { "If-None-Match": etag } : {}) }, signal: AbortSignal.timeout(timeout), redirect });
     if (r.status === 304) return { status: 304, text: "", etag };
+    if (redirect === "manual" && r.status >= 300 && r.status < 400) return { status: r.status, text: "", etag: "", location: r.headers.get("location") || "" };
     if (!r.ok) return { status: r.status, text: "", etag: "" };
     const text = await r.text();
     if (text.length > max) return { status: 0, text: "", etag: "" };
@@ -466,6 +469,225 @@ export const kpFor = async (q) => {
   return v;
 };
 
+// ===== Archived copy (spec 10): asked only when you tap "Open archived copy" in a result's menu =====
+// archive.today, the Wayback Machine and Ghostarchive are asked in parallel; the first that has the page in this
+// order wins: archive.today first for paywalled sites (it keeps the full text), else Wayback first (dead pages).
+// None has it -> archive.today's save page for that address. Endpoints from knowledge, NOT live-checked here.
+const ARCH_UA = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36" };
+export const archSave = (u) => `https://archive.ph/?url=${encodeURIComponent(u)}`;
+const _arch = new Map();
+export const archFind = async (u, paywall) => {
+  let url;
+  try { url = new URL(u); } catch { return null; }
+  if (!/^https?:$/.test(url.protocol) || u.length > 2000) return null;
+  const key = createHash("sha256").update(`arch\n${u}`).digest("hex").slice(0, 24);
+  const hit = _arch.get(key);
+  if (hit && Date.now() - hit.t < (hit.v.src === "save" ? 600000 : TTL)) return hit.v;
+  const today = async () => {
+    const r = await net(`https://archive.ph/newest/${u}`, { timeout: 4000, redirect: "manual", headers: ARCH_UA, max: 400000 });
+    const loc = r.location || "";
+    return r.status >= 300 && r.status < 400 && /^https:\/\/archive\.(?:ph|today|is|li|vn|fo|md)\/(?:[A-Za-z0-9]{4,6}$|\d{14}\/|\d{4}\.\d{2}\.\d{2}-\d{6}\/)/.test(loc) ? loc : "";
+  };
+  const wayback = async () => {
+    const r = await net(`https://archive.org/wayback/available?url=${encodeURIComponent(u)}`, { timeout: 4000, accept: "application/json", max: 100000 });
+    try { const c = JSON.parse(r.text).archived_snapshots.closest; return c && c.available && /^https?:\/\/web\.archive\.org\/web\/\d+/.test(c.url) ? c.url.replace(/^http:/, "https:") : ""; } catch { return ""; }
+  };
+  const ghost = async () => {
+    const r = await net(`https://ghostarchive.org/search?term=${encodeURIComponent(u)}`, { timeout: 4000, headers: ARCH_UA, max: 600000 });
+    const m = /href="(\/archive\/[A-Za-z0-9]+)"/.exec(r.text || "");
+    return m ? `https://ghostarchive.org${m[1]}` : "";
+  };
+  const [a, w, g] = await Promise.all([today(), wayback(), ghost()]);
+  const order = paywall ? [[a, "archive.today"], [w, "Wayback Machine"], [g, "Ghostarchive"]] : [[w, "Wayback Machine"], [a, "archive.today"], [g, "Ghostarchive"]];
+  const f = order.find(([x]) => x);
+  const v = f ? { url: f[0], src: f[1] } : { url: archSave(u), src: "save" };
+  if (_arch.size > 500) _arch.clear();
+  _arch.set(key, { t: Date.now(), v });
+  return v;
+};
+
+// ===== Quick view (spec 11): asked only when you tap "Quick view" in a result's menu =====
+// The server fetches the page once and reads its schema.org JSON-LD (recipe, how-to, product, FAQ, event, app,
+// movie/book, local business, article); else the page's main text (a small Readability-like pass); JS-only pages
+// give nothing and stay links. Only text goes back to the page (drawn with textContent), never the page's HTML.
+const ldStrip = (h) => String(h == null ? "" : h).replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, " ").replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, " ")
+  .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#0?39;|&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&#(\d+);/g, (m, n) => { const c = Number(n); return c > 0 && c < 0x110000 ? String.fromCodePoint(c) : " "; })
+  .replace(/[ \t\r\f\v]+/g, " ").replace(/\s*\n\s*/g, "\n").trim();
+const ld1 = (x) => (Array.isArray(x) ? x[0] : x);
+const ldTxt = (x, n = 300) => { const v = ld1(x); const t = ldStrip(typeof v === "object" && v ? v.name || v["@value"] || v.text || "" : v); return t.length > n ? `${t.slice(0, n - 1).trimEnd()}…` : t; };
+const ldTypes = (o) => [].concat(o && o["@type"] || []).map(String);
+// "2026-11-20T10:00:00Z" -> "Nov 20, 2026" (a bare year stays a year)
+const ldDay = (x) => { const t = ldTxt(x, 40); const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(t); if (!m) return /^\d{4}$/.test(t) ? t : ""; return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }); };
+// ISO 8601 duration -> "1 hr 30 min"
+export const isoDur = (d) => {
+  const m = /^P(?:(\d+)D)?(?:T(?:(\d+(?:\.\d+)?)H)?(?:(\d+(?:\.\d+)?)M)?(?:\d+(?:\.\d+)?S)?)?$/i.exec(String(d || "").trim());
+  if (!m) return "";
+  const mins = Math.round((+m[1] || 0) * 1440 + (+m[2] || 0) * 60 + (+m[3] || 0));
+  if (!mins) return "";
+  const h = Math.floor(mins / 60), r = mins % 60;
+  return h ? `${h} hr${r ? ` ${r} min` : ""}` : `${r} min`;
+};
+const ldRating = (o) => { const a = o && ld1(o.aggregateRating); const v = a && Number(a.ratingValue), best = a && Number(a.bestRating || 5); const n = a && Number(a.ratingCount || a.reviewCount || 0); return v > 0 && best > 0 ? { v: Math.round((v / best) * 50) / 10, n: Number.isFinite(n) ? n : 0 } : null; };
+const ldSteps = (ins) => {
+  const out = [];
+  const walk = (x) => {
+    if (out.length >= 60 || x == null) return;
+    if (Array.isArray(x)) { x.forEach(walk); return; }
+    if (typeof x === "string") { ldStrip(x).split(/\n+/).map((t) => t.trim()).filter(Boolean).forEach((t) => out.push(t.slice(0, 600))); return; }
+    if (typeof x === "object") {
+      if (x.itemListElement) { walk(x.itemListElement); return; }
+      const t = ldStrip(x.text || x.name || "");
+      if (t) out.push(t.slice(0, 600));
+    }
+  };
+  walk(ins);
+  return out;
+};
+const ORDER = ["Recipe", "HowTo", "Product", "FAQPage", "Event", "SoftwareApplication", "MobileApplication", "WebApplication", "Movie", "TVSeries", "Book", "LocalBusiness", "Restaurant", "Store", "Article", "NewsArticle", "BlogPosting", "Report", "TechArticle"];
+const LOCAL = /(?:LocalBusiness|Restaurant|Store|Cafe|CafeOrCoffeeShop|Bakery|BarOrPub|Hotel|Dentist|Physician|AutoRepair|Museum|TouristAttraction)$/;
+// All JSON-LD objects of a page (arrays and @graph flattened), parse failures skipped
+export const ldObjects = (html) => {
+  const out = [];
+  const re = /<script[^>]*type=["']?application\/ld\+json["']?[^>]*>([\s\S]*?)<\/script>/gi;
+  let m;
+  while ((m = re.exec(html)) && out.length < 200) {
+    let j;
+    try { j = JSON.parse(m[1].replace(/^\s*<!\[CDATA\[|\]\]>\s*$/g, "").trim()); } catch { continue; }
+    const add = (x) => { if (Array.isArray(x)) x.forEach(add); else if (x && typeof x === "object") { out.push(x); if (x["@graph"]) add(x["@graph"]); } };
+    add(j);
+  }
+  return out;
+};
+// The quick view for one page's HTML: {kind, title, facts: [[label, value]], lists: [{label, items}], text: [...]}
+export const qvFrom = (html, base = "") => {
+  const objs = ldObjects(html);
+  const pick = ORDER.map((t) => objs.find((o) => ldTypes(o).some((x) => x === t || (t === "LocalBusiness" && LOCAL.test(x))))).find(Boolean);
+  const facts = [], lists = [];
+  const fact = (k, v) => { if (v) facts.push([k, String(v)]); };
+  const star = (r) => (r ? `${r.v.toFixed(1)} ★${r.n ? ` (${r.n.toLocaleString("en-US")})` : ""}` : "");
+  if (pick) {
+    const t = ldTypes(pick).find((x) => ORDER.includes(x) || LOCAL.test(x)) || "";
+    const title = ldTxt(pick.name || pick.headline, 200);
+    let kind = "page";
+    if (t === "Recipe") {
+      kind = "recipe";
+      fact("Rating", star(ldRating(pick))); fact("Total time", isoDur(pick.totalTime) || isoDur(pick.cookTime)); fact("Serves", ldTxt(pick.recipeYield, 40));
+      const ing = [].concat(pick.recipeIngredient || pick.ingredients || []).map((x) => ldStrip(x)).filter(Boolean).slice(0, 80);
+      if (ing.length) lists.push({ label: "ingredients", items: ing });
+      const st = ldSteps(pick.recipeInstructions);
+      if (st.length) lists.push({ label: "steps", items: st, ordered: true });
+    } else if (t === "HowTo") {
+      kind = "howto";
+      fact("Time", isoDur(pick.totalTime));
+      const st = ldSteps(pick.step);
+      if (st.length) lists.push({ label: "steps", items: st, ordered: true });
+    } else if (t === "Product") {
+      kind = "product"; // no store prices (spec)
+      fact("Rating", star(ldRating(pick))); fact("Brand", ldTxt(pick.brand, 80));
+      const d = ldTxt(pick.description, 400); if (d) lists.push({ label: "", items: [d], para: true });
+    } else if (t === "FAQPage") {
+      kind = "faq";
+      const qa = [].concat(pick.mainEntity || []).map((x) => x && `${ldTxt(x.name, 200)}\n${ldTxt(x.acceptedAnswer && (ld1(x.acceptedAnswer).text || ld1(x.acceptedAnswer)), 600)}`.trim()).filter((x) => x && x.includes("\n"));
+      if (qa.length) lists.push({ label: "questions", items: qa, qa: true });
+    } else if (t === "Event") {
+      kind = "event";
+      const loc = ld1(pick.location);
+      fact("When", ldDay(pick.startDate)); fact("Where", loc && (ldTxt(loc.name, 120) || ldTxt(loc.address, 160)));
+    } else if (/Application$/.test(t)) {
+      kind = "app";
+      fact("Rating", star(ldRating(pick))); fact("Runs on", ldTxt(pick.operatingSystem, 80)); fact("Category", ldTxt(pick.applicationCategory, 60));
+    } else if (t === "Movie" || t === "TVSeries" || t === "Book") {
+      kind = t === "Book" ? "book" : "movie";
+      fact("Rating", star(ldRating(pick))); fact(t === "Book" ? "Author" : "Director", ldTxt(pick.author || pick.director, 120)); fact("Released", ldDay(pick.datePublished || pick.dateCreated)); fact(t === "Book" ? "Pages" : "Running time", t === "Book" ? ldTxt(pick.numberOfPages, 10) : isoDur(pick.duration));
+    } else if (LOCAL.test(t)) {
+      kind = "place";
+      const a = ld1(pick.address);
+      fact("Rating", star(ldRating(pick))); fact("Address", a && typeof a === "object" ? [a.streetAddress, a.addressLocality, a.addressRegion].map((x) => ldTxt(x, 80)).filter(Boolean).join(", ") : ldTxt(a, 200)); fact("Phone", ldTxt(pick.telephone, 40));
+      const oh = [].concat(pick.openingHours || []).map((x) => ldTxt(x, 60)).filter(Boolean);
+      if (oh.length) fact("Hours", oh.slice(0, 3).join("; "));
+    } else {
+      kind = "article";
+      const words = Number(pick.wordCount);
+      fact("By", ldTxt(pick.author, 80)); fact("Published", ldDay(pick.datePublished)); fact("Reading time", words > 0 ? `${Math.max(1, Math.round(words / 230))} min` : "");
+      if (pick.isAccessibleForFree === false || String(pick.isAccessibleForFree).toLowerCase() === "false") fact("Access", "Paywall");
+    }
+    if (facts.length || lists.length) return { kind, title, facts, lists, text: kind === "article" ? mainText(html) : [] };
+  }
+  const text = mainText(html);
+  return text.length ? { kind: "page", title: "", facts, lists, text } : null;
+};
+// Readability-like: paragraphs of real sentences from <article>/<main> (else the whole body), the first few
+export const mainText = (html) => {
+  const body = (/<article\b[\s\S]*?<\/article>/i.exec(html) || /<main\b[\s\S]*?<\/main>/i.exec(html) || [html])[0];
+  const ps = [];
+  const re = /<p\b[^>]*>([\s\S]*?)<\/p>/gi;
+  let m;
+  while ((m = re.exec(body)) && ps.length < 4) { const t = ldStrip(m[1]).replace(/\s+/g, " "); if (t.length >= 80 && /[.!?]["')\]]?$/.test(t) && !/cookie|subscribe|sign up|javascript/i.test(t)) ps.push(t.length > 700 ? `${t.slice(0, 699).trimEnd()}…` : t); }
+  return ps;
+};
+// Never fetch this server's own network: the bridge has no sign-in, so a quick view could otherwise be pointed at
+// the LAN. Every hop of a redirect is checked.
+const privateIp = (ip) => /^(?:127\.|10\.|0\.|169\.254\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|::1$|::$|f[cd]|fe80|::ffff:(?:127|10|192\.168|169\.254)\.)/i.test(ip);
+export const publicUrl = async (u) => {
+  let url;
+  try { url = new URL(u); } catch { return false; }
+  if (!/^https?:$/.test(url.protocol) || url.username || url.password || (url.port && !["80", "443"].includes(url.port))) return false;
+  const h = url.hostname.replace(/^\[|\]$/g, "");
+  if (/^(?:localhost|.*\.local|.*\.internal|.*\.lan|.*\.home)$/i.test(h)) return false;
+  try { const a = await lookup(h, { all: true }); return a.length > 0 && a.every((x) => !privateIp(x.address)); } catch { return false; }
+};
+const _qv = new Map();
+const QV_UA = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36", "Accept-Language": "en-US,en;q=0.9" };
+export const qvFor = async (u, check = publicUrl) => {
+  const key = createHash("sha256").update(`qv\n${u}`).digest("hex").slice(0, 24);
+  const hit = _qv.get(key);
+  if (hit && Date.now() - hit.t < TTL) return hit.v;
+  let v = null, at = u;
+  for (let hop = 0; hop < 4; hop++) {
+    if (!(await check(at))) { at = ""; break; }
+    const r = await net(at, { timeout: 5000, max: 3_000_000, accept: "text/html,application/xhtml+xml", headers: QV_UA, redirect: "manual" });
+    if (r.status >= 300 && r.status < 400 && r.location) { try { at = new URL(r.location, at).toString(); } catch { at = ""; break; } continue; }
+    if (r.status === 200 && r.text) v = qvFrom(r.text, at);
+    break;
+  }
+  if (_qv.size > 300) _qv.clear();
+  _qv.set(key, { t: v ? Date.now() : Date.now() - TTL + 600000, v });
+  return v;
+};
+
+// Inline stars + time for first-screen recipe/review results (spec 11): "4.8 ★ · 45 min" from the same quick view.
+// Asked by the page after the results are drawn, kept by the page for the next visit (never inserted late).
+// Per-domain success counts (qv-domains.json: domain -> {ok, fail}) skip sites that block servers.
+export const starLine = (v) => {
+  if (!v) return "";
+  const f = Object.fromEntries(v.facts);
+  const r = f.Rating ? f.Rating.replace(/\s*\(.*\)$/, "") : "";
+  return [r, v.kind === "recipe" ? f["Total time"] || "" : ""].filter(Boolean).join(" · ");
+};
+let _qd = null;
+const qvDomains = () => { if (!_qd) { try { _qd = JSON.parse(fs.readFileSync(`${DIR}/qv-domains.json`, "utf8")) || {}; } catch { _qd = {}; } } return _qd; };
+export const qvBlocked = (d) => { const c = qvDomains()[d]; return !!c && c.fail >= 3 && !c.ok; };
+let _qdT = 0;
+const qvCount = (d, ok) => {
+  const m = qvDomains(), c = m[d] || (m[d] = { ok: 0, fail: 0 });
+  if (ok) c.ok++; else c.fail++;
+  const ks = Object.keys(m); if (ks.length > 2000) delete m[ks[0]];
+  clearTimeout(_qdT); _qdT = setTimeout(() => { try { fs.writeFileSync(`${DIR}/qv-domains.json`, JSON.stringify(m)); } catch {} }, 2000);
+};
+export const starsFor = async (urls, check = publicUrl) => {
+  const out = {};
+  await Promise.all([...new Set(urls)].slice(0, 6).map(async (u) => {
+    let d = "";
+    try { d = new URL(u).hostname.replace(/^www\./, ""); } catch { return; }
+    if (qvBlocked(d)) return;
+    const v = await qvFor(u, check);
+    qvCount(d, !!v);
+    const line = starLine(v);
+    if (line) out[u] = line;
+  }));
+  return out;
+};
+
 // ===== Sports (ESPN's public site API): a team's live, last or next game =====
 // Team names come from ESPN's team lists (fetched once a day, only when a short search could be a team), so the
 // search itself never leaves this server; a match costs one schedule request (RAM 60 s while live, else 10 min).
@@ -698,8 +920,10 @@ const dist = (a, b) => {
 
 // Bing's suggestions for a search (cached a day)
 const _sug = new Map();
-// Bing answering with nothing at all (204, blocked, error) means it's down for this server: skip it for an hour
-let bingDownUntil = 0;
+// Bing answering with nothing at all (204, blocked, error) means it's down for this server: skip it for a while,
+// backing off exponentially from 1 minute (1, 2, 4 … capped at 1 hour), reset by the first good answer (spec 15)
+let bingDownUntil = 0, bingDowns = 0;
+export const bingBackoff = (n) => Math.min(60000 * 2 ** Math.max(0, n - 1), 3600000);
 const suggestions = async (q) => {
   const key = norm(q);
   if (!key) return [];
@@ -722,9 +946,9 @@ const suggestions = async (q) => {
         signal: AbortSignal.timeout(1500),
       });
       if (isBing && (!r.ok || r.status === 204)) bingBad++;
-      if (r.ok && r.status !== 204) { const j = JSON.parse(await r.text()); if (Array.isArray(j) && Array.isArray(j[1])) { s = j[1].filter((x) => typeof x === "string"); if (s.length) break got; } }
+      if (r.ok && r.status !== 204) { const j = JSON.parse(await r.text()); if (Array.isArray(j) && Array.isArray(j[1])) { if (isBing) bingDowns = 0; s = j[1].filter((x) => typeof x === "string"); if (s.length) break got; } }
     } catch { if (isBing) bingBad++; }
-    if (isBing && bingTries && bingBad === bingTries && bingTries >= 2) bingDownUntil = Date.now() + 3600000;
+    if (isBing && bingTries && bingBad === bingTries && bingTries >= 2 && Date.now() >= bingDownUntil) bingDownUntil = Date.now() + bingBackoff(++bingDowns);
   }
   if (s.length) { if (_sug.size > 2000) _sug.clear(); _sug.set(key, { s, t: Date.now() }); }
   return s;
@@ -1060,6 +1284,31 @@ export const routes = [
       const u = new URL(req.url).searchParams;
       const d = await wdFor(u.get("f") || "", u.get("s") || "", u.get("s2") || "");
       return new Response(JSON.stringify({ d }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+    },
+  },
+  {
+    method: "get",
+    path: "/qv",
+    async handler(req) {
+      const u = (new URL(req.url).searchParams.get("u") || "").slice(0, 2000);
+      return new Response(JSON.stringify({ v: u ? await qvFor(u) : null }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+    },
+  },
+  {
+    method: "post",
+    path: "/qvs",
+    async handler(req) {
+      let u = [];
+      try { const j = await req.json(); if (Array.isArray(j.u)) u = j.u.filter((x) => typeof x === "string" && x.length < 2000); } catch {}
+      return new Response(JSON.stringify({ s: await starsFor(u) }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+    },
+  },
+  {
+    method: "get",
+    path: "/arch",
+    async handler(req) {
+      const p = new URL(req.url).searchParams;
+      return new Response(JSON.stringify({ a: await archFind((p.get("u") || "").slice(0, 2000), p.get("pw") === "1") }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
     },
   },
   {
@@ -1402,7 +1651,39 @@ const capSites = (items, q, psl, cap = 2) => {
 // ===== One page of results, planned before paint =====
 // The page script applies the plan; it keeps no logic of its own. ctx lives for one search (endless scroll pages
 // reuse it): listCtx(q, psl, prefs) with prefs = {site: "prefer" | "lower" | "hide"} (missing = normal).
-const listCtx = (q, psl, prefs = {}) => ({ add: deduper(psl), named: namedSites(q, psl), count: new Map(), prefs, cap: 2 });
+const listCtx = (q, psl, prefs = {}) => ({ add: deduper(psl), named: namedSites(q, psl), count: new Map(), prefs, cap: 2, docs: docsFor(q), docsDone: false });
+
+// ===== Same-shape results (spec 8) =====
+// A search that names a type of result gets a plain list of that type: no boxes, rows, panels or AI on top.
+const SHAPE_WORDS = [["pdf", /\b(?:pdf|pdfs)\b/], ["paper", /\b(?:paper|papers|arxiv|preprint)\b/], ["forum", /\b(?:reddit|forum|forums|thread|stackoverflow|stack overflow)\b/], ["docs", /\b(?:docs|documentation|api reference|reference manual)\b/], ["recipe", /\b(?:recipe|recipes)\b/], ["code", /\b(?:github|gitlab|repo|repository)\b/], ["lab", /\blab\b/], ["lecture", /\b(?:lecture|lectures|lecture notes)\b/], ["slides", /\b(?:slides|slide deck|ppt|pptx)\b/], ["video", /\b(?:video|videos|youtube)\b/]];
+const shapeOf = (q) => { const s = String(q || "").toLowerCase(); const t = SHAPE_WORDS.find(([, re]) => re.test(s)); return t ? t[0] : ""; };
+// A site named to filter by ("… reddit", "mdn …"): only well-known destination words, and only with other words
+// beside it (a search that is just "reddit" or "steelers" is a navigation, not a filter). Returns the domain or "".
+const FILTER_SITE = { reddit: "reddit.com", stackoverflow: "stackoverflow.com", github: "github.com", youtube: "youtube.com", wikipedia: "wikipedia.org", wiki: "wikipedia.org", quora: "quora.com", mdn: "mozilla.org", npm: "npmjs.com", pypi: "pypi.org", imdb: "imdb.com", amazon: "amazon.com", ebay: "ebay.com", etsy: "etsy.com", twitter: "x.com", hackernews: "ycombinator.com", arxiv: "arxiv.org", goodreads: "goodreads.com", letterboxd: "letterboxd.com", yelp: "yelp.com", tripadvisor: "tripadvisor.com" };
+const filterSite = (q) => {
+  const s = String(q || "").toLowerCase();
+  if (/(?:^|\s)site:/.test(s)) return "";
+  const words = s.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  if (words.length < 2) return "";
+  const w = words.find((x) => FILTER_SITE[x]);
+  return w ? FILTER_SITE[w] : "";
+};
+// "Only reddit.com results ›" line: the named site has fewer than 3 of the first 10 results
+const onlyLine = (q, sites) => { const d = filterSite(q); return d && sites.slice(0, 10).filter((x) => x === d).length < 3 ? d : ""; };
+// The site: search the line runs when tapped: the named word is replaced by the operator
+const onlyQuery = (q, d) => { const w = Object.keys(FILTER_SITE).find((k) => FILTER_SITE[k] === d && new RegExp(`\\b${k}\\b`, "i").test(q)); return `${String(q).replace(w ? new RegExp(`\\s*\\b${w}\\b\\s*`, "i") : /$^/, " ").trim()} site:${d}`; };
+// Programming searches: the official docs result goes first. Keys are words of the search, values host suffixes.
+const DOCS = { react: ["react.dev"], reactjs: ["react.dev"], javascript: ["developer.mozilla.org"], js: ["developer.mozilla.org"], css: ["developer.mozilla.org"], html: ["developer.mozilla.org"], dom: ["developer.mozilla.org"], python: ["docs.python.org"], typescript: ["typescriptlang.org"], ts: ["typescriptlang.org"], rust: ["doc.rust-lang.org", "docs.rs"], golang: ["go.dev", "pkg.go.dev"], nodejs: ["nodejs.org"], node: ["nodejs.org"], kotlin: ["kotlinlang.org"], django: ["docs.djangoproject.com"], flask: ["flask.palletsprojects.com"], vue: ["vuejs.org"], vuejs: ["vuejs.org"], angular: ["angular.dev"], svelte: ["svelte.dev"], nextjs: ["nextjs.org"], tailwind: ["tailwindcss.com"], numpy: ["numpy.org"], pandas: ["pandas.pydata.org"], git: ["git-scm.com"], docker: ["docs.docker.com"], kubernetes: ["kubernetes.io"], postgres: ["postgresql.org"], postgresql: ["postgresql.org"], sqlite: ["sqlite.org"], php: ["php.net"], csharp: ["learn.microsoft.com"], dotnet: ["learn.microsoft.com"], powershell: ["learn.microsoft.com"], bun: ["bun.sh", "bun.com"], deno: ["docs.deno.com"] };
+// Only searches that also look like code (a known API-ish word or camelCase), so "python snake" or "rust removal" don't
+const CODEY = /\p{Ll}\p{Lu}|\b(?:function|method|class|array|map|filter|reduce|string|list|dict|object|async|await|promise|hook|hooks|use\w+|component|props|state|import|export|module|install|syntax|error|exception|loop|for loop|while|lambda|regex|json|api|query|selector|flexbox|grid|type|types|interface|enum|struct|trait|macro|decorator|generator|iterator|cleanup|effect|ref|context|router|config|cli|command|tutorial|docs?|example)\b/u;
+const docsFor = (q) => {
+  const s = String(q || "");
+  const words = s.toLowerCase().split(/[^a-z0-9#]+/).filter(Boolean);
+  const k = words.find((w) => DOCS[w]);
+  if (!k || words.length < 2 || !CODEY.test(s)) return null; // a bare "python" wants python.org, not its docs
+  return DOCS[k];
+};
+const hostOf = (u) => { try { return new URL(u).hostname.toLowerCase(); } catch { return ""; } };
 const WEIGHT = { prefer: 0, lower: 2 };
 // items: [{url, title, ...}] in page order. Returns {shown, dups, hidden (Hide pref), capped (past the cap with no
 // result of that site on this page), folds: Map(site -> {after, items})}.
@@ -1414,6 +1695,12 @@ const planPage = (items, ctx) => {
   const kept = recs.filter((r) => (ctx.prefs[r.site] === "hide" ? (hidden.push(r), false) : true));
   const w = (r) => WEIGHT[ctx.prefs[r.site]] ?? 1;
   kept.sort((a, b) => w(a) - w(b)); // stable: rank order kept inside each group
+  // Programming search: the official docs result goes first (first page only: later pages never move what's above)
+  if (ctx.docs && !ctx.docsDone) {
+    ctx.docsDone = true;
+    const i = kept.findIndex((r) => { const h = hostOf(r.url); return ctx.docs.some((d) => h === d || h.endsWith(`.${d}`)); });
+    if (i > 0 && ctx.prefs[kept[i].site] !== "lower") kept.unshift(kept.splice(i, 1)[0]);
+  }
   const shown = [], folds = new Map();
   for (const r of kept) {
     const c = ctx.count.get(r.site) || 0;
@@ -2214,6 +2501,24 @@ const kpMatch = (title, urls) => {
 // Phone line: up to 3 facts, short ("Born Dec 13, 1989 · Height 330 m (1,083 ft)"); the page drops what doesn't fit
 const kpLine = (facts) => (facts || []).slice(0, 4).map((f) => `${f.k} ${f.v}`);
 
+// ----- Images row (spec 12): searches that clearly want pictures, from their words -----
+const VISUAL = /\b(?:pictures?|photos?|photographs?|images?|pics?|wallpapers?|logos?|aesthetic|tattoos?|outfits?|hairstyles?|haircuts?|drawings?|paintings?|memes?|gifs?|clipart|inspo|nail designs?|room ideas|decor ideas|cake ideas|what does .+ look like)\b/i;
+// …but not tasks about image files ("image processing python", "resize photo", "logo generator")
+const NOT_VISUAL = /\b(?:processing|python|javascript|java|css|html|api|upload|resize|crop|compress|convert|converter|format|size|editor|edit|search|generator|ai|dataset|recognition|classification|docker|file|files|link|url|tag|src|alt text|background remover|remove background|to pdf|to text|ocr)\b/i;
+const visualQ = (q) => { const s = String(q || "").trim(); return !!s && !s.startsWith("!") && s.length <= 100 && VISUAL.test(s) && !NOT_VISUAL.test(s); };
+
+// ----- !deepl (spec 14): "!deepl text" or "!deepl de text" -> DeepL's translator with that text (target English
+// unless a DeepL target code comes first). URL form from knowledge (#source/target/text), not live-checked.
+const DEEPL_TO = new Set(["ar", "bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fr", "he", "hu", "id", "it", "ja", "ko", "lt", "lv", "nb", "nl", "pl", "pt", "ro", "ru", "sk", "sl", "sv", "th", "tr", "uk", "vi", "zh"]);
+const deeplUrl = (q) => {
+  const m = /^\s*!deepl(?:\s+([\s\S]*))?$/i.exec(String(q || ""));
+  if (!m) return "";
+  let text = (m[1] || "").trim(), to = "en";
+  const w = /^([a-z]{2})\s+([\s\S]+)$/i.exec(text);
+  if (w && DEEPL_TO.has(w[1].toLowerCase())) { to = w[1].toLowerCase(); text = w[2].trim(); }
+  return text ? `https://www.deepl.com/translator#auto/${to}/${encodeURIComponent(text).replace(/%2F/g, "%5C%2F")}` : "https://www.deepl.com/translator";
+};
+
 // ----- The one local answer for a search, or null. CMU course numbers are left to the CMU card (network). -----
 const answer = (q, now = Date.now(), data = {}) => {
   const s = String(q || "").trim();
@@ -2222,7 +2527,7 @@ const answer = (q, now = Date.now(), data = {}) => {
   return pattern(s) || convert(s) || currency(s, data.fx) || percent(s) || dateMath(s, now) || calc(s);
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, dateLabel, relDate, upsValid, isbnValid, cmuCourse, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, answer };
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, dateLabel, relDate, upsValid, isbnValid, cmuCourse, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, visualQ, deeplUrl, answer };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -2273,6 +2578,10 @@ addEventListener("resize", () => requestAnimationFrame(lineUp), { passive: true 
 // Which search a page address is, ignoring what endless scroll adds while you scroll (&loaded=2) and any #
 const searchId = (h) => { try { const u = new URL(h); u.hash = ""; u.searchParams.delete("loaded"); return u.toString(); } catch { return String(h).split("#")[0]; } };
 const sameSearch = (k) => searchId(location.href) === searchId(k);
+// Same-shape results (spec 8): the search names a type of result (pdf, reddit, docs, recipe, video…) or a site to
+// filter by: a plain list of that type, with no boxes, rows, panels, People also ask or AI on top.
+const curQ = () => { try { return (new URL(location.href).searchParams.get("q") || "").trim(); } catch { return ""; } };
+const shaped = (q = curQ()) => !!(CT.shapeOf(q) || CT.filterSite(q) || /(?:^|\s)site:\S/i.test(q));
 
 
 // clean-titles: ONE pass per new result, run before the browser draws it (no timers, no re-scans).
@@ -2574,6 +2883,8 @@ const row = (el) => {
   }
   // "Paywall": a word on the source line, drawn with the result (core PAYWALL_SITES)
   if (cite && u && CT.paywalled(u.hostname, PSL())) { const t = mk("span", "ct-paywall", "Paywall"); (el.querySelector(".result-url-row .ct-date") || cite).after(t); }
+  // "PDF" on the source line for PDF files (any search), like the Paywall word
+  if (cite && u && (/\.pdf$/i.test(u.pathname) || /(^|\.)arxiv\.org$/.test(u.hostname) && /^\/pdf\//.test(u.pathname))) { const t = mk("span", "ct-paywall ct-pdf", "PDF"); (el.querySelector(".result-url-row .ct-paywall, .result-url-row .ct-date") || cite).after(t); }
   const img = el.querySelector(".result-thumbnail-wrap img");
   if (img) { if (/[?&]type=news\b/.test(location.search)) lowres(el, img); work.set(el, () => hdImg(img)); near.observe(el); }
 };
@@ -2709,7 +3020,11 @@ const earlyStart = () => {
   try { u = new URL(key); } catch { return; }
   const q = (u.searchParams.get("q") || "").trim();
   if (!q) return;
+  // !deepl: straight to DeepL with the text (your search box, your action), before anything else is asked
+  const dl = CT.deeplUrl(q);
+  if (dl) { location.replace(dl); return; }
   const from = (u.searchParams.get("ct_from") || "").trim();
+  if (u.searchParams.get("type") === "images" && !q.startsWith("!")) visualSeen.add(qHash(q));
   ask("fix", key, { q, ...(u.searchParams.has("ct_keep") ? { keep: 1 } : {}), ...(u.searchParams.has("ct_acc") && from ? { acc: from } : {}) });
   if (webTab && Number(u.searchParams.get("page") || 1) <= 1 && !q.startsWith("!")) {
     ask("qs", key, { q });
@@ -2726,8 +3041,16 @@ const earlyStart = () => {
     if (!eq && !wq && !cq && /^[a-z][a-z .'&-]*$/i.test(q) && q.split(/\s+/).length <= 6 && !CT.answer(q, Date.now(), { fx: FX })) ask("sports", key, { q });
     // Knowledge panel: only the name is sent (this server asks Wikidata/Wikipedia); shown only if the results agree
     if (!eq && !wq && !cq && kpWanted(q)) ask("kp", key, { q: CT.kpQuery(q) });
+    // Images row (spec 12): the image search starts now, in parallel, for clearly visual searches: picture words, or
+    // a search you opened the Images tab for in the last 12 h (degoog still has that image search cached)
+    if (!shaped(q) && (CT.visualQ(q) || visualSeen.has(qHash(q)))) {
+      const e = { key, data: undefined };
+      early.set("img", e);
+      fetch(`/api/search?q=${encodeURIComponent(q)}&type=images`).then((x) => (x.ok ? x.json() : null))
+        .then((j) => { e.data = j && Array.isArray(j.results) ? j : null; }, () => { e.data = null; });
+    }
     // Top stories: the News search starts now, in parallel, only for a search that looked like news last time
-    if (SHOW.news && newsy.has(qHash(q))) {
+    if (SHOW.news && !shaped(q) && newsy.has(qHash(q))) {
       const e = { key, data: undefined };
       early.set("news", e);
       fetch(`/api/search?q=${encodeURIComponent(q)}&type=news`).then((x) => (x.ok ? x.json() : null))
@@ -2888,7 +3211,37 @@ const siteItems = (el) => {
   }
   menu.prepend(seg);
   if (cur === "lower" && SITES_AUTO.includes(siteOf(host))) seg.after(mk("div", "ct-seg-note", "Lowered automatically (SEO signs). Your choice here wins."));
+  // Quick view (spec 11) and archived copy (spec 10): nothing is asked until you tap them
+  const qv = mk("button", "degoog-menu-item ct-arch ct-qv-b", "Quick view");
+  qv.type = "button";
+  qv.setAttribute("role", "menuitem");
+  menu.append(qv);
+  const ar = mk("button", "degoog-menu-item ct-arch", "Open archived copy");
+  ar.type = "button";
+  ar.setAttribute("role", "menuitem");
+  menu.append(ar);
 };
+// Tap: a new tab opens at once (so the browser allows it) and goes to the copy the server found: archive.today first
+// for paywalled sites, else the Wayback Machine, else Ghostarchive; none -> archive.today's save page
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest && e.target.closest(".ct-arch:not(.ct-qv-b)");
+  if (!b) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const el = b.closest(".result-item");
+  const a = el && el.querySelector("a.result-title");
+  const u = (el && el.dataset.resultUrl) || (a && a.href) || "";
+  if (!u) return;
+  let pw = false;
+  try { pw = CT.paywalled(new URL(u).hostname, PSL()); } catch {}
+  const menu = b.closest(".result-actions-menu");
+  if (menu) menu.hidden = true;
+  const w = window.open("", "_blank");
+  if (w) { try { w.opener = null; w.document.title = "Archived copy"; w.document.body.textContent = "Finding an archived copy…"; } catch {} }
+  const j = await bridge("arch", { u, ...(pw ? { pw: 1 } : {}) }).catch(() => null);
+  const to = (j && j.a && /^https:\/\//.test(j.a.url) && j.a.url) || `https://archive.ph/?url=${encodeURIComponent(u)}`;
+  if (w && !w.closed) w.location.replace(to); else location.assign(to);
+}, true);
 const settingsFetch = (path, body) => {
   let tok = null;
   try { tok = sessionStorage.getItem("degoog-settings-token"); } catch {}
@@ -2941,7 +3294,7 @@ document.addEventListener("click", async (e) => {
   if (!list || pref === "normal") return;
   const rows = [...list.querySelectorAll(".result-item")].filter((x) => siteOf(rowHost(x)) === site);
   if (pref === "hide") rows.forEach((x) => { x.style.display = "none"; x.dataset.ctHide = "1"; });
-  else if (pref === "prefer") { const kpEl = list.querySelector(":scope > .ct-kp"); if (kpEl) kpEl.after(...rows); else list.prepend(...rows); }
+  else if (pref === "prefer") { const kpEl = [...list.children].find((x) => x.classList.contains("ct-kp")); if (kpEl) kpEl.after(...rows); else list.prepend(...rows); }
   else list.append(...rows);
 }, true);
 
@@ -2968,7 +3321,7 @@ const paa = () => {
   const old = document.getElementById("ct-qa");
   if (old) old.remove();
   paaBox = null;
-  if (!q || page > 1 || q.startsWith("!")) return;
+  if (!q || page > 1 || q.startsWith("!") || shaped(q)) return;
   ((j) => {
       // Not in hand when the results came (or none): dropped for this search
       if (!j || !Array.isArray(j.q)) return;
@@ -3179,9 +3532,9 @@ const hot = (rows) => new Set(rows.filter((r) => r.w && r.w.exact && Date.now() 
 // the same time degoog keeps engine answers. Only these start a News search early on the next visit.
 const NEWSY_KEY = "ct-newsy";
 const qHash = (q) => { let h = 2166136261; for (const c of String(q).trim().toLowerCase()) h = Math.imul(h ^ c.codePointAt(0), 16777619); return (h >>> 0).toString(36); };
-const newsy = (() => {
+const hashStore = (KEY) => {
   let m = {};
-  try { const c = JSON.parse(localStorage.getItem(NEWSY_KEY) || "{}"); if (c && typeof c === "object") m = c; } catch {}
+  try { const c = JSON.parse(localStorage.getItem(KEY) || "{}"); if (c && typeof c === "object") m = c; } catch {}
   const now = Date.now();
   for (const k of Object.keys(m)) if (!(now - m[k] < 432e5)) delete m[k];
   return {
@@ -3189,10 +3542,13 @@ const newsy = (() => {
     add: (h) => {
       m[h] = Date.now();
       const ks = Object.keys(m); if (ks.length > 300) ks.sort((a, b) => m[a] - m[b]).slice(0, ks.length - 300).forEach((k) => delete m[k]);
-      try { localStorage.setItem(NEWSY_KEY, JSON.stringify(m)); } catch {}
+      try { localStorage.setItem(KEY, JSON.stringify(m)); } catch {}
     },
   };
-})();
+};
+const newsy = hashStore(NEWSY_KEY);
+// Searches you opened the Images tab for (same hash, 12 h = degoog's cache, so their image search is still cached)
+const visualSeen = hashStore("ct-visual");
 const _info = new WeakMap();
 const info = (el) => {
   if (_info.has(el)) return _info.get(el);
@@ -3299,7 +3655,7 @@ const groups = () => {
   if (G.key !== key) {
     list.querySelectorAll(".ct-grp, .ct-sl").forEach((x) => x.remove());
     list.querySelectorAll(".ct-grouped").forEach((x) => x.classList.remove("ct-grouped"));
-    G = { key, sl: null, slTop: null, forum: null, video: null, news: false };
+    G = { key, sl: null, slTop: null, forum: null, video: null, news: false, img: false };
   }
   for (const k of ["forum", "video", "sl"]) if (G[k] && !G[k].isConnected) G[k] = null; // degoog redrew the list
   const rows = [...list.querySelectorAll(".result-item")].filter((x) => x.style.display !== "none" || x.dataset.ctCap).map(info).filter(Boolean);
@@ -3341,9 +3697,33 @@ const groups = () => {
     for (const r of c.slice(0, Math.max(0, max - n))) { s.row.append(build(r)); r.el.classList.add("ct-grouped"); }
     s.wrap?.upd();
   };
+  if (shaped()) return; // a plain list of the type asked for: no boxes or rows
   if (SHOW.forum) box("forum", (r) => !!r.forum, 4, forumRow, "Discussions and forums", "forums", "More discussions", false);
   if (SHOW.video) box("video", (r) => r.video, 8, videoCard, "Videos", "videos", "More videos", true);
 
+  // Images row: drawn after the first result in this same pass, only if the image search is already in hand
+  if (!G.img) {
+    G.img = true;
+    const j = ready("img", key);
+    const t = j && [...list.querySelectorAll(".result-item")].find(shown);
+    const pics = j ? (j.results || []).filter((x) => x && x.thumbnail && x.url && !aiImg((() => { try { return new URL(x.url).hostname.replace(/^www\./, ""); } catch { return ""; } })())).slice(0, 12) : [];
+    if (t && pics.length >= 4) {
+      const s = section("ct-imgs", "Images");
+      const [wrap, row] = scroller();
+      for (const x of pics) {
+        const a = mk("a", "ct-im"); a.href = x.url; a.rel = "noopener";
+        a.title = String(x.title || "");
+        const i = mk("img"); i.alt = String(x.title || ""); i.decoding = "async"; i.loading = "lazy";
+        i.onload = () => i.classList.add("ct-on"); i.onerror = () => { i.style.visibility = "hidden"; };
+        i.src = x.thumbnail;
+        a.append(i); row.append(a);
+      }
+      s.append(wrap);
+      const m = moreBtn("More images", "images"); if (m) s.append(m);
+      t.after(s);
+      wrap.upd();
+    }
+  }
   // Top stories: only when the results look like news (hot). Drawn in this same pass, before paint, and only if the
   // News answer started at page load is already in hand; otherwise nothing is added and the search is remembered,
   // so the next visit starts the News search early. Fresh stories only, one per outlet, none already shown.
@@ -3392,7 +3772,7 @@ const AI_WORDS = /^(?:why|how (?:does|do|did|is|are|can|come)|explain|what(?:'s|
 const TYPE_WORDS = /\b(?:pdf|paper|reddit|docs|documentation|recipe|github|lab|lecture|slides|video|videos|youtube|wiki|wikipedia)\b/i;
 const aiWanted = (q) => {
   if (!AI_ON.on || !q || q.startsWith("!") || (AI_ON.qmark && !q.trim().endsWith("?"))) return false;
-  if (!AI_WORDS.test(q) || TYPE_WORDS.test(q) || /\bbest buy\b/i.test(q)) return false;
+  if (!AI_WORDS.test(q) || TYPE_WORDS.test(q) || shaped(q) || /\bbest buy\b/i.test(q)) return false;
   if (CT.eolQuery(q) || CT.wdQuery(q)) return false; // a fact or version answer comes first
   try { if (CT.namedSites(q, PSL()).size) return false; } catch {}
   return true;
@@ -3573,6 +3953,117 @@ const ansCopy = (e) => {
 document.addEventListener("click", ansCopy);
 document.addEventListener("keydown", ansCopy);
 
+// "Only reddit.com results ›": a search naming a site to filter by, where that site has few of the first results.
+// Drawn above the results in the pass that draws them (never later); runs the site: search only when tapped.
+let onlyKey = "";
+const onlyPass = () => {
+  const key = searchId(location.href), list = document.getElementById("results-list");
+  if (!webTab || !list || onlyKey === key || drawnFor === key) return;
+  const rows = [...list.querySelectorAll(".result-item")].filter((x) => x.style.display !== "none");
+  if (!rows.length) return;
+  onlyKey = key;
+  document.querySelectorAll(".ct-only").forEach((x) => x.remove());
+  let page = 1;
+  try { page = Number(new URL(key).searchParams.get("page") || 1); } catch {}
+  const q = curQ();
+  if (page > 1) return;
+  const d = CT.onlyLine(q, rows.map((x) => siteOf(rowHost(x))));
+  if (!d) return;
+  const a = mk("a", "ct-only", `Only ${d} results`);
+  a.append(mk("span", "ct-chev", " ›"));
+  const u = new URL(location.href);
+  u.searchParams.set("q", CT.onlyQuery(q, d));
+  u.searchParams.delete("page");
+  a.href = u.pathname + u.search;
+  const kpEl = [...list.children].find((x) => x.classList.contains("ct-kp"));
+  if (kpEl) kpEl.after(a); else list.prepend(a);
+};
+
+// ===== Quick view (spec 11): your tap opens it under the result (it grows: your action), tap again to close =====
+const QV_SHOW = { ingredients: 8, steps: 3, questions: 3 };
+const qvBox = (v) => {
+  const box = mk("div", "ct-qv");
+  if (!v) { box.append(mk("div", "ct-qv-none", "No quick view for this page")); return box; }
+  const facts = v.facts.filter(([k]) => k !== "Access").map(([k, x]) => (k === "Rating" || k === "Total time" || k === "Time" ? x : `${k} ${x}`));
+  if (facts.length) box.append(mk("div", "ct-qv-facts", facts.join(" · ")));
+  for (const l of v.lists) {
+    if (l.para) { box.append(mk("p", "ct-qv-p", l.items[0])); continue; }
+    const n = QV_SHOW[l.label] || 3;
+    const ul = mk(l.ordered ? "ol" : "ul", `ct-qv-list${l.qa ? " ct-qv-qa" : ""}`);
+    l.items.forEach((t, i) => {
+      const li = mk("li");
+      if (l.qa) { const [q, ...a] = t.split("\n"); li.append(mk("div", "ct-qv-q", q), mk("div", "ct-qv-a", a.join(" "))); } else li.textContent = t;
+      if (i >= n) li.hidden = true;
+      ul.append(li);
+    });
+    box.append(ul);
+    if (l.items.length > n) {
+      const more = mk("button", "ct-qv-more", `${l.items.length - n} more ${l.label} ⌄`);
+      more.type = "button";
+      more.onclick = () => { ul.querySelectorAll("li[hidden]").forEach((x) => { x.hidden = false; }); more.remove(); };
+      box.append(more);
+    }
+  }
+  v.text.slice(0, 3).forEach((t) => box.append(mk("p", "ct-qv-p", t)));
+  return box;
+};
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest && e.target.closest(".ct-qv-b");
+  if (!b) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const el = b.closest(".result-item");
+  const a = el && el.querySelector("a.result-title");
+  const body = el && el.querySelector(".result-body");
+  const u = (el && el.dataset.resultUrl) || (a && a.href) || "";
+  const menu = b.closest(".result-actions-menu");
+  if (menu) menu.hidden = true;
+  if (!u || !body) return;
+  const open = [...body.children].find((x) => x.classList.contains("ct-qv"));
+  if (open) { open.remove(); b.textContent = "Quick view"; return; }
+  const box = mk("div", "ct-qv"); box.append(mk("div", "ct-qv-none", "Loading quick view…"));
+  body.append(box);
+  b.textContent = "Close quick view";
+  const j = await bridge("qv", { u }).catch(() => null);
+  if (!box.isConnected) return;
+  const v = j && j.v && Array.isArray(j.v.facts) && Array.isArray(j.v.lists) && Array.isArray(j.v.text) ? j.v : null;
+  box.replaceWith(qvBox(v));
+  // The page says it's for subscribers (isAccessibleForFree: false): the Paywall word joins the source line
+  const cite = el.querySelector(".result-cite");
+  if (v && v.facts.some(([k, x]) => k === "Access" && x === "Paywall") && cite && !el.querySelector(".result-url-row .ct-paywall:not(.ct-pdf)")) cite.after(mk("span", "ct-paywall", "Paywall"));
+}, true);
+
+// Inline "4.8 ★ · 45 min" on the source line of first-screen results for recipe and review searches (spec 11).
+// Drawn before paint from this browser's copy (ct-qvs, 12 h); results not in it are asked for after the results are
+// drawn (server reads their pages, skipping sites that block it) and kept for the next visit: never inserted late.
+const QVS_KEY = "ct-qvs";
+const qvs = (() => { let m = {}; try { const c = JSON.parse(localStorage.getItem(QVS_KEY) || "{}"); if (c && typeof c === "object") m = c; } catch {} const now = Date.now(); for (const k of Object.keys(m)) if (!(now - m[k][1] < 432e5)) delete m[k]; return m; })();
+const starsWanted = (q) => CT.shapeOf(q) === "recipe" || /\b(?:reviews?|rating|ratings|rated)\b/i.test(q);
+let starsKey = "";
+const starsPass = () => {
+  const key = searchId(location.href), list = document.getElementById("results-list");
+  if (!webTab || !list || starsKey === key || drawnFor === key) return;
+  const rows = [...list.querySelectorAll(".result-item")].filter((x) => x.style.display !== "none" && !x.classList.contains("ct-grouped")).slice(0, 6);
+  if (!rows.length) return;
+  starsKey = key;
+  let page = 1;
+  try { page = Number(new URL(key).searchParams.get("page") || 1); } catch {}
+  if (page > 1 || !starsWanted(curQ())) return;
+  const ask = [];
+  for (const el of rows) {
+    const a = el.querySelector("a.result-title"), u = (el.dataset.resultUrl || (a && a.href) || "");
+    const c = u && qvs[qHash(u)], cite = el.querySelector(".result-cite");
+    if (c && cite) { const t = mk("span", "ct-paywall ct-stars-l", c[0]); (el.querySelector(".result-url-row .ct-pdf, .result-url-row .ct-paywall, .result-url-row .ct-date") || cite).after(t); }
+    else if (u && !c) ask.push(u);
+  }
+  if (ask.length) setTimeout(() => bridge("qvs", {}, JSON.stringify({ u: ask })).then((j) => {
+    if (!j || !j.s || typeof j.s !== "object") return;
+    for (const [u, t] of Object.entries(j.s)) if (typeof t === "string" && t.length < 60) qvs[qHash(u)] = [t, Date.now()];
+    const ks = Object.keys(qvs); if (ks.length > 500) ks.sort((a, b) => qvs[a][1] - qvs[b][1]).slice(0, ks.length - 500).forEach((k) => delete qvs[k]);
+    try { localStorage.setItem(QVS_KEY, JSON.stringify(qvs)); } catch {}
+  }).catch(() => {}), 0);
+};
+
 // ===== Knowledge panel (spec 3) =====
 // Asked at page load for short name-like searches that get no other answer, no AI and no plain type/site list.
 // Shown only when the results hold the same article (CT.kpMatch); the Wikipedia result itself is then hidden, and
@@ -3582,7 +4073,7 @@ document.addEventListener("keydown", ansCopy);
 // at the top of the list, drawn only in the pass that draws the results.
 const KP_WIDE = "(min-width: 1180px)";
 const kpWanted = (q) => {
-  if (!webTab || !CT.kpQuery(q) || bangFor(q) || TYPE_WORDS.test(q) || CT.answer(q, Date.now(), { fx: FX }) || aiWanted(q) || AI_WORDS.test(q)) return false;
+  if (!webTab || !CT.kpQuery(q) || shaped(q) || bangFor(q) || TYPE_WORDS.test(q) || CT.answer(q, Date.now(), { fx: FX }) || aiWanted(q) || AI_WORDS.test(q)) return false;
   try { if (CT.namedSites(q, PSL()).size) return false; } catch {}
   return true;
 };
@@ -3633,7 +4124,7 @@ document.addEventListener("click", (e) => {
 const kpPass = () => {
   const key = searchId(location.href), list = document.getElementById("results-list");
   if (kpKey !== key) { kpKey = key; document.querySelectorAll(".ct-kp").forEach((x) => x.remove()); }
-  if (!list || !webTab || list.querySelector(":scope > .ct-kp")) return;
+  if (!list || !webTab || [...list.children].find((x) => x.classList.contains("ct-kp"))) return;
   const d = ready("kp", key), kp = d && d.kp;
   if (!kp || !kp.title || !kp.name) return;
   const late = drawnFor === key, wide = !!(window.matchMedia && matchMedia(KP_WIDE).matches);
@@ -3660,7 +4151,7 @@ const init = () => {
   safe("scan", () => scan(document.body));
   safe("skeleton", () => skel(document.body));
   safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools);
-  safe("kp", kpPass);
+  safe("kp", kpPass); safe("only", onlyPass); safe("stars", starsPass);
   safe("drawn", markDrawn);
   // Runs right after degoog inserts results and before the screen updates; only looks inside what was added
   new MutationObserver((muts) => {
@@ -3670,7 +4161,7 @@ const init = () => {
     safe("list", listPass);
     for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { safe("scan", () => scan(n)); safe("skeleton", () => skel(n)); safe("usage", () => noUsage(n)); }
     safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("card", glance);
-    safe("kp", kpPass);
+    safe("kp", kpPass); safe("only", onlyPass); safe("stars", starsPass);
     safe("drawn", markDrawn);
     safe("ai", () => { const g = document.getElementById("at-a-glance"); if (g) aiPass(g, searchId(location.href)); });
   }).observe(document.body, { childList: true, subtree: true });
@@ -4479,6 +4970,37 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
   .ct-kp-wide { position: absolute; top: 0; left: calc(100% + 40px); width: 320px; margin: 0; }
 }
 @media (max-width: 1179px) { .ct-kp-wide { display: none; } }
+
+/* Same-shape results (spec 8): "PDF" and reply counts sit on the source line like the Paywall word */
+.result-url-row .ct-pdf { color: var(--text-cite); font-weight: 500; }
+/* "Only reddit.com results ›": one line above the results; taps run the site: search */
+.ct-only { display: flex; align-items: center; min-height: 44px; margin: 0 0 4px; font-size: 14px; line-height: 20px; color: var(--text-link) !important; text-decoration: none; }
+.ct-only:hover { text-decoration: underline; }
+/* "Open archived copy": a plain menu line under the site choices */
+.ct-arch { display: block; width: 100%; margin: 2px 0 0; padding: 10px 14px; min-height: 40px; border: 0; background: none; font: inherit; font-size: 14px; line-height: 20px; text-align: left; color: var(--text-primary); cursor: pointer; border-radius: 8px; }
+.ct-arch:hover, .ct-arch:focus-visible { background: var(--bg-hover); }
+
+/* Images row (spec 12): fixed tiles (image results carry no sizes, so a justified row would re-flow as pictures
+   load); phone = swipe with the next tile peeking, PC = 6 equal tiles filling the width */
+.ct-imgs .ct-row { grid-auto-columns: calc((100% - 50px) / 6); gap: 10px; }
+.ct-im { display: block; aspect-ratio: 4 / 3; border-radius: 10px; overflow: hidden; background: var(--bg-light); scroll-snap-align: start; }
+.ct-im img { display: block; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .3s; }
+.ct-im img.ct-on { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .ct-im img { transition: none; } }
+@media (max-width: 767px) { .ct-imgs .ct-row { grid-auto-columns: 42%; gap: 8px; } }
+/* Quick view: opened under the result by your tap; text only */
+.ct-qv { margin-top: 10px; padding: 12px 14px; border-radius: 12px; background: rgba(49, 50, 68, .45); font-size: 14px; line-height: 20px; color: var(--text-snippet); }
+.ct-qv-none { color: var(--text-secondary); }
+.ct-qv-facts { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.ct-qv-list { margin: 8px 0 0; padding-left: 20px; }
+.ct-qv-list li + li { margin-top: 2px; }
+.ct-qv-qa { list-style: none; padding: 0; }
+.ct-qv-qa li + li { margin-top: 8px; }
+.ct-qv-q { font-weight: 500; color: var(--text-primary); }
+.ct-qv-p { margin: 8px 0 0; }
+.ct-qv-more { display: inline-flex; align-items: center; min-height: 36px; margin-top: 2px; padding: 0; border: 0; background: none; font: inherit; color: var(--text-link); cursor: pointer; }
+@media (max-width: 767px) { .ct-qv-more { min-height: 44px; } }
+.result-url-row .ct-stars-l { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 
 '@)
 [IO.File]::WriteAllText("$t\setcss.js", @'
