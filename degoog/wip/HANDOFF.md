@@ -54,6 +54,9 @@ The spec is the user's handoff text (they paste it into each new chat). These no
 - Same-title-within-site merges two different YouTube IDs with the same title (8lnlUrHBqOE vs D0LZz3Zxk00, re-uploads): kept as intended (spec: reposts).
 - degoog's resultFadeIn also slides 8px (_results.scss), so the image crossfade uses its own opacity-only keyframes (ctXfade, same .3s).
 
+- Replay of all 50 recorded web searches through the built page script (test/page.test.js, `CT_REPORT=1 bun test` prints the table): zero page-script errors; merges per search 0–4, fold lines 0–4.
+- PLAN.md (pushed by another session at 05:16–05:18 UTC, while this run held LOCK) is followed: this run's work is M1 item 1 plus part of item 2 (HD crossfade; groups no longer wait for the prefs bridge).
+
 ## Assumptions (this run)
 - Prefer/Lower reorder only within one endless-scroll page; a fold is only made under a result on the same page (one above would move what's on screen). Later-page extras are just hidden.
 - Site prefs come from `window.CT_DATA.sites` ({domain: "prefer"|"lower"|"hide"}), compiled into the inline block by the server. Not built yet: until then every site is Normal.
