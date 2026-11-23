@@ -1137,12 +1137,62 @@ const groups = () => {
   }
 };
 
+// ===== Answer card, local answers (core answers.js: math, units, cooking, tip/percent, dates, patterns) =====
+// Worked out from the search words alone, so it's drawn in the same pass that clears the panel area for a new
+// search: in place before the results, nothing reserved, nothing late. While it's there, every other panel in the
+// area (AI summary, math-slot...) is hidden by CSS (one answer per search; patterns and sums come first).
+let ansFor = null, ansVal = null;
+const ansCard = (a) => {
+  const box = mk("div", "ct-ans");
+  box.dataset.kind = a.kind;
+  if (a.copy) { box.tabIndex = 0; box.setAttribute("role", "button"); box.dataset.copy = a.copy; box.setAttribute("aria-label", `${a.value || a.title}. Copy`); }
+  const label = mk("div", "ct-ans-label");
+  label.append(mk("span", "ct-ans-l", a.label), mk("span", "ct-ans-copied", "Copied"));
+  box.append(label);
+  if (a.href) { const t = mk("a", "ct-ans-title", a.title); t.href = a.href; t.rel = "noopener"; box.append(t); }
+  else {
+    const v = mk("div", "ct-ans-value");
+    if (a.swatch) { const sw = mk("span", "ct-ans-sw"); sw.style.background = a.swatch; v.append(sw); }
+    v.append(a.value);
+    box.append(v);
+  }
+  if (a.detail) box.append(mk("div", "ct-ans-detail", a.detail));
+  return box;
+};
+const ansPass = () => {
+  const g = document.getElementById("at-a-glance");
+  if (!g) return;
+  const key = searchId(location.href);
+  if (ansFor !== key) {
+    ansFor = key;
+    let q = "", page = 1;
+    try { const u = new URL(key); q = (u.searchParams.get("q") || "").trim(); page = Number(u.searchParams.get("page") || 1); } catch {}
+    ansVal = webTab && page <= 1 ? CT.answer(q) : null;
+    g.querySelectorAll(".ct-ans").forEach((x) => x.remove());
+  }
+  if (!ansVal || g.querySelector(".ct-ans")) return;
+  g.style.display = "";
+  g.prepend(ansCard(ansVal));
+};
+// Tap (or Enter) on an instant answer copies it; "Copied" shows in its label line for a moment (same line, no shift)
+const ansCopy = (e) => {
+  const box = e.target.closest && e.target.closest(".ct-ans[data-copy]");
+  if (!box || e.target.closest("a")) return;
+  if (e.type === "keydown" && e.key !== "Enter" && e.key !== " ") return;
+  e.preventDefault();
+  const done = () => { box.classList.add("ct-copied"); clearTimeout(box._t); box._t = setTimeout(() => box.classList.remove("ct-copied"), 1500); };
+  try { navigator.clipboard.writeText(box.dataset.copy).then(done, () => {}); } catch {}
+};
+document.addEventListener("click", ansCopy);
+document.addEventListener("keydown", ansCopy);
+
 const safe = (name, fn) => { try { fn(); } catch (e) { console.error(`clean-titles ${name}:`, e); } };
 const init = () => {
   safe("query", readQuery);
   safe("early", earlyStart);
   safe("usage", () => noUsage(document.body));
   safe("card", glance);
+  safe("answer", ansPass);
   safe("list", listPass);
   safe("scan", () => scan(document.body));
   safe("skeleton", () => skel(document.body));
@@ -1152,6 +1202,7 @@ const init = () => {
   new MutationObserver((muts) => {
     safe("query", readQuery);
     safe("early", earlyStart);
+    safe("answer", ansPass);
     safe("list", listPass);
     for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { safe("scan", () => scan(n)); safe("skeleton", () => skel(n)); safe("usage", () => noUsage(n)); }
     safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("card", glance);

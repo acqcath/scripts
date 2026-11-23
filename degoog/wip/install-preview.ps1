@@ -1213,7 +1213,393 @@ const cmuCourse = (q, courses) => {
   return { id, level, prof: /prof|instructor|teacher/.test(rest) };
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, dateLabel, relDate, upsValid, isbnValid, cmuCourse };
+// ===== Answer card, local part (no network): math, units incl. cooking, tip / percent, date math, patterns =====
+// answer(q, now) -> null, or { kind, label, value | title + href, detail, copy, swatch? }. Pure: the page draws it in
+// the same pass that starts the search, so it never arrives late and needs no reserved space.
+// Priority inside: exact pattern > calculation (spec: pattern > calculation > live > fact > snippet > AI).
+
+// ----- Number formatting: headline rounded, exact value on the detail line -----
+const NBSP = " ";
+const MINUS = "−";
+// Up to 6 significant digits on the headline ("about" values), thousands separators, "−" for negatives
+const fmtNum = (x, sig = 6) => {
+  if (!Number.isFinite(x)) return "";
+  if (x === 0) return "0";
+  const a = Math.abs(x);
+  let s;
+  if (a >= 1e15 || a < 1e-6) s = x.toExponential(Math.max(0, sig - 1)).replace(/\.?0+e/, "e").replace("e+", " × 10^").replace("e-", ` × 10^${MINUS}`);
+  else {
+    const digits = Math.max(0, sig - 1 - Math.floor(Math.log10(a)));
+    s = Number(x.toFixed(Math.min(digits, 10))).toLocaleString("en-US", { maximumFractionDigits: Math.min(digits, 10) });
+  }
+  return s.replace(/^-/, MINUS);
+};
+// Exact-ish (15 significant digits, floating noise removed) for the detail line and for copying
+const exact = (x) => { const r = Number(x.toPrecision(15)); return Math.abs(r) >= 1e15 || (r !== 0 && Math.abs(r) < 1e-6) ? String(r) : r.toLocaleString("en-US", { maximumFractionDigits: 12 }); };
+const plain = (x) => String(Number(x.toPrecision(15)));
+const num = (s) => Number(String(s).replace(/,(?=\d{3}\b)/g, ""));
+const NUM = "(?:\\d{1,3}(?:,\\d{3})+|\\d+)(?:\\.\\d+)?|\\.\\d+";
+
+// ----- Math: a small safe parser (no eval). Radians, like a calculator. -----
+const FUNCS = { sqrt: Math.sqrt, cbrt: Math.cbrt, sin: Math.sin, cos: Math.cos, tan: Math.tan, asin: Math.asin, acos: Math.acos, atan: Math.atan, ln: Math.log, log: Math.log10, log2: Math.log2, abs: Math.abs, exp: Math.exp, floor: Math.floor, ceil: Math.ceil, round: Math.round };
+const CONSTS = { pi: Math.PI, "π": Math.PI, e: Math.E };
+const tokenize = (src) => {
+  const out = [];
+  const re = new RegExp(`\\s*(?:(${NUM})|(\\*\\*|[-+*/^()!×÷−]|\\bx\\b)|([a-zπ][a-z0-9]*))`, "giy");
+  let m, at = 0;
+  const s = src.replace(/(\d)\s*x\s*(?=[\d(.])/gi, "$1*"); // "12 x 350"
+  while (at < s.length) {
+    re.lastIndex = at;
+    m = re.exec(s);
+    if (!m) { if (/^\s*$/.test(s.slice(at))) break; return null; }
+    at = re.lastIndex;
+    if (m[1]) out.push({ t: "n", v: num(m[1]) });
+    else if (m[2]) out.push({ t: "o", v: { "×": "*", "÷": "/", "−": "-", "**": "^", x: "*", X: "*" }[m[2]] || m[2] });
+    else { const w = m[3].toLowerCase(); if (w in FUNCS) out.push({ t: "f", v: w }); else if (w in CONSTS) out.push({ t: "n", v: CONSTS[w], c: w }); else return null; }
+  }
+  return out;
+};
+// expr := term (('+'|'-') term)* ; term := unary (('*'|'/') unary | implicit unary)* ; unary := '-' unary | power
+// power := post ('^' unary)? ; post := atom '!'* ; atom := n | f atom | '(' expr ')'
+const parse = (toks) => {
+  let i = 0;
+  const peek = () => toks[i], eat = (v) => (toks[i] && toks[i].t === "o" && toks[i].v === v ? (i++, true) : false);
+  const atom = () => {
+    const k = toks[i++];
+    if (!k) throw 0;
+    if (k.t === "n") return k.v;
+    if (k.t === "f") { const a = eat("(") ? (() => { const v = expr(); if (!eat(")")) throw 0; return v; })() : unary(); return FUNCS[k.v](a); }
+    if (k.t === "o" && k.v === "(") { const v = expr(); if (!eat(")")) throw 0; return v; }
+    throw 0;
+  };
+  const fact = (n) => { if (!Number.isInteger(n) || n < 0 || n > 170) throw 0; let r = 1; for (let j = 2; j <= n; j++) r *= j; return r; };
+  const post = () => { let v = atom(); while (eat("!")) v = fact(v); return v; };
+  const power = () => { const b = post(); return eat("^") ? b ** unary() : b; };
+  const unary = () => (eat("-") ? -unary() : eat("+") ? unary() : power());
+  const term = () => {
+    let v = unary();
+    for (;;) {
+      if (eat("*")) v *= unary();
+      else if (eat("/")) { const d = unary(); if (d === 0) throw 0; v /= d; }
+      else if (peek() && (peek().t === "n" || peek().t === "f" || (peek().t === "o" && peek().v === "("))) v *= unary(); // 2pi, 3(4+5)
+      else return v;
+    }
+  };
+  const expr = () => { let v = term(); for (;;) { if (eat("+")) v += term(); else if (eat("-")) v -= term(); else return v; } };
+  const v = expr();
+  if (i !== toks.length) throw 0;
+  return v;
+};
+// Things that look like sums but aren't: phone numbers, dates, ZIP+4, course numbers, version numbers, ranges
+const NOT_MATH = /^\d{2}-\d{3}$|^\d{3}-\d{3}-\d{4}$|^\d{5}-\d{4}$|^\d{4}-\d{1,2}-\d{1,2}$|^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}$|^\d+(?:\.\d+){2,}$|^\d+-\d+$/;
+const calc = (q) => {
+  let s = String(q).trim().toLowerCase().replace(/^(?:what(?:'s| is)|calculate|calc|compute|solve)\s+/, "").replace(/\s*=\s*\??$|\?$/, "").trim();
+  if (!s || s.length > 120 || NOT_MATH.test(s)) return null;
+  const toks = tokenize(s);
+  // Needs an operation: a bare number or word isn't a sum
+  if (!toks || toks.length < 2 || !toks.some((k) => k.t === "f" || (k.t === "o" && k.v !== "(" && k.v !== ")") || k.c)) return null;
+  if (toks.filter((k) => k.t === "n").length < 1) return null;
+  let v;
+  try { v = parse(toks); } catch { return null; }
+  if (!Number.isFinite(v)) return null;
+  // The sum as read: "12 × 350", "√" kept as the function name, π for pi, spaced operators
+  const shown = toks.map((k, n) => {
+    if (k.t === "n") return k.c ? (k.c === "e" ? "e" : "π") : exact(k.v);
+    if (k.t === "f") return k.v;
+    const o = { "*": " × ", "/": " ÷ ", "-": n === 0 || (toks[n - 1].t === "o" && toks[n - 1].v !== ")" && toks[n - 1].v !== "!") ? MINUS : ` ${MINUS} `, "+": " + " }[k.v];
+    return o || k.v;
+  }).join("").replace(/([a-z]\d*)(?=[\dπe])/g, "$1 ").replace(/(\d)(?=[π(a-z])/g, "$1").trim();
+  return { kind: "calc", label: "Calculator", value: fmtNum(v, 10), detail: `${shown} = ${exact(v)}`, copy: plain(v) };
+};
+
+// ----- Units (incl. cooking). Factor = size of one unit in the base unit of its kind. -----
+const U = {};
+const unit = (kind, factor, names, show) => { for (const n of names) U[n] = { kind, factor, show: show || names[0] }; };
+// length (m)
+unit("len", 1e-3, ["mm", "millimeter", "millimeters", "millimetre", "millimetres"]);
+unit("len", 1e-2, ["cm", "centimeter", "centimeters", "centimetre", "centimetres"]);
+unit("len", 1, ["m", "meter", "meters", "metre", "metres"]);
+unit("len", 1e3, ["km", "kilometer", "kilometers", "kilometre", "kilometres"]);
+unit("len", 0.0254, ["in", "inch", "inches", "\""], "in");
+unit("len", 0.3048, ["ft", "foot", "feet", "'"], "ft");
+unit("len", 0.9144, ["yd", "yard", "yards"]);
+unit("len", 1609.344, ["mi", "mile", "miles"]);
+unit("len", 1852, ["nmi", "nautical mile", "nautical miles"]);
+// mass (kg)
+unit("mass", 1e-6, ["mg", "milligram", "milligrams"]);
+unit("mass", 1e-3, ["g", "gram", "grams"]);
+unit("mass", 1, ["kg", "kilogram", "kilograms", "kilo", "kilos"]);
+unit("mass", 0.028349523125, ["oz", "ounce", "ounces"]);
+unit("mass", 0.45359237, ["lb", "lbs", "pound", "pounds"]);
+unit("mass", 6.35029318, ["st", "stone", "stones"]);
+unit("mass", 1000, ["t", "tonne", "tonnes", "metric ton", "metric tons"]);
+// volume (L) — US customary for cups/spoons/fl oz/pints/quarts/gallons (searches here are US)
+unit("vol", 1e-3, ["ml", "milliliter", "milliliters", "millilitre", "millilitres"]);
+unit("vol", 1, ["l", "liter", "liters", "litre", "litres"]);
+unit("vol", 0.00492892159375, ["tsp", "teaspoon", "teaspoons"]);
+unit("vol", 0.01478676478125, ["tbsp", "tablespoon", "tablespoons"]);
+unit("vol", 0.0295735295625, ["fl oz", "fluid ounce", "fluid ounces", "floz"]);
+unit("vol", 0.2365882365, ["cup", "cups", "c"]);
+unit("vol", 0.473176473, ["pt", "pint", "pints"]);
+unit("vol", 0.946352946, ["qt", "quart", "quarts"]);
+unit("vol", 3.785411784, ["gal", "gallon", "gallons"]);
+// speed (m/s)
+unit("speed", 1 / 3.6, ["km/h", "kph", "kmh", "kilometers per hour"]);
+unit("speed", 0.44704, ["mph", "miles per hour"]);
+unit("speed", 1, ["m/s", "meters per second"]);
+unit("speed", 1852 / 3600, ["knot", "knots", "kn"]);
+// area (m²)
+unit("area", 1, ["m2", "m²", "sq m", "square meter", "square meters"]);
+unit("area", 0.09290304, ["ft2", "ft²", "sq ft", "square foot", "square feet"]);
+unit("area", 4046.8564224, ["acre", "acres"]);
+unit("area", 1e4, ["ha", "hectare", "hectares"]);
+unit("area", 1e6, ["km2", "km²", "sq km", "square kilometer", "square kilometers"]);
+unit("area", 2589988.110336, ["mi2", "mi²", "sq mi", "square mile", "square miles"]);
+// data (bytes; decimal and binary as named)
+unit("data", 1, ["b", "byte", "bytes"], "B");
+unit("data", 1e3, ["kb", "kilobyte", "kilobytes"], "KB");
+unit("data", 1e6, ["mb", "megabyte", "megabytes"], "MB");
+unit("data", 1e9, ["gb", "gigabyte", "gigabytes"], "GB");
+unit("data", 1e12, ["tb", "terabyte", "terabytes"], "TB");
+unit("data", 1024, ["kib", "kibibyte", "kibibytes"], "KiB");
+unit("data", 1024 ** 2, ["mib", "mebibyte", "mebibytes"], "MiB");
+unit("data", 1024 ** 3, ["gib", "gibibyte", "gibibytes"], "GiB");
+unit("data", 1024 ** 4, ["tib", "tebibyte", "tebibytes"], "TiB");
+// time (s)
+unit("time", 1, ["s", "sec", "secs", "second", "seconds"]);
+unit("time", 60, ["min", "mins", "minute", "minutes"]);
+unit("time", 3600, ["h", "hr", "hrs", "hour", "hours"]);
+unit("time", 86400, ["day", "days"]);
+unit("time", 604800, ["week", "weeks", "wk", "wks"]);
+unit("time", 31557600, ["year", "years", "yr", "yrs"]); // Julian year (365.25 days)
+// temperature: handled apart (offsets)
+const TEMP = { c: "C", "°c": "C", celsius: "C", f: "F", "°f": "F", fahrenheit: "F", k: "K", kelvin: "K", kelvins: "K" };
+const toK = (v, u) => (u === "C" ? v + 273.15 : u === "F" ? (v - 32) * 5 / 9 + 273.15 : v);
+const fromK = (k, u) => (u === "C" ? k - 273.15 : u === "F" ? (k - 273.15) * 9 / 5 + 32 : k);
+// Cooking: grams in one US cup (King Arthur's ingredient weight chart values for the common ones)
+const CUP_G = { flour: 120, "all-purpose flour": 120, "all purpose flour": 120, "bread flour": 120, sugar: 198, "granulated sugar": 198, "white sugar": 198, "brown sugar": 213, "powdered sugar": 113, "icing sugar": 113, butter: 227, water: 236.6, milk: 227, rice: 191, oats: 89, "rolled oats": 89, honey: 336, "maple syrup": 312, oil: 198, "vegetable oil": 198, "olive oil": 200, cocoa: 84, "cocoa powder": 84, salt: 288, "chocolate chips": 170, yogurt: 227, cornstarch: 112 };
+const unitShow = (u, v) => {
+  const one = Math.abs(v) === 1;
+  const n = { in: "in", ft: "ft", cup: one ? "cup" : "cups", tsp: "tsp", tbsp: "tbsp", "fl oz": "fl oz", pt: one ? "pint" : "pints", qt: one ? "quart" : "quarts", gal: one ? "gallon" : "gallons", day: one ? "day" : "days", week: one ? "week" : "weeks", year: one ? "year" : "years", acre: one ? "acre" : "acres", knot: one ? "knot" : "knots", stone: "st" }[u.show];
+  return n || u.show;
+};
+const UNIT_NAMES = Object.keys(U).sort((a, b) => b.length - a.length).map((n) => n.replace(/[.*+?^${}()|[\]\\/"']/g, "\\$&")).join("|");
+const TEMP_NAMES = "°c|°f|celsius|fahrenheit|kelvins?|c|f|k";
+const ING = Object.keys(CUP_G).sort((a, b) => b.length - a.length).join("|");
+const UNIT_RE = new RegExp(`^(?:convert\\s+|how many\\s+(${UNIT_NAMES})\\s+(?:are\\s+)?in\\s+)?(-?${NUM})\\s*(${UNIT_NAMES}|${TEMP_NAMES})(?:\\s+(?:of\\s+)?(${ING}))?(?:\\s+(?:to|in|into|as|=)\\s+(${UNIT_NAMES}|${TEMP_NAMES}))?\\s*\\??$`, "i");
+const convert = (q) => {
+  const s = String(q).trim().toLowerCase().replace(/\s+/g, " ").replace(/degrees?\s+/g, "°");
+  const m = UNIT_RE.exec(s);
+  if (!m) return null;
+  const v = num(m[2]);
+  let from = m[3], to = m[5] || m[1], ing = m[4];
+  if (!to) return null; // "5 km" alone: not asked
+  if (TEMP[from] && TEMP[to]) {
+    const a = TEMP[from], b = TEMP[to];
+    if (a === b) return null;
+    const r = fromK(toK(v, a), b);
+    if (b === "K" && r < 0) return null;
+    return { kind: "unit", label: "Unit converter", value: `${fmtNum(r, 4)}${a === "K" || b === "K" ? NBSP : ""}${b === "K" ? "K" : `°${b}`}`, detail: `${exact(v)}${a === "K" ? " K" : ` °${a}`} = ${exact(r)}${b === "K" ? " K" : ` °${b}`}`, copy: plain(r) };
+  }
+  const a = U[from], b = U[to];
+  if (!a || !b) return null;
+  // Cooking: cups/spoons <-> grams/ounces of a named ingredient
+  if (a.kind !== b.kind) {
+    const g = ing && CUP_G[ing];
+    if (!g || !((a.kind === "vol" && b.kind === "mass") || (a.kind === "mass" && b.kind === "vol"))) return null;
+    const perL = g / 1000 / U.cup.factor; // kg per litre
+    const r = a.kind === "vol" ? (v * a.factor * perL) / b.factor : (v * a.factor / perL) / b.factor;
+    return { kind: "unit", label: `Cooking · ${ing}`, value: `${fmtNum(r, 3)} ${unitShow(b, r)}`, detail: `${exact(v)} ${unitShow(a, v)} ${ing} ≈ ${exact(Number(r.toPrecision(4)))} ${unitShow(b, r)} · 1 cup = ${g} g`, copy: plain(Number(r.toPrecision(4))) };
+  }
+  if (a === b) return null;
+  const r = (v * a.factor) / b.factor;
+  return { kind: "unit", label: "Unit converter", value: `${fmtNum(r, 6)} ${unitShow(b, r)}`, detail: `${exact(v)} ${unitShow(a, v)} = ${exact(r)} ${unitShow(b, r)}`, copy: plain(r) };
+};
+
+// ----- Tip / percent -----
+const percent = (q) => {
+  const s = String(q).trim().toLowerCase().replace(/\s+/g, " ").replace(/\?$/, "").replace(/^what(?:'s| is) /, "").replace(/\$/g, "");
+  let m;
+  const P = `(${NUM})\\s*(?:%|percent)`;
+  // "20% tip on 45.50", "tip 18% of 62", "15% tip for 80"
+  if ((m = new RegExp(`^(?:tip (?:of )?)?${P}(?: tip)? (?:on|of|for) (${NUM})$`).exec(s)) && /tip/.test(s)) {
+    const p = num(m[1]), b = num(m[2]), t = b * p / 100;
+    return { kind: "percent", label: "Tip", value: `$${t.toFixed(2)}`, detail: `${exact(p)}% of $${b.toFixed(2)} · total $${(b + t).toFixed(2)}`, copy: t.toFixed(2) };
+  }
+  // "15% of 200"
+  if ((m = new RegExp(`^${P} of (${NUM})$`).exec(s))) {
+    const p = num(m[1]), b = num(m[2]), r = b * p / 100;
+    return { kind: "percent", label: "Percent", value: fmtNum(r, 8), detail: `${exact(p)}% of ${exact(b)} = ${exact(r)}`, copy: plain(r) };
+  }
+  // "30 is what percent of 120", "30 out of 120 as a percent"
+  if ((m = new RegExp(`^(${NUM}) (?:is what (?:%|percent) of|out of|of) (${NUM})(?: (?:as a |in )?(?:%|percent(?:age)?))?$`).exec(s)) && /percent|%/.test(s)) {
+    const a = num(m[1]), b = num(m[2]);
+    if (!b) return null;
+    const r = a / b * 100;
+    return { kind: "percent", label: "Percent", value: `${fmtNum(r, 4)}%`, detail: `${exact(a)} ÷ ${exact(b)} = ${exact(r)}%`, copy: plain(r) };
+  }
+  // "percent change from 80 to 100", "% increase from 50 to 65"
+  if ((m = new RegExp(`^(?:%|percent(?:age)?) (?:change|increase|decrease|difference) from (${NUM}) to (${NUM})$`).exec(s))) {
+    const a = num(m[1]), b = num(m[2]);
+    if (!a) return null;
+    const r = (b - a) / a * 100;
+    return { kind: "percent", label: "Percent change", value: `${r > 0 ? "+" : ""}${fmtNum(r, 4)}%`, detail: `${exact(a)} → ${exact(b)} = ${exact(r)}%`, copy: plain(r) };
+  }
+  return null;
+};
+
+// ----- Date math (local calendar days) -----
+const MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+const MON_RE = "(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)";
+const monIdx = (s) => MONTHS.findIndex((x) => x.startsWith(s.slice(0, 3)));
+const day0 = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+const nthWeekday = (y, m, wd, n) => { const d = new Date(y, m, 1); d.setDate(1 + ((wd - d.getDay() + 7) % 7) + (n - 1) * 7); return d; };
+const easter = (y) => { // Anonymous Gregorian algorithm (Meeus/Jones/Butcher)
+  const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const mo = Math.floor((h + l - 7 * m + 114) / 31), da = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(y, mo - 1, da);
+};
+// US-centred holidays (the user's searches are US); each -> date in year y
+const HOLIDAYS = {
+  christmas: [(y) => new Date(y, 11, 25), "Christmas"], "christmas eve": [(y) => new Date(y, 11, 24), "Christmas Eve"],
+  "new year": [(y) => new Date(y, 0, 1), "New Year's Day"], "new years": [(y) => new Date(y, 0, 1), "New Year's Day"], "new year's": [(y) => new Date(y, 0, 1), "New Year's Day"],
+  "new years eve": [(y) => new Date(y, 11, 31), "New Year's Eve"], "new year's eve": [(y) => new Date(y, 11, 31), "New Year's Eve"],
+  halloween: [(y) => new Date(y, 9, 31), "Halloween"], "valentines day": [(y) => new Date(y, 1, 14), "Valentine's Day"], "valentine's day": [(y) => new Date(y, 1, 14), "Valentine's Day"],
+  "july 4th": [(y) => new Date(y, 6, 4), "Independence Day"], "4th of july": [(y) => new Date(y, 6, 4), "Independence Day"], "independence day": [(y) => new Date(y, 6, 4), "Independence Day"],
+  thanksgiving: [(y) => nthWeekday(y, 10, 4, 4), "Thanksgiving"], easter: [easter, "Easter"],
+  "mothers day": [(y) => nthWeekday(y, 4, 0, 2), "Mother's Day"], "mother's day": [(y) => nthWeekday(y, 4, 0, 2), "Mother's Day"],
+  "fathers day": [(y) => nthWeekday(y, 5, 0, 3), "Father's Day"], "father's day": [(y) => nthWeekday(y, 5, 0, 3), "Father's Day"],
+  "labor day": [(y) => nthWeekday(y, 8, 1, 1), "Labor Day"], "memorial day": [(y) => { const d = new Date(y, 5, 0); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d; }, "Memorial Day"],
+};
+const longDate = (d) => d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+const dayDiff = (a, b) => Math.round((day0(b) - day0(a)) / 864e5);
+const parseDay = (s, now) => {
+  let m;
+  if ((m = new RegExp(`^${MON_RE}\\.? (\\d{1,2})(?:st|nd|rd|th)?(?:,? (\\d{4}))?$`).exec(s))) return { d: new Date(m[3] ? +m[3] : now.getFullYear(), monIdx(m[1]), +m[2]), y: !!m[3] };
+  if ((m = new RegExp(`^(\\d{1,2})(?:st|nd|rd|th)? (?:of )?${MON_RE}(?:,? (\\d{4}))?$`).exec(s))) return { d: new Date(m[3] ? +m[3] : now.getFullYear(), monIdx(m[2]), +m[1]), y: !!m[3] };
+  if ((m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s))) return { d: new Date(+m[1], +m[2] - 1, +m[3]), y: true };
+  if ((m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s))) return { d: new Date(+m[3], +m[1] - 1, +m[2]), y: true };
+  const h = HOLIDAYS[s.replace(/^the /, "")];
+  if (h) return { d: h[0](now.getFullYear()), y: false, name: h[1], f: h[0] };
+  return null;
+};
+const dateMath = (q, nowMs = Date.now()) => {
+  const now = new Date(nowMs);
+  const s = String(q).trim().toLowerCase().replace(/\s+/g, " ").replace(/[?!.]$/, "").replace(/^how many /, "");
+  let m;
+  // "days until christmas", "days till dec 25", "weeks until 2027-01-01"
+  if ((m = /^(days|weeks) (?:until|till|til|to|before) (.+)$/.exec(s))) {
+    const p = parseDay(m[2], now);
+    if (!p || isNaN(p.d)) return null;
+    // A date without a year that already passed this year means next year's
+    if (!p.y && dayDiff(now, p.d) < 0) p.d = p.f ? p.f(now.getFullYear() + 1) : new Date(p.d.getFullYear() + 1, p.d.getMonth(), p.d.getDate());
+    const n = dayDiff(now, p.d);
+    if (n < 0) return null;
+    const what = p.name || p.d.toLocaleDateString("en-US", { month: "long", day: "numeric" });
+    const v = m[1] === "weeks" ? `${fmtNum(n / 7, 3)} weeks` : n === 0 ? "Today" : `${n.toLocaleString("en-US")} ${n === 1 ? "day" : "days"}`;
+    return { kind: "date", label: `Until ${what}`, value: v, detail: `${longDate(p.d)}${m[1] === "weeks" ? ` · ${n} days` : n >= 14 ? ` · ${Math.floor(n / 7)} weeks ${n % 7 ? `${n % 7} ${n % 7 === 1 ? "day" : "days"}` : ""}`.trimEnd() : ""}`, copy: String(m[1] === "weeks" ? Number((n / 7).toFixed(2)) : n) };
+  }
+  // "days since jan 1", "days since 2020-03-11"
+  if ((m = /^days since (.+)$/.exec(s))) {
+    const p = parseDay(m[1], now);
+    if (!p || isNaN(p.d)) return null;
+    if (!p.y && dayDiff(p.d, now) < 0) p.d = p.f ? p.f(now.getFullYear() - 1) : new Date(p.d.getFullYear() - 1, p.d.getMonth(), p.d.getDate());
+    const n = dayDiff(p.d, now);
+    if (n < 0) return null;
+    return { kind: "date", label: `Since ${p.name || p.d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`, value: `${n.toLocaleString("en-US")} ${n === 1 ? "day" : "days"}`, detail: longDate(p.d), copy: String(n) };
+  }
+  // "30 days from today", "2 weeks from now", "90 days ago", "6 months from today"
+  if ((m = /^(?:what (?:is|day is) |what date is )?(\d{1,5}) (days?|weeks?|months?|years?) (from (?:today|now)|ago|from now)$/.exec(s))) {
+    const n = +m[1], u = m[2].replace(/s$/, ""), sign = m[3] === "ago" ? -1 : 1;
+    const d = day0(now);
+    if (u === "day") d.setDate(d.getDate() + sign * n);
+    else if (u === "week") d.setDate(d.getDate() + sign * n * 7);
+    else if (u === "month") d.setMonth(d.getMonth() + sign * n);
+    else d.setFullYear(d.getFullYear() + sign * n);
+    if (isNaN(d)) return null;
+    return { kind: "date", label: `${n} ${n === 1 ? u : `${u}s`} ${sign < 0 ? "ago" : "from today"}`, value: d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" }), detail: longDate(d), copy: d.toLocaleDateString("en-CA") };
+  }
+  return null;
+};
+
+// ----- Patterns ("paste anything"): exact shapes only, checksums where the format has one -----
+const ups1Z = (s) => {
+  const m = /^1Z([0-9A-Z]{15})(\d)$/.exec(s);
+  if (!m) return false;
+  let sum = 0;
+  [...m[1]].forEach((c, i) => { const v = /\d/.test(c) ? +c : (c.charCodeAt(0) - 63) % 10; sum += i % 2 ? v * 2 : v; });
+  return (10 - (sum % 10)) % 10 === +m[2];
+};
+const isbn = (x) => {
+  if (/^\d{9}[\dX]$/.test(x)) { let t = 0; for (let i = 0; i < 10; i++) t += (x[i] === "X" ? 10 : +x[i]) * (10 - i); return t % 11 === 0; }
+  if (/^97[89]\d{10}$/.test(x)) { let t = 0; for (let i = 0; i < 13; i++) t += +x[i] * (i % 2 ? 3 : 1); return t % 10 === 0; }
+  return false;
+};
+const res = (label, title, href, detail, copy) => ({ kind: "pattern", label, title, href, detail, copy });
+const hexColor = (h) => {
+  const x = h.length <= 4 ? h.slice(1).split("").map((c) => c + c).join("") : h.slice(1, 7);
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(x.slice(i, i + 2), 16));
+  const mx = Math.max(r, g, b) / 255, mn = Math.min(r, g, b) / 255, l = (mx + mn) / 2, d = mx - mn;
+  let hh = 0;
+  if (d) { const R = r / 255, G = g / 255, B = b / 255; hh = mx === R ? ((G - B) / d) % 6 : mx === G ? (B - R) / d + 2 : (R - G) / d + 4; }
+  const sat = d ? d / (1 - Math.abs(2 * l - 1)) : 0;
+  return { hex: `#${x.toUpperCase()}`, rgb: `rgb(${r}, ${g}, ${b})`, hsl: `hsl(${Math.round(((hh * 60) + 360) % 360)}, ${Math.round(sat * 100)}%, ${Math.round(l * 100)}%)` };
+};
+const ipv4 = (s) => { const p = s.split("."); return p.length === 4 && p.every((x) => /^(?:0|[1-9]\d{0,2})$/.test(x) && +x <= 255) ? p.map(Number) : null; };
+const ipKind = ([a, b]) => (a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) ? "Private network address" : a === 127 ? "Loopback (this device)" : a === 169 && b === 254 ? "Link-local address" : a === 100 && b >= 64 && b <= 127 ? "Carrier-grade NAT address" : a >= 224 && a <= 239 ? "Multicast address" : a === 0 || a >= 240 ? "Reserved address" : "Public address");
+const NOT_REPO = /^(?:and\/or|he\/him|she\/her|they\/them|km\/h|m\/s|w\/o|n\/a|24\/7|ft\/s|mi\/h|lb\/ft|ac\/dc)$|\.(?:com|org|net|io|edu|gov)\//i;
+// IATA codes of large airlines (a bare "UA 123" is a flight; other two-letter codes need the word "flight")
+const AIRLINES = new Set("AA UA DL WN B6 AS NK F9 HA G4 SY AC WS BA VS AF KL LH LX OS SN SK AY EI IB VY FR U2 AZ TP TK EK QR EY SV MS ET QF NZ VA JQ NH JL KE OZ CI BR CX SQ MH TG GA VN AI 6E AM AV LA CM".split(" "));
+const pattern = (q) => {
+  const raw = String(q).trim();
+  const s = raw.replace(/\s+/g, " ");
+  const tight = s.replace(/[\s-]/g, "").toUpperCase();
+  let m;
+  // Parcels
+  if (ups1Z(tight)) return res("UPS tracking number", `Track UPS ${tight}`, `https://www.ups.com/track?tracknum=${tight}`, "Check digit OK", tight);
+  if (/^TBA\d{12}$/.test(tight)) return res("Amazon tracking number", `Track Amazon package ${tight}`, `https://track.amazon.com/tracking/${tight}`, "Amazon Logistics", tight);
+  if (/^(?:94|93|92|95)\d{18,20}$/.test(tight)) return res("USPS tracking number", `Track USPS ${tight}`, `https://tools.usps.com/go/TrackConfirmAction?tLabels=${tight}`, "Format matches USPS (no check digit tested)", tight);
+  // FedEx numbers have no published check digit that can be confirmed here, so only with the word "fedex"
+  if ((m = /^fedex\s+(?:tracking\s+)?(\d{12}|\d{15}|\d{20})$|^(\d{12}|\d{15}|\d{20})\s+fedex$/i.exec(s))) { const n = m[1] || m[2]; return res("FedEx tracking number", `Track FedEx ${n}`, `https://www.fedex.com/fedextrack/?trknbr=${n}`, "FedEx", n); }
+  // Books, papers, security advisories
+  // 13 digits starting 978/979 on their own; 10 digits only after "isbn" (1 in 11 random numbers pass its check)
+  if ((m = /^(isbn(?:-1[03])?:?\s*)?((?:97[89][\s-]?)?(?:\d[\s-]?){9}[\dXx])$/i.exec(s)) && (m[1] || /^97[89]/.test(m[2])) && isbn(m[2].replace(/[\s-]/g, "").toUpperCase())) { const n = m[2].replace(/[\s-]/g, "").toUpperCase(); return res(`ISBN-${n.length}`, `Open Library: ISBN ${n}`, `https://openlibrary.org/isbn/${n}`, "Checksum OK", n); }
+  if ((m = /^(?:doi:\s*|https?:\/\/(?:dx\.)?doi\.org\/)?(10\.\d{4,9}\/\S+)$/i.exec(s))) return res("DOI", `doi.org/${m[1]}`, `https://doi.org/${m[1]}`, "Digital Object Identifier", m[1]);
+  if ((m = /^(?:arxiv:?\s*)?(\d{4}\.\d{4,5})(v\d+)?$/i.exec(s)) && +m[1].slice(2, 4) >= 1 && +m[1].slice(2, 4) <= 12) return res("arXiv paper", `arXiv:${m[1]}${m[2] || ""}`, `https://arxiv.org/abs/${m[1]}${m[2] || ""}`, `PDF: arxiv.org/pdf/${m[1]}${m[2] || ""}`, `arXiv:${m[1]}${m[2] || ""}`);
+  if ((m = /^cve-(\d{4})-(\d{4,7})$/i.exec(s))) { const id = `CVE-${m[1]}-${m[2]}`; return res("Vulnerability", `${id} on NVD`, `https://nvd.nist.gov/vuln/detail/${id}`, "National Vulnerability Database", id); }
+  // Windows error codes (0x8xxxxxxx and friends)
+  if ((m = /^(?:error\s+(?:code\s+)?)?(0x[0-9a-f]{8})$/i.exec(s))) { const c = `0x${m[1].slice(2).toUpperCase()}`; return res("Windows error code", `${c} on Microsoft Learn`, `https://learn.microsoft.com/en-us/search/?terms=${c}`, `Decimal ${(parseInt(c, 16) | 0).toLocaleString("en-US").replace(/^-/, MINUS)}`, c); }
+  // Network and color
+  const ip = ipv4(s);
+  if (ip) return { kind: "pattern", label: "IPv4 address", value: s, detail: ipKind(ip), copy: s };
+  if ((m = /^(?:#|(?:hex|colou?r)\s+#?)([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(s))) {
+    const c = hexColor(`#${m[1]}`);
+    return { kind: "pattern", label: "Color", value: c.hex, detail: `${c.rgb} · ${c.hsl}`, copy: c.hex, swatch: c.hex };
+  }
+  // Packages and repositories
+  if ((m = /^(?:pip(?:3)? install|pip|pypi)\s+([a-z0-9][a-z0-9._-]{0,80})$/i.exec(s))) return res("Python package", `${m[1]} on PyPI`, `https://pypi.org/project/${m[1]}/`, `pip install ${m[1]}`, `pip install ${m[1]}`);
+  if ((m = /^(?:npm (?:install|i)|npm)\s+((?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]{0,213})$/i.exec(s))) return res("npm package", `${m[1]} on npm`, `https://www.npmjs.com/package/${m[1]}`, `npm install ${m[1]}`, `npm install ${m[1]}`);
+  if ((m = /^(?:https?:\/\/github\.com\/)?([a-z\d][a-z\d-]{1,38})\/([\w.-]{2,100})$/i.exec(s)) && !/^\d+\/\d+$/.test(s) && !NOT_REPO.test(s)) return res("GitHub repository", `${m[1]}/${m[2]} on GitHub`, `https://github.com/${m[1]}/${m[2]}`, "github.com", `${m[1]}/${m[2]}`);
+  // Flights ("UA 123", "dl1234"): with the word "flight"/"status", or a big airline's code alone ("rx 7800" is a GPU)
+  if ((m = /^(?:flight\s+)?([a-z]{2}|[a-z]\d|\d[a-z])\s?(\d{1,4})(?:\s+(?:flight|status|flight status))?$/i.exec(s)) && (/flight|status/i.test(s) || AIRLINES.has(m[1].toUpperCase()))) {
+    const code = `${m[1].toUpperCase()}${m[2]}`;
+    return res("Flight", `Flight ${m[1].toUpperCase()} ${m[2]} status`, `https://www.flightaware.com/live/flight/${code}`, "FlightAware", code);
+  }
+  // Stock tickers: "$AAPL" (live price is a network answer, M4)
+  if ((m = /^\$([a-z]{1,5}(?:\.[a-z])?)$/i.exec(s))) { const t = m[1].toUpperCase(); return res("Stock", `${t} quote`, `https://finance.yahoo.com/quote/${t}`, "Yahoo Finance", t); }
+  return null;
+};
+
+// ----- The one local answer for a search, or null. CMU course numbers are left to the CMU card (network). -----
+const answer = (q, now = Date.now()) => {
+  const s = String(q || "").trim();
+  if (!s || s.length > 200 || s.startsWith("!")) return null;
+  if (/^\d{2}-\d{3}\b/.test(s)) return null;
+  return pattern(s) || convert(s) || percent(s) || dateMath(s, now) || calc(s);
+};
+
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, dateLabel, relDate, upsValid, isbnValid, cmuCourse, fmtNum, calc, convert, percent, dateMath, pattern, answer };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -2354,12 +2740,62 @@ const groups = () => {
   }
 };
 
+// ===== Answer card, local answers (core answers.js: math, units, cooking, tip/percent, dates, patterns) =====
+// Worked out from the search words alone, so it's drawn in the same pass that clears the panel area for a new
+// search: in place before the results, nothing reserved, nothing late. While it's there, every other panel in the
+// area (AI summary, math-slot...) is hidden by CSS (one answer per search; patterns and sums come first).
+let ansFor = null, ansVal = null;
+const ansCard = (a) => {
+  const box = mk("div", "ct-ans");
+  box.dataset.kind = a.kind;
+  if (a.copy) { box.tabIndex = 0; box.setAttribute("role", "button"); box.dataset.copy = a.copy; box.setAttribute("aria-label", `${a.value || a.title}. Copy`); }
+  const label = mk("div", "ct-ans-label");
+  label.append(mk("span", "ct-ans-l", a.label), mk("span", "ct-ans-copied", "Copied"));
+  box.append(label);
+  if (a.href) { const t = mk("a", "ct-ans-title", a.title); t.href = a.href; t.rel = "noopener"; box.append(t); }
+  else {
+    const v = mk("div", "ct-ans-value");
+    if (a.swatch) { const sw = mk("span", "ct-ans-sw"); sw.style.background = a.swatch; v.append(sw); }
+    v.append(a.value);
+    box.append(v);
+  }
+  if (a.detail) box.append(mk("div", "ct-ans-detail", a.detail));
+  return box;
+};
+const ansPass = () => {
+  const g = document.getElementById("at-a-glance");
+  if (!g) return;
+  const key = searchId(location.href);
+  if (ansFor !== key) {
+    ansFor = key;
+    let q = "", page = 1;
+    try { const u = new URL(key); q = (u.searchParams.get("q") || "").trim(); page = Number(u.searchParams.get("page") || 1); } catch {}
+    ansVal = webTab && page <= 1 ? CT.answer(q) : null;
+    g.querySelectorAll(".ct-ans").forEach((x) => x.remove());
+  }
+  if (!ansVal || g.querySelector(".ct-ans")) return;
+  g.style.display = "";
+  g.prepend(ansCard(ansVal));
+};
+// Tap (or Enter) on an instant answer copies it; "Copied" shows in its label line for a moment (same line, no shift)
+const ansCopy = (e) => {
+  const box = e.target.closest && e.target.closest(".ct-ans[data-copy]");
+  if (!box || e.target.closest("a")) return;
+  if (e.type === "keydown" && e.key !== "Enter" && e.key !== " ") return;
+  e.preventDefault();
+  const done = () => { box.classList.add("ct-copied"); clearTimeout(box._t); box._t = setTimeout(() => box.classList.remove("ct-copied"), 1500); };
+  try { navigator.clipboard.writeText(box.dataset.copy).then(done, () => {}); } catch {}
+};
+document.addEventListener("click", ansCopy);
+document.addEventListener("keydown", ansCopy);
+
 const safe = (name, fn) => { try { fn(); } catch (e) { console.error(`clean-titles ${name}:`, e); } };
 const init = () => {
   safe("query", readQuery);
   safe("early", earlyStart);
   safe("usage", () => noUsage(document.body));
   safe("card", glance);
+  safe("answer", ansPass);
   safe("list", listPass);
   safe("scan", () => scan(document.body));
   safe("skeleton", () => skel(document.body));
@@ -2369,6 +2805,7 @@ const init = () => {
   new MutationObserver((muts) => {
     safe("query", readQuery);
     safe("early", earlyStart);
+    safe("answer", ansPass);
     safe("list", listPass);
     for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { safe("scan", () => scan(n)); safe("skeleton", () => skel(n)); safe("usage", () => noUsage(n)); }
     safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("card", glance);
@@ -3072,6 +3509,25 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 #ct-adv input:focus { border-color: var(--primary); }
 #ct-adv button { grid-column: 2; justify-self: start; font: 600 13.5px system-ui, sans-serif; padding: 8px 18px; border: 0; border-radius: 999px; background: var(--primary); color: #11111b; cursor: pointer; }
 @media (max-width: 767px) { #ct-adv { grid-template-columns: 1fr; gap: 4px; padding: 12px 16px; } #ct-adv input { margin-bottom: 6px; font-size: 16px; } #ct-adv button { grid-column: 1; } }
+/* ===== Answer card (local answers): a rich result, not a box. Gray label line -> 24px answer (or 18px blue title)
+   -> one gray detail line. Same layout on PC and phone. ===== */
+#at-a-glance:has(> .ct-ans) > :not(.ct-ans) { display: none !important; }
+.ct-ans { position: relative; margin: 0 0 24px; padding: 2px 0; cursor: default; border-radius: 8px; }
+.ct-ans[data-copy] { cursor: copy; }
+.ct-ans:focus-visible { outline: 2px solid var(--text-link); outline-offset: 4px; }
+.ct-ans-label { position: relative; font-size: 13px; line-height: 18px; color: var(--text-secondary); white-space: nowrap; }
+.ct-ans-copied { position: absolute; left: 0; top: 0; opacity: 0; color: var(--text-secondary); }
+.ct-ans.ct-copied .ct-ans-l { opacity: 0; }
+.ct-ans.ct-copied .ct-ans-copied { opacity: 1; }
+.ct-ans-value { margin-top: 2px; font-size: 24px; line-height: 32px; color: var(--text-primary); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.ct-ans-sw { display: inline-block; width: 22px; height: 22px; margin-right: 10px; vertical-align: -3px; border-radius: 6px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .25); }
+.ct-ans-title { display: block; margin-top: 2px; font-size: 18px; line-height: 24px; color: var(--text-link); text-decoration: none; text-wrap: balance; overflow-wrap: anywhere; }
+.ct-ans-title:visited { color: var(--text-link-visited); }
+.ct-ans-title:hover { text-decoration: underline; }
+.ct-ans-detail { margin-top: 2px; font-size: 13px; line-height: 18px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; font-variant-numeric: tabular-nums; }
+@media (hover: hover) { .ct-ans[data-copy]:hover .ct-ans-label::after { content: "⧉"; margin-left: 6px; font-size: 12px; color: var(--text-secondary); } }
+@media (max-width: 767px) { .ct-ans-title { min-height: 44px; display: flex; align-items: center; } }
+
 '@)
 [IO.File]::WriteAllText("$t\setcss.js", @'
 const fs = require("fs");

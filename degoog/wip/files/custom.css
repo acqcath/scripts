@@ -608,3 +608,21 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 #ct-adv input:focus { border-color: var(--primary); }
 #ct-adv button { grid-column: 2; justify-self: start; font: 600 13.5px system-ui, sans-serif; padding: 8px 18px; border: 0; border-radius: 999px; background: var(--primary); color: #11111b; cursor: pointer; }
 @media (max-width: 767px) { #ct-adv { grid-template-columns: 1fr; gap: 4px; padding: 12px 16px; } #ct-adv input { margin-bottom: 6px; font-size: 16px; } #ct-adv button { grid-column: 1; } }
+/* ===== Answer card (local answers): a rich result, not a box. Gray label line -> 24px answer (or 18px blue title)
+   -> one gray detail line. Same layout on PC and phone. ===== */
+#at-a-glance:has(> .ct-ans) > :not(.ct-ans) { display: none !important; }
+.ct-ans { position: relative; margin: 0 0 24px; padding: 2px 0; cursor: default; border-radius: 8px; }
+.ct-ans[data-copy] { cursor: copy; }
+.ct-ans:focus-visible { outline: 2px solid var(--text-link); outline-offset: 4px; }
+.ct-ans-label { position: relative; font-size: 13px; line-height: 18px; color: var(--text-secondary); white-space: nowrap; }
+.ct-ans-copied { position: absolute; left: 0; top: 0; opacity: 0; color: var(--text-secondary); }
+.ct-ans.ct-copied .ct-ans-l { opacity: 0; }
+.ct-ans.ct-copied .ct-ans-copied { opacity: 1; }
+.ct-ans-value { margin-top: 2px; font-size: 24px; line-height: 32px; color: var(--text-primary); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.ct-ans-sw { display: inline-block; width: 22px; height: 22px; margin-right: 10px; vertical-align: -3px; border-radius: 6px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .25); }
+.ct-ans-title { display: block; margin-top: 2px; font-size: 18px; line-height: 24px; color: var(--text-link); text-decoration: none; text-wrap: balance; overflow-wrap: anywhere; }
+.ct-ans-title:visited { color: var(--text-link-visited); }
+.ct-ans-title:hover { text-decoration: underline; }
+.ct-ans-detail { margin-top: 2px; font-size: 13px; line-height: 18px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; font-variant-numeric: tabular-nums; }
+@media (hover: hover) { .ct-ans[data-copy]:hover .ct-ans-label::after { content: "⧉"; margin-left: 6px; font-size: 12px; color: var(--text-secondary); } }
+@media (max-width: 767px) { .ct-ans-title { min-height: 44px; display: flex; align-items: center; } }
