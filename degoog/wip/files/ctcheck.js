@@ -71,8 +71,8 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
     let v = false; try { v = !!ok(g.j); } catch {}
     let note = ms(g);
     const k = (/bridge\("(\w+)"/.exec(String(f)) || [])[1];
-    if (!v && !g.j) note += " · no answer from the plugin";
-    else if (!v && KIND[k]) { const w = await bridge("why"); const r = w.j && w.j.why && w.j.why[KIND[k]]; if (r) note += ` · ${r}`; }
+    if (!v && !g.j) note += ", no answer from the plugin";
+    else if (!v && KIND[k]) { const w = await bridge("why"); const r = w.j && w.j.why && w.j.why[KIND[k]]; if (r) note += `, ${r}`; }
     row(name, v, note);
   }
 
@@ -89,7 +89,7 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
       counts.push(`${res.length} results/${new Set(res.map((x) => { try { return new URL(x.url).hostname.replace(/^www\./, ""); } catch { return ""; } }).filter(Boolean)).size} sites`);
     } catch { counts.push("no answer"); }
   }
-  row("Touchy searches get full results", blocked ? "SKIP" : counts.every((c) => { const m = /^(\d+) results\/(\d+) sites$/.exec(c); return m && +m[1] >= 8 && +m[2] >= 5; }), blocked || counts.join(" · "));
+  row("Touchy searches get full results", blocked ? "SKIP" : counts.every((c) => { const m = /^(\d+) results\/(\d+) sites$/.exec(c); return m && +m[1] >= 8 && +m[2] >= 5; }), blocked || counts.join(", "));
   // Every installed web engine on its own (degoog's own engine code and transport, even if it's switched off in
   // Settings), 3 searches each: results and time per search. Informational: shows which engines are worth turning on.
   try {
@@ -115,7 +115,7 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
         } catch { ms += Date.now() - t0; }
       }
       const avgN = got ? Math.round(n / qs.length) : 0, avgMs = Math.round(ms / qs.length);
-      rows.push([`Engine: ${name}`, avgN >= 8 && avgMs <= 2500 ? "GOOD" : avgN === 0 ? "NONE" : "WEAK", `${avgN} results · ${avgMs} ms per search${!avgN && why ? ` · ${why}` : ""}`]);
+      rows.push([`Engine: ${name}`, avgN >= 8 && avgMs <= 2500 ? "GOOD" : avgN === 0 ? "NONE" : "WEAK", `${avgN} results, ${avgMs} ms per search${!avgN && why ? `, ${why}` : ""}`]);
     }
   } catch {}
   // Wikipedia's API asked directly from this server, the way the Wikipedia engine asks it (its headers, its URL)
@@ -128,7 +128,7 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
       const txt = await r.text();
       let n = -1; try { n = (JSON.parse(txt).query?.search || []).length; } catch {}
       ok = r.status === 200 && n > 0;
-      note = `http ${r.status} · ${n >= 0 ? `${n} results` : `not JSON: ${txt.slice(0, 40).replace(/\s+/g, " ")}`} · ${Date.now() - t0} ms`;
+      note = `http ${r.status}, ${n >= 0 ? `${n} results` : `not JSON: ${txt.slice(0, 40).replace(/\s+/g, " ")}`}, ${Date.now() - t0} ms`;
     } catch (e) { note = `no answer: ${String(e && e.message || e).slice(0, 50)}`; }
     rows.push(["Wikipedia API from this server", ok ? "PASS" : "INFO", note]);
   }
@@ -141,7 +141,7 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
       const L = list.filter((x) => x.dev === dev && x.nav);
       if (!L.length) continue;
       const worst = L.reduce((a, b) => ((b.nav.loaded || 0) > (a.nav.loaded || 0) ? b : a));
-      const part = (x) => x ? `wait ${x.wait} · dns ${x.dns} · connect ${x.connect} · tls ${x.tls} · server ${x.server} · download ${x.download}` : "none";
+      const part = (x) => x ? `wait ${x.wait}, dns ${x.dns}, connect ${x.connect}, tls ${x.tls}, server ${x.server}, download ${x.download}` : "none";
       rows.push([`Page opens (${dev}, ${L.length})`, "INFO", `median ready ${med(L.map((x) => x.nav.ready))} ms, first search ${med(L.map((x) => x.search ? x.search.wait + x.search.total : -1))} ms after open`]);
       rows.push([`  slowest (${dev})`, "INFO", `ready ${worst.nav.ready} ms (${part(worst.nav)}); search: ${part(worst.search)}`]);
     }
