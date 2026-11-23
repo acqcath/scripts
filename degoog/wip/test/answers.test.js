@@ -166,3 +166,26 @@ test("meaning line: only when the results cover one meaning; tap adds the word",
   expect(A.meaningLine("python", python.slice(0, 1), texts("python"))).toBeNull();
   expect(A.meaningLine("python", python, ["a", "b"])).toBeNull();
 });
+
+test("featured snippet on the user's 10 recorded searches (and none for jokes, 'why', per-model how-tos)", async () => {
+  const A = await import("../files/answers.js");
+  const fs = await import("fs");
+  const zlib = await import("zlib");
+  const rows = (s) => s.results.map((r) => { let h = ""; try { h = new URL(r.url).hostname.replace(/^www\./, ""); } catch {} return { title: r.title, href: r.url, h, snippet: r.snippet }; });
+  const d = JSON.parse(fs.readFileSync(new URL("../rec/snippet-searches.json", import.meta.url), "utf8"));
+  const got = Object.fromEntries(d.searches.map((s) => { const f = A.featuredSnippet(s.q, rows(s)); return [s.q, f ? `${f.h}: ${f.text}` : null]; }));
+  expect(got["how to tie a noose"]).toStartWith("animatedknots.com: Form a loop in the end of the rope.");
+  expect(got["where is the capital of assyria"]).toContain("Nineveh was the capital");
+  expect(got["how much wood can a woodchuck chuck"]).toContain("700 pounds");
+  expect(got["how many pages is the entire harry potter series"]).toContain("3,407 pages");
+  expect(got["how long is a footlong sandwich"]).toContain('Subway "Foot-Long" sandwiches are actually only 11 inches');
+  expect(got["how long to microwave shin ramen red"]).toContain("5 minutes");
+  expect(got["how many ways are there to skin a cat"]).toContain("only two ways to skin a cat");
+  expect(got["when is dad coming home with the milk"]).toBeNull();
+  expect(got["why does no one love me"]).toBeNull();
+  expect(got["who are you who do you work for"]).toBeNull();
+  const old = JSON.parse(zlib.gunzipSync(fs.readFileSync(new URL("../rec/ct-recordings.json.gz", import.meta.url))));
+  expect(A.featuredSnippet("how to reset airpods", rows(old.searches.find((s) => s.q === "how to reset airpods")))).toBeNull();
+  expect(A.snipSentences("Jun 29, 2011 ... So there are two ways to skin a cat : alive or dead. ... @x How many?")).toEqual(["So there are two ways to skin a cat: alive or dead."]);
+  expect(A.snipSentences("Sep 1, 2017 ... 883–859 B.C.) moved from the traditional capital Ashur to Kalhu (Nimrud). Sargon II founded a new city ...")).toEqual(["Sargon II founded a new city ..."].slice(0, 0));
+});

@@ -2678,7 +2678,94 @@ const answer = (q, now = Date.now(), data = {}) => {
   return pattern(s) || convert(s) || currency(s, data.fx) || percent(s) || dateMath(s, now) || calc(s);
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, dateLabel, relDate, upsValid, isbnValid, cmuCourse, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer };
+// ===== Featured snippet (spec 2): fact and how-to wording only, from a result's own snippet =====
+// Picked from the results already on the page, so it's drawn in the same pass as them (never late). A sentence is
+// used only if it reads as a whole statement that applies to everyone: starts like a sentence, ends in a full stop
+// (not cut off with "..."), no I/you/we wording, no per-model/version steps, and names the subject (or, for a how-to,
+// comes from a page whose title names it). How much/many/long/tall/old/far and when need a number or date in it.
+// No topic is ever filtered (user's rule): wording and sentence shape are the only tests.
+const SNIP_Q = /^(?:what(?:'s| is| are| was| were| does| do)?|who(?:'s| is| was| are| were)?|when(?: is| was| did| does| do| will)?|where(?: is| was| are| did| does)?|which|how (?:many|much|long|tall|old|far|big|deep|high|heavy|fast|often|to)|is|are|was|were|does|do|did|can|could)\b/i;
+const SNIP_NEEDS_NUM = /^(?:how (?:many|much|long|tall|old|far|big|deep|high|heavy|fast|often)|when)\b/i;
+const SNIP_STOP = new Set("a an the of to in on at for by from with and or is are was were be been do does did can could will would how what whats who whos when where which many much long tall old far big deep high heavy fast often there it its this that these those you your i me my we our they them he she his her".split(" "));
+const NUM_WORDS = /\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twenty|thirty|forty|fifty|hundred|thousand|million|billion|dozen|half|infinite)\b/i;
+const snipStem = (w) => w.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "").replace(/(?<=\w{3})(?:es|s)$/, "");
+const snipQuery = (q) => {
+  const s = String(q || "").trim();
+  if (!s || s.length > 120 || s.startsWith("!") || !SNIP_Q.test(s)) return null;
+  const subj = [...new Set(s.split(/\s+/).map(snipStem).filter((w) => w.length >= 3 && !SNIP_STOP.has(w)))];
+  if (!subj.length) return null;
+  return { q: s, subj, howto: /^how to\b/i.test(s), num: SNIP_NEEDS_NUM.test(s), when: /^when\b/i.test(s) };
+};
+// A snippet -> its whole sentences (leading date / "N days ago" / "..." taken off; a first piece that starts
+// mid-sentence and the last piece cut off by "..." are dropped)
+const snipSentences = (text) => {
+  let t = String(text || "").replace(/\s+/g, " ").replace(/\s*(?:\.\.\.|…)\s*/g, " … ").replace(/\s+([,.;:!?])/g, "$1").trim();
+  let cut = false;
+  const lead = /^(?:[A-Z][a-z]{2} \d{1,2}, \d{4}|\d+ (?:minutes?|hours?|days?|weeks?|months?|years?) ago)\s*(?:\.\.\.|…|—|-|·)\s*/.exec(t);
+  if (lead) { t = t.slice(lead[0].length); cut = true; }
+  if (/^(?:\.\.\.|…)/.test(t)) { t = t.replace(/^(?:\.\.\.|…)\s*/, ""); cut = true; }
+  t = t.replace(/^(?:TIL|PSA|ELI5)\s*:?\s*(?:that\s+)?/i, "").replace(/"\s+([^"]*?)\s+"/g, '"$1"');
+  // " ... " inside a snippet joins separate excerpts: each one after it may start mid-sentence
+  const parts = [];
+  t.split(/\s+(?:\.\.\.|…)\s+/).forEach((chunk, c) => chunk.split(/(?<=[.!?])\s+(?=["“(]?[A-Z0-9])/).forEach((p, i) => parts.push({ p, start: i === 0 && (c > 0 || cut) })));
+  const out = [];
+  parts.forEach(({ p, start }) => {
+    p = p.trim();
+    if (/(?:\.\.\.|…)$/.test(p) || !/[.!]["”')\]]?$/.test(p)) return; // cut off or a question
+    if (/^\.+$/.test(p) || p.length < 25 || p.length > 320) return;
+    if (!/^["“(]?[A-Z0-9]/.test(p)) return; // starts mid-sentence
+    if (start && (/^[^(]*\)/.test(p) || /^\d/.test(p) && !/^\d[\d,.]* [a-z]/.test(p))) return; // "883–859 B.C.) moved…"
+    out.push(p);
+  });
+  return out;
+};
+const PERSONAL = /\b(?:i|i'm|i've|i'd|me|my|mine|we|we're|our|us|you|you're|your|yours)\b/i;
+const PER_MODEL = /\b(?:depending on (?:your|the) (?:model|version)|(?:your|this) model|for (?:older|newer) models?|version \d|model number|firmware)\b/i;
+const HAS_NUM = (s) => /\d/.test(s) || NUM_WORDS.test(s);
+const HAS_DATE = (s) => /\b(?:\d{3,4}|\d{1,2}(?:st|nd|rd|th))\b|\b(?:january|february|march|april|may|june|july|august|september|october|november|december|monday|tuesday|wednesday|thursday|friday|saturday|sunday|today|tomorrow|tonight)\b/i.test(s);
+const mentions = (s, subj) => { const ws = new Set(String(s).split(/[^\p{L}\p{N}]+/u).map(snipStem)); return subj.filter((w) => ws.has(w)).length; };
+// results: [{title, href, h, snippet}] in page order (first 6 looked at). -> {kind: "snippet", text, href, title, h}
+const featuredSnippet = (q, results) => {
+  const sq = typeof q === "string" ? snipQuery(q) : q;
+  if (!sq) return null;
+  const need = Math.max(1, Math.ceil(sq.subj.length / 2));
+  // A how-to whose steps differ per model (AirPods: case button, Max, AirPods 4…) gets no snippet: the page that
+  // has the per-model steps is shown first as a normal result instead (spec 2)
+  if (sq.howto && (results || []).slice(0, 6).some((r) => r && /\b(?:(?:each|every|your|all|different|older|newer|which) models?|by model|(?:\d(?:st|nd|rd|th)|first|second|third|fourth) gen(?:eration)?|model numbers?)\b/i.test(`${r.title || ""} ${r.snippet || ""}`))) return null;
+  // …or whose result titles name 2+ variants of the subject ("AirPods Pro", "AirPods Max", "AirPods Pro 3")
+  if (sq.howto) {
+    const vars = new Set();
+    for (const r of (results || []).slice(0, 8)) {
+      const ws = String((r && r.title) || "").split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+      ws.forEach((w, i) => { if (sq.subj.includes(snipStem(w)) && /^(?:pro|max|mini|plus|ultra|se|lite|air|\d{1,2})$/i.test(ws[i + 1] || "")) vars.add(ws[i + 1].toLowerCase()); });
+    }
+    if (vars.size >= 2) return null;
+  }
+  for (const r of (results || []).slice(0, 6)) {
+    if (!r || !r.snippet || /(?:^|\.)(?:youtube\.com|youtu\.be|tiktok\.com|instagram\.com|facebook\.com|x\.com|twitter\.com)$/.test(r.h || "")) continue;
+    const ss = snipSentences(r.snippet);
+    const titleHits = mentions(r.title || "", sq.subj);
+    const ok = ss.map((s, i) => {
+      if (PERSONAL.test(s) || PER_MODEL.test(s) || /\?$/.test(s)) return false;
+      const near = mentions(s, sq.subj) + (i > 0 ? mentions(ss[i - 1], sq.subj) : 0);
+      if (sq.howto) return near >= need || titleHits >= need;
+      if (near < need) return false;
+      if (sq.when) return HAS_DATE(s);
+      if (sq.num) return HAS_NUM(s);
+      return true;
+    });
+    let at = ok.indexOf(true);
+    if (at < 0) continue;
+    // A how-to keeps its consecutive steps (up to 3); a fact keeps one sentence (two if the first is short)
+    let text = ss[at];
+    if (sq.howto) { for (let k = at + 1; k < ss.length && k < at + 3 && ok[k]; k++) text += ` ${ss[k]}`; }
+    else if (text.length < 70 && ss[at + 1] && ok[at + 1]) text += ` ${ss[at + 1]}`;
+    return { kind: "snippet", text, href: r.href, title: r.title || "", h: r.h || "" };
+  }
+  return null;
+};
+
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, dateLabel, relDate, upsValid, isbnValid, cmuCourse, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippet };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -4006,7 +4093,12 @@ const ansCard = (a) => {
   const label = mk("div", "ct-ans-label");
   label.append(mk("span", "ct-ans-l", a.src ? `${a.label} · ${a.src}` : a.label), mk("span", "ct-ans-copied", "Copied"));
   box.append(label);
-  if (a.href) { const t = mk("a", "ct-ans-title", a.title); t.href = a.href; t.rel = "noopener"; box.append(t); }
+  if (a.kind === "snippet") {
+    // The sentence as the page wrote it, then the page itself (title link, like a result)
+    box.append(mk("div", "ct-ans-text", a.text));
+    const t = mk("a", "ct-ans-src", a.title || a.h); t.href = a.href; t.rel = "noopener";
+    box.append(t);
+  } else if (a.href) { const t = mk("a", "ct-ans-title", a.title); t.href = a.href; t.rel = "noopener"; box.append(t); }
   else if (a.kind !== "sports") {
     const v = mk("div", "ct-ans-value");
     if (a.swatch) { const sw = mk("span", "ct-ans-sw"); sw.style.background = a.swatch; v.append(sw); }
@@ -4107,6 +4199,15 @@ const ansPass = () => {
     else if (w && w.d) ansVal = CT.wdAnswer(CT.wdQuery(q), w.d);
     else if (cm && cm.c) ansVal = CT.cmuAnswer(cmuQ(q), cm.c.course, cm.c.fces);
     else { const sp = ready("sports", key); if (sp && sp.g) { ansVal = CT.sportsAnswer(sp.g); if (ansVal && ansVal.live) livePoll(key, q); } }
+    // Featured snippet (fact / how-to wording): a whole sentence from one of the first results now on the page,
+    // drawn in this same pass. Not on page 2+, plain-list searches, or when an answer above came first.
+    let pg = 1;
+    try { pg = Number(new URL(key).searchParams.get("page") || 1); } catch {}
+    if (globalThis.CT_NOSNIP !== true && !ansVal && SHOW.ans !== false && webTab && !TYPE_WORDS.test(q) && !shaped(q) && pg <= 1) {
+      const rs = [...document.querySelectorAll("#results-list .result-item")].filter((el) => el.style.display !== "none" && !el.classList.contains("ct-grouped")).slice(0, 6).map(info).filter(Boolean);
+      const f = CT.featuredSnippet(q, rs);
+      if (f) ansVal = { ...f, label: `From ${f.h}` };
+    }
   }
   aiPass(g, key);
   if (!ansVal || g.querySelector(".ct-ans")) return;
@@ -5087,6 +5188,12 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .ct-ans-sw { display: inline-block; width: 22px; height: 22px; margin-right: 10px; vertical-align: -3px; border-radius: 6px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .25); }
 .ct-ans-title { display: block; margin-top: 2px; font-size: 18px; line-height: 24px; color: var(--text-link); text-decoration: none; text-wrap: balance; overflow-wrap: anywhere; }
 .ct-ans-title:visited { color: var(--text-link-visited); }
+/* Featured snippet: the sentence at reading size, then the page's title as its link */
+.ct-ans-text { margin-top: 4px; font-size: 16px; line-height: 24px; color: var(--text-primary); overflow-wrap: anywhere; }
+.ct-ans-src { display: inline-block; margin-top: 4px; font-size: 14px; line-height: 20px; color: var(--text-link); text-decoration: none; overflow-wrap: anywhere; }
+.ct-ans-src:visited { color: var(--text-link-visited); }
+.ct-ans-src:hover { text-decoration: underline; }
+@media (max-width: 767px) { .ct-ans-src { min-height: 44px; display: flex; align-items: center; } }
 .ct-ans-title:hover { text-decoration: underline; }
 .ct-ans-detail { margin-top: 2px; font-size: 13px; line-height: 18px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; font-variant-numeric: tabular-nums; }
 @media (hover: hover) { .ct-ans[data-copy]:hover .ct-ans-label::after { content: "⧉"; margin-left: 6px; font-size: 12px; color: var(--text-secondary); } }

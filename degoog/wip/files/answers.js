@@ -696,3 +696,90 @@ export const answer = (q, now = Date.now(), data = {}) => {
   if (/^\d{2}-\d{3}\b/.test(s)) return null;
   return pattern(s) || convert(s) || currency(s, data.fx) || percent(s) || dateMath(s, now) || calc(s);
 };
+
+// ===== Featured snippet (spec 2): fact and how-to wording only, from a result's own snippet =====
+// Picked from the results already on the page, so it's drawn in the same pass as them (never late). A sentence is
+// used only if it reads as a whole statement that applies to everyone: starts like a sentence, ends in a full stop
+// (not cut off with "..."), no I/you/we wording, no per-model/version steps, and names the subject (or, for a how-to,
+// comes from a page whose title names it). How much/many/long/tall/old/far and when need a number or date in it.
+// No topic is ever filtered (user's rule): wording and sentence shape are the only tests.
+const SNIP_Q = /^(?:what(?:'s| is| are| was| were| does| do)?|who(?:'s| is| was| are| were)?|when(?: is| was| did| does| do| will)?|where(?: is| was| are| did| does)?|which|how (?:many|much|long|tall|old|far|big|deep|high|heavy|fast|often|to)|is|are|was|were|does|do|did|can|could)\b/i;
+const SNIP_NEEDS_NUM = /^(?:how (?:many|much|long|tall|old|far|big|deep|high|heavy|fast|often)|when)\b/i;
+const SNIP_STOP = new Set("a an the of to in on at for by from with and or is are was were be been do does did can could will would how what whats who whos when where which many much long tall old far big deep high heavy fast often there it its this that these those you your i me my we our they them he she his her".split(" "));
+const NUM_WORDS = /\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twenty|thirty|forty|fifty|hundred|thousand|million|billion|dozen|half|infinite)\b/i;
+const snipStem = (w) => w.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "").replace(/(?<=\w{3})(?:es|s)$/, "");
+export const snipQuery = (q) => {
+  const s = String(q || "").trim();
+  if (!s || s.length > 120 || s.startsWith("!") || !SNIP_Q.test(s)) return null;
+  const subj = [...new Set(s.split(/\s+/).map(snipStem).filter((w) => w.length >= 3 && !SNIP_STOP.has(w)))];
+  if (!subj.length) return null;
+  return { q: s, subj, howto: /^how to\b/i.test(s), num: SNIP_NEEDS_NUM.test(s), when: /^when\b/i.test(s) };
+};
+// A snippet -> its whole sentences (leading date / "N days ago" / "..." taken off; a first piece that starts
+// mid-sentence and the last piece cut off by "..." are dropped)
+export const snipSentences = (text) => {
+  let t = String(text || "").replace(/\s+/g, " ").replace(/\s*(?:\.\.\.|…)\s*/g, " … ").replace(/\s+([,.;:!?])/g, "$1").trim();
+  let cut = false;
+  const lead = /^(?:[A-Z][a-z]{2} \d{1,2}, \d{4}|\d+ (?:minutes?|hours?|days?|weeks?|months?|years?) ago)\s*(?:\.\.\.|…|—|-|·)\s*/.exec(t);
+  if (lead) { t = t.slice(lead[0].length); cut = true; }
+  if (/^(?:\.\.\.|…)/.test(t)) { t = t.replace(/^(?:\.\.\.|…)\s*/, ""); cut = true; }
+  t = t.replace(/^(?:TIL|PSA|ELI5)\s*:?\s*(?:that\s+)?/i, "").replace(/"\s+([^"]*?)\s+"/g, '"$1"');
+  // " ... " inside a snippet joins separate excerpts: each one after it may start mid-sentence
+  const parts = [];
+  t.split(/\s+(?:\.\.\.|…)\s+/).forEach((chunk, c) => chunk.split(/(?<=[.!?])\s+(?=["“(]?[A-Z0-9])/).forEach((p, i) => parts.push({ p, start: i === 0 && (c > 0 || cut) })));
+  const out = [];
+  parts.forEach(({ p, start }) => {
+    p = p.trim();
+    if (/(?:\.\.\.|…)$/.test(p) || !/[.!]["”')\]]?$/.test(p)) return; // cut off or a question
+    if (/^\.+$/.test(p) || p.length < 25 || p.length > 320) return;
+    if (!/^["“(]?[A-Z0-9]/.test(p)) return; // starts mid-sentence
+    if (start && (/^[^(]*\)/.test(p) || /^\d/.test(p) && !/^\d[\d,.]* [a-z]/.test(p))) return; // "883–859 B.C.) moved…"
+    out.push(p);
+  });
+  return out;
+};
+const PERSONAL = /\b(?:i|i'm|i've|i'd|me|my|mine|we|we're|our|us|you|you're|your|yours)\b/i;
+const PER_MODEL = /\b(?:depending on (?:your|the) (?:model|version)|(?:your|this) model|for (?:older|newer) models?|version \d|model number|firmware)\b/i;
+const HAS_NUM = (s) => /\d/.test(s) || NUM_WORDS.test(s);
+const HAS_DATE = (s) => /\b(?:\d{3,4}|\d{1,2}(?:st|nd|rd|th))\b|\b(?:january|february|march|april|may|june|july|august|september|october|november|december|monday|tuesday|wednesday|thursday|friday|saturday|sunday|today|tomorrow|tonight)\b/i.test(s);
+const mentions = (s, subj) => { const ws = new Set(String(s).split(/[^\p{L}\p{N}]+/u).map(snipStem)); return subj.filter((w) => ws.has(w)).length; };
+// results: [{title, href, h, snippet}] in page order (first 6 looked at). -> {kind: "snippet", text, href, title, h}
+export const featuredSnippet = (q, results) => {
+  const sq = typeof q === "string" ? snipQuery(q) : q;
+  if (!sq) return null;
+  const need = Math.max(1, Math.ceil(sq.subj.length / 2));
+  // A how-to whose steps differ per model (AirPods: case button, Max, AirPods 4…) gets no snippet: the page that
+  // has the per-model steps is shown first as a normal result instead (spec 2)
+  if (sq.howto && (results || []).slice(0, 6).some((r) => r && /\b(?:(?:each|every|your|all|different|older|newer|which) models?|by model|(?:\d(?:st|nd|rd|th)|first|second|third|fourth) gen(?:eration)?|model numbers?)\b/i.test(`${r.title || ""} ${r.snippet || ""}`))) return null;
+  // …or whose result titles name 2+ variants of the subject ("AirPods Pro", "AirPods Max", "AirPods Pro 3")
+  if (sq.howto) {
+    const vars = new Set();
+    for (const r of (results || []).slice(0, 8)) {
+      const ws = String((r && r.title) || "").split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+      ws.forEach((w, i) => { if (sq.subj.includes(snipStem(w)) && /^(?:pro|max|mini|plus|ultra|se|lite|air|\d{1,2})$/i.test(ws[i + 1] || "")) vars.add(ws[i + 1].toLowerCase()); });
+    }
+    if (vars.size >= 2) return null;
+  }
+  for (const r of (results || []).slice(0, 6)) {
+    if (!r || !r.snippet || /(?:^|\.)(?:youtube\.com|youtu\.be|tiktok\.com|instagram\.com|facebook\.com|x\.com|twitter\.com)$/.test(r.h || "")) continue;
+    const ss = snipSentences(r.snippet);
+    const titleHits = mentions(r.title || "", sq.subj);
+    const ok = ss.map((s, i) => {
+      if (PERSONAL.test(s) || PER_MODEL.test(s) || /\?$/.test(s)) return false;
+      const near = mentions(s, sq.subj) + (i > 0 ? mentions(ss[i - 1], sq.subj) : 0);
+      if (sq.howto) return near >= need || titleHits >= need;
+      if (near < need) return false;
+      if (sq.when) return HAS_DATE(s);
+      if (sq.num) return HAS_NUM(s);
+      return true;
+    });
+    let at = ok.indexOf(true);
+    if (at < 0) continue;
+    // A how-to keeps its consecutive steps (up to 3); a fact keeps one sentence (two if the first is short)
+    let text = ss[at];
+    if (sq.howto) { for (let k = at + 1; k < ss.length && k < at + 3 && ok[k]; k++) text += ` ${ss[k]}`; }
+    else if (text.length < 70 && ss[at + 1] && ok[at + 1]) text += ` ${ss[at + 1]}`;
+    return { kind: "snippet", text, href: r.href, title: r.title || "", h: r.h || "" };
+  }
+  return null;
+};

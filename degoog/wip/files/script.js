@@ -1324,7 +1324,12 @@ const ansCard = (a) => {
   const label = mk("div", "ct-ans-label");
   label.append(mk("span", "ct-ans-l", a.src ? `${a.label} · ${a.src}` : a.label), mk("span", "ct-ans-copied", "Copied"));
   box.append(label);
-  if (a.href) { const t = mk("a", "ct-ans-title", a.title); t.href = a.href; t.rel = "noopener"; box.append(t); }
+  if (a.kind === "snippet") {
+    // The sentence as the page wrote it, then the page itself (title link, like a result)
+    box.append(mk("div", "ct-ans-text", a.text));
+    const t = mk("a", "ct-ans-src", a.title || a.h); t.href = a.href; t.rel = "noopener";
+    box.append(t);
+  } else if (a.href) { const t = mk("a", "ct-ans-title", a.title); t.href = a.href; t.rel = "noopener"; box.append(t); }
   else if (a.kind !== "sports") {
     const v = mk("div", "ct-ans-value");
     if (a.swatch) { const sw = mk("span", "ct-ans-sw"); sw.style.background = a.swatch; v.append(sw); }
@@ -1425,6 +1430,15 @@ const ansPass = () => {
     else if (w && w.d) ansVal = CT.wdAnswer(CT.wdQuery(q), w.d);
     else if (cm && cm.c) ansVal = CT.cmuAnswer(cmuQ(q), cm.c.course, cm.c.fces);
     else { const sp = ready("sports", key); if (sp && sp.g) { ansVal = CT.sportsAnswer(sp.g); if (ansVal && ansVal.live) livePoll(key, q); } }
+    // Featured snippet (fact / how-to wording): a whole sentence from one of the first results now on the page,
+    // drawn in this same pass. Not on page 2+, plain-list searches, or when an answer above came first.
+    let pg = 1;
+    try { pg = Number(new URL(key).searchParams.get("page") || 1); } catch {}
+    if (globalThis.CT_NOSNIP !== true && !ansVal && SHOW.ans !== false && webTab && !TYPE_WORDS.test(q) && !shaped(q) && pg <= 1) {
+      const rs = [...document.querySelectorAll("#results-list .result-item")].filter((el) => el.style.display !== "none" && !el.classList.contains("ct-grouped")).slice(0, 6).map(info).filter(Boolean);
+      const f = CT.featuredSnippet(q, rs);
+      if (f) ansVal = { ...f, label: `From ${f.h}` };
+    }
   }
   aiPass(g, key);
   if (!ansVal || g.querySelector(".ct-ans")) return;

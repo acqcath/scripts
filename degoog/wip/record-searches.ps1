@@ -1,5 +1,5 @@
 # Records the featured-snippet test searches from your own degoog (same shape as the first 50 recordings) and saves
-# them on your Desktop as ct-snippet-searches.json. Only titles, links, snippets and engine names are kept.
+# them in your Downloads folder as ct-snippet-searches.json (never the Desktop). Only titles, links, snippets and engine names are kept.
 $c = docker ps -q | Where-Object { (docker inspect $_ --format '{{range .Mounts}}{{.Destination}} {{end}}') -match '/app/data' }
 if (-not $c) { Write-Host "degoog container not found (is it running?)"; return }
 $c = @($c)[0]
@@ -21,7 +21,7 @@ require("fs").writeFileSync("/tmp/ct-rec.json", JSON.stringify(out));
 [IO.File]::WriteAllText("$env:TEMP\ct-rec.js", $js)
 docker cp "$env:TEMP\ct-rec.js" "${c}:/tmp/ct-rec.js"
 docker exec $c bun /tmp/ct-rec.js
-$dest = Join-Path ([Environment]::GetFolderPath('Desktop')) 'ct-snippet-searches.json'
+$dest = Join-Path (New-Object -ComObject Shell.Application).NameSpace('shell:Downloads').Self.Path 'ct-snippet-searches.json'
 docker cp "${c}:/tmp/ct-rec.json" $dest
 docker exec $c rm -f /tmp/ct-rec.js /tmp/ct-rec.json
 Remove-Item -Force "$env:TEMP\ct-rec.js"
