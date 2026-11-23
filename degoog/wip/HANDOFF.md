@@ -29,6 +29,13 @@ The spec is the user's handoff text (they paste it into each new chat). These no
   - getDesc text append (iPhone video descriptions are ruled out: check this is phone-gated; PC only)
 - v49 installer does one-time downloads (words/pairs/names) inside the installer. The spec says no one-time setup in the installer, so move these to the plugin's lazy init.
 
+## M2 design (verified in degoog e006d50 source, 2026-11-23 06:05 UTC; not built yet)
+- degoog already filters server-side, before results render: `domainBlockList` (Hide; matches the host and its subdomains; needs domainBlockEnabled) and `domainScoreList` lines `host|N` (N added to each result's score; scores are ~1-10 per engine x multiplier, +5 per extra engine, so a top result is ~60). Lists live in dataDir/search/search-lists.json (src/server/utils/filtering/domain-lists.ts, createListStore; writeList publishes an invalidate, so the filter re-reads at once).
+- Plan: the four choices map onto degoog's own lists, so Hide/Prefer/Lower work server-side on every tab and before paint, with no list shipped to the page: Hide = domainBlockList; Prefer = `host|100`; Lower = `host|-100`; Normal = removed from both. The user's existing Block/score entries become the starting state (block -> Hide, score > 0 -> Prefer, < 0 -> Lower). One list in Settings.
+- Writes must keep degoog's settings auth (the bridge via /api/command is unauthenticated; anyone reaching the instance could change the list). Stock menu: POST /api/settings/domain-action with header x-settings-token = sessionStorage token (result-actions.ts _getToken/TOKEN_KEY), guarded by settingsAuth (gandalfAtTheGate; refuses cross-site). It only appends block / upserts score, it can't remove a block line, so Normal needs the general settings save route under the same auth (find it: src/server/routes/settings/*). The iPhone blocker only rejects /api/plugin/ and GET /api/command, so /api/settings/* is reachable.
+- The page still needs the list for "Prefer = no 2-per-site cap" and to show the current choice in the menu: read-only copy kept in localStorage `ct-sites` (refreshed from a read-only bridge route each page load and on every change), same pattern as `ct-show`. core planPage already takes sites {domain: prefer|lower|hide} (tests exist).
+- Anti-SEO "auto" marks: the plugin's own file (/app/data/plugins/clean-titles/sites-auto.json: domain -> {strikes, seen, auto}); auto only ever writes Lower, and any manual choice for a domain stops auto for it.
+
 ## Real data from the user's server (recorded 2026-11-23)
 - degoog/wip/rec/ct-recordings.json.gz holds 54 real searches through their degoog: 50 web, plus images for eiffel tower and golden gate bridge, and news for steelers and nvidia. Fields: title, url, snippet, sources, publishedAt, thumbnail, imageUrl, duration, plus engine timings.
   - It also has their real page HTML (`page`), their real compiled CSS (`css`: theme style.css, /api/plugins/styles.css, fontawesome) for headless screenshots, non-secret server settings, and the installed plugins.
@@ -86,7 +93,9 @@ The spec is the user's handoff text (they paste it into each new chat). These no
   - Measure live how often /fix and /qs are in hand before results arrive (engine cache hits come back fast). If "Showing results for" is often dropped while the search really was changed, show it from the server's answer: the interceptor knows the fix before the engines run.
   - Rank higher / Rank lower menu click moves rows: user-initiated, so allowed; it gets replaced by Prefer/Normal/Lower/Hide in M2.
   - Title cleanup audit (cleanTitle runs in row() before paint: OK; check nothing else rewrites titles later).
-- Site prefs UI (Prefer/Normal/Lower/Hide in the result menu and Settings) + server compiling CT_DATA.sites into the inline block.
+- M2 step 1: build the design above (menu + Settings + migration + read-only bridge route + ct-sites cache), then anti-SEO auto-Lower, paywall tag, images-only blocklist.
+- Design nits seen in the M1 screenshots (for M5/M6): spec says no site icons/favicons, but the forum/video/news boxes still draw favImg; a "pdf" search still gets a Videos box (spec 8 same-shape results); 28px gap under boxes (margin 4/24).
+- Server should restore /public/ct/psl.<hash>.js + the layout block at startup when an image update wiped them (todo before ship).
 - Still to do for core: repost (same title + author), translations beyond locale paths, proceedings copies. FedEx check digit is not implemented: find a verified algorithm and a known-valid number before shipping, or require "fedex" in the search.
 - Live source report: SOURCES.md does not exist yet. Rerun that check (WebFetch, one fetch per source).
 
