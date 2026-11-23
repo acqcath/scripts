@@ -408,6 +408,32 @@ const glance = () => {
     .catch(() => cardCache.delete(bang));
 };
 
+// Server answers a page needs for a search (typo fix + related searches, People also ask): asked as soon as the
+// search's address is known (page load or a new search), in parallel with the engines. Used only if the answer is
+// in hand when the results arrive, so it's drawn in the same pass; a later answer is dropped, never inserted after
+// the results are on screen. data: undefined = still waiting, null = none.
+const early = new Map();
+const ask = (route, key, params) => {
+  const e = { key, data: undefined };
+  early.set(route, e);
+  bridge(route, params).then((j) => { e.data = j || null; }, () => { e.data = null; });
+};
+const ready = (route, key) => { const e = early.get(route); return e && e.key === key ? e.data : undefined; };
+let earlyFor = "";
+const earlyStart = () => {
+  const key = searchId(location.href);
+  if (earlyFor === key) return;
+  earlyFor = key;
+  early.clear();
+  let u;
+  try { u = new URL(key); } catch { return; }
+  const q = (u.searchParams.get("q") || "").trim();
+  if (!q) return;
+  const from = (u.searchParams.get("ct_from") || "").trim();
+  ask("fix", key, { q, ...(u.searchParams.has("ct_keep") ? { keep: 1 } : {}), ...(u.searchParams.has("ct_acc") && from ? { acc: from } : {}) });
+  if (webTab && Number(u.searchParams.get("page") || 1) <= 1 && !q.startsWith("!")) ask("qs", key, { q });
+};
+
 // Typo fix line above the results, related searches below them (Web tab), and learning from your results
 const nearWord = (a, b) => {
   const lim = Math.max(1, Math.round(a.length / 3));
@@ -428,13 +454,11 @@ const extras = () => {
   if (!list || !list.querySelector(".result-item, .image-card, .video-card")) return;
   const key = (extrasFor = searchId(location.href));
   document.querySelectorAll("#ct-fix, #ct-related").forEach((e) => e.remove());
-  let q = "", from = "", keepIt = false, acc = false;
+  let q = "", from = "";
   try {
     const u = new URL(key);
     q = (u.searchParams.get("q") || "").trim();
     from = (u.searchParams.get("ct_from") || "").trim();
-    keepIt = u.searchParams.has("ct_keep");
-    acc = u.searchParams.has("ct_acc");
   } catch {}
   if (!q) return;
   const go = (text, extra) => {
@@ -452,9 +476,8 @@ const extras = () => {
     const t = rows.map((r) => (r.querySelector("a.result-title") || {}).textContent || "");
     bridge("learn", {}, JSON.stringify({ t })).catch(() => {});
   }
-  bridge("fix", { q, ...(keepIt ? { keep: 1 } : {}), ...(acc && from ? { acc: from } : {}) })
-    .then((j) => {
-      if (!j || !sameSearch(key) || !list.isConnected) return;
+  ((j) => {
+      if (!j || !sameSearch(key) || !list.isConnected) return; // not in hand when the results came: dropped
       // Fixes that weren't sure before searching, like Google's "Did you mean": offered (never forced) only when
       // the results never use the typed word but clearly use one of its candidates (so names your results
       // know, like "Vitamix", stay as typed). Tap it once and that fix happens by itself from then on
@@ -529,8 +552,7 @@ const extras = () => {
         box.append(h, g);
         list.after(fadeIn(box));
       }
-    })
-    .catch(() => {});
+    })(ready("fix", key));
 };
 
 // ===== Rank higher / Rank lower, People also ask, and search Tools =====
@@ -581,10 +603,10 @@ document.addEventListener("click", async (e) => {
 }, true);
 
 // People also ask, after the 3rd result: tap a question to see the best answer degoog finds for it
-let paaFor = "", paaLast = "";
+let paaFor = "";
 // 3rd visible result right now (degoog can redraw the list after People also ask was requested)
 const paaAnchor = () => [...(document.getElementById("results-list")?.querySelectorAll(".result-item, .ct-grp") || [])].filter((x) => x.style.display !== "none" && !x.classList.contains("ct-grouped"))[2];
-let paaBox = null, paaTries = 0;
+let paaBox = null;
 
 const paa = () => {
   if (!webTab) return;
@@ -598,18 +620,15 @@ const paa = () => {
   const rows = [...list.querySelectorAll(".result-item")].filter((x) => x.style.display !== "none");
   if (rows.length < 4) return;
   const key = (paaFor = searchId(location.href));
-  if (key !== paaLast) { paaLast = key; paaTries = 0; }
   let q = "", page = 1;
   try { const u = new URL(key); q = (u.searchParams.get("q") || "").trim(); page = Number(u.searchParams.get("page") || 1); } catch {}
   const old = document.getElementById("ct-qa");
   if (old) old.remove();
   paaBox = null;
   if (!q || page > 1 || q.startsWith("!")) return;
-  bridge("qs", { q })
-    .then((j) => {
-      if (paaFor !== key) return; // a different search by now
-      // No answer (slow moment): ask again on the next page change, up to 2 more times
-      if (!j || !Array.isArray(j.q)) { if (++paaTries <= 2) paaFor = ""; return; }
+  ((j) => {
+      // Not in hand when the results came (or none): dropped for this search
+      if (!j || !Array.isArray(j.q)) return;
       if (j.q.length < 2) return;
       const box = document.createElement("div");
       box.id = "ct-qa";
@@ -678,9 +697,8 @@ const paa = () => {
         box.append(d);
       }
       paaBox = fadeIn(box);
-      paaAnchor()?.after(box); // no 3rd result yet: goes in as soon as there is one
-    })
-    .catch(() => { if (paaFor === key && ++paaTries <= 2) paaFor = ""; });
+      paaAnchor()?.after(box);
+    })(ready("qs", key));
 };
 
 // Tools, like Google's advanced search: a small link beside the tabs opens the fields, filled from your search
@@ -1000,6 +1018,7 @@ const groups = () => {
 const safe = (name, fn) => { try { fn(); } catch (e) { console.error(`clean-titles ${name}:`, e); } };
 const init = () => {
   safe("query", readQuery);
+  safe("early", earlyStart);
   safe("usage", () => noUsage(document.body));
   safe("card", glance);
   safe("list", listPass);
@@ -1009,6 +1028,7 @@ const init = () => {
   // Runs right after degoog inserts results and before the screen updates; only looks inside what was added
   new MutationObserver((muts) => {
     safe("query", readQuery);
+    safe("early", earlyStart);
     safe("list", listPass);
     for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { safe("scan", () => scan(n)); safe("skeleton", () => skel(n)); safe("usage", () => noUsage(n)); }
     safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("card", glance);
