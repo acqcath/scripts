@@ -55,6 +55,7 @@ The spec is the user's handoff text (they paste it into each new chat). These no
   - "Looks like news" (spec 15, carried-over value, now set from real data): 3+ different sites with an exact "N minutes/hours ago" stamp in the last 24 h. On the 50 recorded web searches only steelers and taylor swift pass. v49's rule (2+ sites dated within 2–3 days) also fired on time in tokyo, days until christmas, 100 usd to eur, $AAPL, nvidia stock (pages stamped with today's date).
   - Real News answers have no dates (recorded steelers + nvidia: 0 of 55 results dated), so v49's "fresh stories only" filter dropped every story: Top stories could never show. Now undated stories count as current and keep degoog's order; dated-old ones are still left out.
   - Bug fixed: after the date moved to the source line (previous run), `info()` no longer found it, so forum/video/news boxes saw no dates. The moved `span.ct-date` keeps the raw text in data-raw and info() reads it.
+  - News tab ct-lowres decided before paint (`lowres` in row cleanup, News tab only): upgradable host (hdImg crossfades a sharp copy into the same box) or a size hint >= 480px (Bing th?w=, Brave rs:fit:W) keeps the banner; anything else gets the 92px thumbnail. Nothing adds ct-lowres after load any more. Recorded News pictures: steelers 55 (5 bing.com w=234, 50 Brave fit:200), nvidia 48 + 10 without one; all upgradable, so all keep the banner. If an upgrade fails the banner stays (blurry) rather than re-laying out.
   - Story card picture that fails to load: hidden with visibility (keeps its box) instead of removed (the card changed shape after paint).
 
 ## Verified this run
@@ -73,7 +74,6 @@ The spec is the user's handoff text (they paste it into each new chat). These no
 - PSL is read from `window.CT_PSL` (string), set by /public/ct/psl.<hash>.js loaded with defer before the module (defer and module scripts run in document order).
 ## Next
 - Step 3, part 2 (after-paint items still open):
-  - News tab `ct-lowres`: the class is added once the picture loads and switches the card layout (banner -> 92px thumb) after paint. Fix: decide before paint from URL size hints (Bing th?w=&h=, Brave), else always the thumb layout on that tab. Measure on the recorded news searches (steelers, nvidia) first.
   - Measure live how often /fix and /qs are in hand before results arrive (engine cache hits come back fast). If "Showing results for" is often dropped while the search really was changed, show it from the server's answer: the interceptor knows the fix before the engines run.
   - Rank higher / Rank lower menu click moves rows: user-initiated, so allowed; it gets replaced by Prefer/Normal/Lower/Hide in M2.
   - Title cleanup audit (cleanTitle runs in row() before paint: OK; check nothing else rewrites titles later).
