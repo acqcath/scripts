@@ -228,3 +228,14 @@ test("tidyText: the engines' stray spaces around bolded words go; inch marks, ti
   expect(lowOf("news", "best mechanical keyboard").filter((h) => h === "rtings.com").length).toBe(4);
   for (const q of ["shit", "python", "steelers"]) expect(lowOf("forums", q)).toEqual([]);
 });
+
+test("relevance: matchShare on the search's words; identifier searches use their digits", async () => {
+  const { relWords, matchShare } = await import("../files/core.js");
+  expect(relWords("how to tie a noose")).toEqual(["tie", "noose"]);
+  expect(relWords("15213")).toEqual(["15213"]);
+  expect(relWords("sodfsdfsd")).toEqual(["sodfsdfsd"]);
+  expect(matchShare(relWords("sodfsdfsd"), "reddit.com rule34 Adventure Time")).toBe(0);
+  expect(matchShare(relWords("15213"), "xvideos.com 'mature couple missionary' Search")).toBe(0);
+  expect(matchShare(relWords("adventure time princess bubblegum"), "scrollx.org adventure_time princess_bubblegum seldom")).toBeGreaterThanOrEqual(0.5);
+  expect(matchShare(relWords("how many ways are there to skin a cat"), "So there are only two ways to skin a cat")).toBe(1);
+});
