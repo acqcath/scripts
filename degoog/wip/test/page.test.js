@@ -382,3 +382,17 @@ test("page: AI spot kept at its final size before the results on AI-worded searc
   expect(pressed).toBe(1);
   expect(og.classList.contains("ct-ai-opened")).toBe(true);
 });
+
+test("page: endoflife.date answer drawn with the results when in hand; dropped when it comes later", async () => {
+  const win = [{ cycle: "10-22h2-w", eol: "2025-10-14", latest: "10.0.19045" }];
+  const calls = [];
+  const a = await run("is windows 10 supported", { engines: 40, calls, bridge: { eol: { data: { cycles: win }, delay: 5 } } });
+  expect(calls.find((c) => c.route === "eol").params.get("p")).toBe("windows");
+  expect(a.document.querySelector("#at-a-glance .ct-ans .ct-ans-value").textContent).toBe("No");
+  expect(a.document.querySelector("#at-a-glance .ct-ans .ct-ans-l").textContent).toBe("Windows 10 support · endoflife.date");
+  const b = await run("is windows 10 supported", { engines: 0, bridge: { eol: { data: { cycles: win }, delay: 60 } } });
+  await new Promise((r) => setTimeout(r, 80));
+  b.fire([]);
+  expect(b.document.querySelector(".ct-ans")).toBeNull();
+  expect(a.errors.concat(b.errors)).toEqual([]);
+});

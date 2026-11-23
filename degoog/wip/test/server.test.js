@@ -213,3 +213,18 @@ test("server: ECB rates: parsed with a shape check, fetched only when a newer pu
   expect(calls).toBe(2);
   expect(b.date).toBe("2026-11-20");
 });
+
+test("server: endoflife.date cycles from either API shape, RAM-cached, failures hidden and retried soon", async () => {
+  const srv = await import("../files/index.js");
+  expect(srv.eolCycles([{ cycle: "3.14", releaseDate: "2025-10-07", eol: "2030-10-31", latest: "3.14.1", latestReleaseDate: "2026-11-18", lts: false }])).toEqual([{ cycle: "3.14", releaseDate: "2025-10-07", eol: "2030-10-31", latest: "3.14.1", latestReleaseDate: "2026-11-18" }]);
+  expect(srv.eolCycles({ result: { releases: [{ name: "26", releaseDate: "2025-09-15", isEol: false, eolFrom: null, latest: { name: "26.1", date: "2026-11-03" } }] } })).toEqual([{ cycle: "26", releaseDate: "2025-09-15", eol: false, latest: "26.1", latestReleaseDate: "2026-11-03" }]);
+  expect(srv.eolCycles({ error: "x" })).toBe(null);
+  let calls = [];
+  srv.default.init({ id: "clean-titles", fetch: async (u) => { calls.push(u); return u.includes("/api/ios.json") ? new Response("<html>moved</html>") : new Response(JSON.stringify({ result: { releases: [{ name: "26", latest: { name: "26.1", date: "2026-11-03" } }] } })); } });
+  expect((await srv.eolFor("ios"))[0].latest).toBe("26.1");
+  expect(calls.length).toBe(2); // v0 gave HTML, v1 answered
+  await srv.eolFor("ios");
+  expect(calls.length).toBe(2); // RAM cache
+  expect(await srv.eolFor("../etc")).toBe(null);
+  expect(calls.length).toBe(2);
+});
