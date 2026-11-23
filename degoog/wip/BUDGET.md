@@ -9,6 +9,11 @@
 - NIGHT = everything else (10:32 PM-7:32 AM ET = 03:32-12:32 UTC): no per-window limit, use it all. Each run at most 90 work-minutes (fresh context), then end cleanly; the next hourly fire carries on. Being cut off by the session limit is expected and fine.
 - Weekly: the window resets Wednesday 12:00 PM ET (17:00 UTC). The user keeps 10% of the week (lowered from 20% on 2026-11-23 at their request; kept so daytime is never locked out by the weekly limit), so runs may use up to 90% - 44% = 46% more. That's ~255 more work-minutes, so the cap is 270 logged work-minutes in total since the last reset (~15 were logged before this recalibration). After the reset: 400/week until the main chat recalibrates.
 
+## Recalibrated 2026-11-23 ~16:25 UTC (user's usage page: weekly 70%, session 53%)
+- From 44% at 05:58 to 70% now = 26 points over ~179 logged work-minutes = at most 0.145% weekly per work-minute (an upper bound: other chats ran in the same hours). The 05:58 figure (0.18%/min) was ~25% too high: it came from a 13-minute window, a 2-point change with +-1 rounding, with the main chat running at the same time, then rounded to the worse end.
+- Rule from now on: never set a rate from a window under 60 minutes, or one where another chat was active; prefer the longest window available.
+- Room left before the user's 90% line: 20 points = ~138 work-minutes until Wednesday 12:00 PM ET (17:00 UTC). v50 is READY TO SHIP, so runs exit at the gate anyway.
+
 ## Rule for each run (the schedule fires hourly; fires that exit should take seconds)
 1. If LOCK is fresh → exit.
 2. If READY TO SHIP → exit.
