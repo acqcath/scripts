@@ -400,3 +400,22 @@ test("quick view: never fetches this server's own network; follows redirects wit
   expect(await srv.qvFor("https://b.com/r", ok)).toBeNull();
   expect(seen).toEqual(["https://a.com/r", "https://a.com/final", "https://b.com/r"]);
 });
+
+test("inline stars: rating + time for recipes, rating for reviews; blocking sites skipped after 3 failures", async () => {
+  const srv = await import("../files/index.js");
+  expect(srv.starLine({ kind: "recipe", facts: [["Rating", "4.9 ★ (3,120)"], ["Total time", "1 hr 15 min"]] })).toBe("4.9 ★ · 1 hr 15 min");
+  expect(srv.starLine({ kind: "product", facts: [["Rating", "4.5 ★ (12)"], ["Brand", "K"]] })).toBe("4.5 ★");
+  expect(srv.starLine({ kind: "article", facts: [["By", "x"]] })).toBe("");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ct-qvs-"));
+  let n = 0;
+  srv.default.init({ id: "clean-titles", dir, fetch: async (u) => { n++; return /good\.com/.test(u) ? new Response('<script type="application/ld+json">{"@type":"Recipe","name":"x","totalTime":"PT30M","aggregateRating":{"ratingValue":4.8,"ratingCount":10}}</script>') : new Response("", { status: 403 }); } });
+  const ok = () => Promise.resolve(true);
+  expect(await srv.starsFor(["https://good.com/a", "https://blocker.com/1"], ok)).toEqual({ "https://good.com/a": "4.8 ★ · 30 min" });
+  await srv.starsFor(["https://blocker.com/2"], ok);
+  await srv.starsFor(["https://blocker.com/3"], ok);
+  expect(srv.qvBlocked("blocker.com")).toBe(true);
+  const before = n;
+  await srv.starsFor(["https://blocker.com/4"], ok);
+  expect(n).toBe(before); // not asked any more
+  expect(srv.qvBlocked("good.com")).toBe(false);
+});
