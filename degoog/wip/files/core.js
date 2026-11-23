@@ -27,6 +27,9 @@ export const pslParse = (enc) => {
 export const regDomain = (host, psl) => {
   host = String(host || "").toLowerCase().replace(/\.$/, "");
   if (!host || /^[\d.]+$/.test(host) || host.includes(":")) return host;
+  // No list (the static file failed to load): the host itself, minus www./m. - never guess a suffix, since the bare
+  // default rule would make "co.uk" one site
+  if (!psl) return host.replace(/^(?:www\d?|m)\./, "");
   const L = host.split(".");
   let n = psl, sfx = 1; // number of labels in the longest matching suffix
   for (let i = L.length - 1, d = 1; i >= 0 && n; i--, d++) {
@@ -110,22 +113,29 @@ export const titleKey = (t) => String(t || "").toLowerCase()
 
 // Merge results: same document key, then same title within the same site. Input: [{url, title, ...}] in rank
 // order. Output: kept items (first = best ranked), each with .alts = [{url, label}] for its other versions.
-export const dedupe = (items, psl) => {
-  const out = [], byKey = new Map(), byTitle = new Map();
-  for (const it of items) {
+// Incremental form (endless scroll adds pages to the same search): add(item) -> {rec} for a new document,
+// {dup: rec} for another copy of one already kept
+export const deduper = (psl) => {
+  const byKey = new Map(), byTitle = new Map();
+  return (it) => {
     let host = "";
     try { host = new URL(it.url).hostname.toLowerCase(); } catch {}
     const site = regDomain(SHORT[host.replace(/^www\./, "")] || host, psl);
     const k = docKey(it.url);
     const tk = titleKey(it.title);
+    // 12+ characters: shorter titles ("Home", "Login") repeat across unrelated pages of one site
     const tkey = tk.length >= 12 ? `${site} ${tk}` : "";
     const hit = byKey.get(k) || (tkey && byTitle.get(tkey));
-    if (hit) { addAlt(hit, it); continue; }
+    if (hit) { addAlt(hit, it); return { dup: hit }; }
     const rec = { ...it, site, key: k, alts: [] };
     byKey.set(k, rec);
     if (tkey) byTitle.set(tkey, rec);
-    out.push(rec);
-  }
+    return { rec };
+  };
+};
+export const dedupe = (items, psl) => {
+  const add = deduper(psl), out = [];
+  for (const it of items) { const r = add(it); if (r.rec) out.push(r.rec); }
   for (const r of out) r.alts = altLabels(r);
   return out;
 };
@@ -153,7 +163,10 @@ export const namedSites = (q, psl) => {
   if (m) s.add(regDomain(m[1].replace(/^https?:\/\//, "").replace(/\/.*$/, ""), psl));
   return { set: s, words: new Set(String(q).toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 3)) };
 };
-const siteNamed = (site, named) => named.set.has(site) || named.words.has(site.split(".")[0]);
+// Search words that name a site without being its domain's first label (seen in the recorded searches
+// "mdn array map", "npm lodash", "pip requests")
+const SITE_WORD = { mdn: "mozilla.org", npm: "npmjs.com", pip: "pypi.org", pypi: "pypi.org" };
+const siteNamed = (site, named) => named.set.has(site) || named.words.has(site.split(".")[0]) || [...named.words].some((w) => SITE_WORD[w] === site);
 export const capSites = (items, q, psl, cap = 2) => {
   const named = namedSites(q, psl), n = new Map(), shown = [], folds = new Map();
   for (const it of items) {
@@ -164,6 +177,35 @@ export const capSites = (items, q, psl, cap = 2) => {
     else { if (!folds.has(k)) folds.set(k, []); folds.get(k).push(it); }
   }
   return { shown, folds };
+};
+
+// ===== One page of results, planned before paint =====
+// The page script applies the plan; it keeps no logic of its own. ctx lives for one search (endless scroll pages
+// reuse it): listCtx(q, psl, prefs) with prefs = {site: "prefer" | "lower" | "hide"} (missing = normal).
+export const listCtx = (q, psl, prefs = {}) => ({ add: deduper(psl), named: namedSites(q, psl), count: new Map(), prefs, cap: 2 });
+const WEIGHT = { prefer: 0, lower: 2 };
+// items: [{url, title, ...}] in page order. Returns {shown, dups, hidden (Hide pref), capped (past the cap with no
+// result of that site on this page), folds: Map(site -> {after, items})}.
+// Order: dedupe -> site prefs (Hide drops, Prefer up, Lower down, within this page) -> 2 per site, rest folded
+export const planPage = (items, ctx) => {
+  const recs = [], dups = [], hidden = [], capped = [];
+  for (const it of items) { const r = ctx.add(it); if (r.rec) recs.push(r.rec); else dups.push(it); }
+  for (const r of recs) r.alts = altLabels(r);
+  const kept = recs.filter((r) => (ctx.prefs[r.site] === "hide" ? (hidden.push(r), false) : true));
+  const w = (r) => WEIGHT[ctx.prefs[r.site]] ?? 1;
+  kept.sort((a, b) => w(a) - w(b)); // stable: rank order kept inside each group
+  const shown = [], folds = new Map();
+  for (const r of kept) {
+    const c = ctx.count.get(r.site) || 0;
+    ctx.count.set(r.site, c + 1);
+    if (c < ctx.cap || ctx.prefs[r.site] === "prefer" || siteNamed(r.site, ctx.named)) { shown.push(r); continue; }
+    // Folds only under a result of the same page: one placed on an earlier page would push down what's on screen
+    const lastHere = [...shown].reverse().find((x) => x.site === r.site);
+    if (!lastHere) { capped.push(r); continue; }
+    if (!folds.has(r.site)) folds.set(r.site, { after: lastHere, items: [] });
+    folds.get(r.site).items.push(r);
+  }
+  return { shown, dups, hidden, capped, folds };
 };
 
 // ===== Snippet cleanup =====
@@ -177,6 +219,14 @@ export const cleanSnippet = (s) => {
   if (m && t.length > m[0].length + 8) { date = m[1]; t = t.slice(m[0].length); }
   t = t.replace(/^(?:\.\.\.|…)\s*/, "").replace(/\s*(?:\.\.\.|…)\s*(?:\.\.\.|…)+/g, " … ").replace(/\s+(?:\.\.\.|…)$/, "…").replace(/\.\.\./g, "…").trim();
   return { date, text: t };
+};
+// Label for a date found in a snippet or given by the engine: relative ones stay as written, absolute ones go
+// through relDate
+export const dateLabel = (raw, now = Date.now()) => {
+  const s = String(raw || "").trim();
+  if (!s) return "";
+  if (/ago$|^(?:today|yesterday)$/i.test(s)) return s.toLowerCase();
+  return relDate(/^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s}T12:00:00` : s, now) || s;
 };
 // "yesterday", "3 days ago" within about a week; otherwise the exact date. now injectable for tests
 export const relDate = (d, now = Date.now()) => {

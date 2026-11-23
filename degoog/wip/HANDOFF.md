@@ -40,9 +40,34 @@ The spec is the user's handoff text (they paste it into each new chat). These no
 
 ## Done
 - files/core.js: pslParse, regDomain, docKey, titleKey, dedupe (+arXiv PDF/HTML/vN alts), capSites, namedSites, cleanSnippet, relDate, upsValid, isbnValid, cmuCourse.
-- test/core.test.js: 12 tests pass (`cd degoog/wip && bun test`).
-- Still to do for core: repost (same title + author), translations beyond locale paths, proceedings copies. Also check "18 → 6" on real recorded results. FedEx check digit is not implemented: find a verified algorithm and a known-valid number before shipping, or require "fedex" in the search.
+- Run 2026-11-23 05:10 UTC (step 3, part 1):
+  - core.js: `deduper` (incremental, for endless-scroll pages), `listCtx` + `planPage` (dedupe -> site prefs -> 2 per site with folds, one pure plan the page applies), `dateLabel`, regDomain without a PSL (host minus www./m., never a guessed suffix), site words that name a site (mdn -> mozilla.org, npm -> npmjs.com, pip/pypi -> pypi.org; from the recorded searches).
+  - script.js wired: `listPass` runs first in every observer pass (Web tab), then `scan` (row cleanup), then groups, then `foldPass` ("N more from site ⌄" under the site's last shown result on the same page; tap opens the results in place where the line was). Hidden results carry data-ct-dup / data-ct-hide / data-ct-cap (cap ones stay usable as sitelinks, as in v49). v49's per-host cap (perSite) is gone.
+  - Snippet cleanup: core cleanSnippet on the first text node; degoog's `.result-date` (else the leading date from the text) moves to the source line as `span.ct-date` ("site · yesterday"), via dateLabel.
+  - After-paint fixes: groups() no longer waits for the prefs bridge (switches read from localStorage "ct-show", switch values only; a change applies from the next page load; missing = on). HD thumbnails: same-size opacity-only crossfade (decoded overlay `img.ct-hd`), no more src swap, and a frame degoog hid stays hidden. YouTube description append cut (page + server /ytdesc route + ytDesc).
+  - Build: `python3 build.py` -> files/ct-page.js = core.js wrapped as `CT` + script.js. The installer must embed ct-page.js as its script.js (layout.html inlines one module, so no imports).
+  - Tests: 25 pass. New test/page.test.js runs the built page script in happy-dom on real recorded results rendered with degoog's own result.html (test/fixtures/result.html, degoog e006d50). Needs `bun install` in degoog/wip first (package.json, happy-dom 15.11.7; node_modules ignored).
 
+## Verified this run
+- Real recordings, dedupe -> cap (results in -> after dedupe -> shown): airpods 29 -> 26 -> 21; mdn array map 28 -> 28 -> 17 before the site-word fix (mozilla.org 10 folded), now uncapped; is windows 10 supported 28 -> 28 -> 22 (6 microsoft.com folded under end-of-support). No recorded search reproduces "18 -> 6"; that figure came from an earlier hand-picked set. Real numbers are in the tests instead.
+- On airpods, sitelinks + Discussions + Videos boxes take every capped result, so no fold line appears: correct (nothing shown twice).
+- Same-title-within-site merges two different YouTube IDs with the same title (8lnlUrHBqOE vs D0LZz3Zxk00, re-uploads): kept as intended (spec: reposts).
+- degoog's resultFadeIn also slides 8px (_results.scss), so the image crossfade uses its own opacity-only keyframes (ctXfade, same .3s).
+
+## Assumptions (this run)
+- Prefer/Lower reorder only within one endless-scroll page; a fold is only made under a result on the same page (one above would move what's on screen). Later-page extras are just hidden.
+- Site prefs come from `window.CT_DATA.sites` ({domain: "prefer"|"lower"|"hide"}), compiled into the inline block by the server. Not built yet: until then every site is Normal.
+- PSL is read from `window.CT_PSL` (string), set by /public/ct/psl.<hash>.js loaded with defer before the module (defer and module scripts run in document order).
 ## Next
-- Step 3: wire core into script.js's MutationObserver pass, in this order: dedupe → site prefs (Prefer/Normal/Lower/Hide) → cap folds → snippet cleanup → title cleanup. Then fix every after-paint item above.
-- Live source report from the helper: see SOURCES.md (if missing, rerun that check).
+- Step 3, part 2 (after-paint items still open):
+  - News tab `ct-lowres`: the class is added once the picture loads and switches the card layout (banner -> 92px thumb) after paint. Fix: decide before paint from URL size hints (Bing th?w=&h=, Brave), else always the thumb layout on that tab. Measure on the recorded news searches (steelers, nvidia) first.
+  - Top stories: the /api/search?type=news insert after result 1 lands after paint and isn't sure to arrive. It can't be reserved, so the choices are: drop it unless ready before paint, or cut it. Running a news search for every query breaks "cheap". Suggested: keep the "newsy" test (spec item 15: set "fresh" and the threshold from the recorded news searches) and only use news results already in degoog's cache. If that isn't possible in 1.2.0, cut it and write down why.
+  - extras() (Did you mean, Related), paa(), glance() fetched card: check each for after-paint inserts; reserve exact size or drop.
+  - Title cleanup audit (cleanTitle runs in row() before paint: OK; check nothing else rewrites titles later).
+- Site prefs UI (Prefer/Normal/Lower/Hide in the result menu and Settings) + server compiling CT_DATA.sites into the inline block.
+- Headless Chrome check of fold line, date on source line, crossfade at 390/1280 with the recorded CSS (rec `css`), CLS = 0.
+- Still to do for core: repost (same title + author), translations beyond locale paths, proceedings copies. FedEx check digit is not implemented: find a verified algorithm and a known-valid number before shipping, or require "fedex" in the search.
+- Live source report: SOURCES.md does not exist yet. Rerun that check (WebFetch, one fetch per source).
+
+## Cuts (with reasons)
+- YouTube description fetch (PC too, not just phones): it appended text to a result already on screen, which grows it and moves everything below, and it isn't sure to arrive, so no space can be reserved. The rules forbid both. Removed from the page script and from the server (/ytdesc).
