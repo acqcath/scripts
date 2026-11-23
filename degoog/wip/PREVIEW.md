@@ -34,5 +34,8 @@ Each result's ⋮ menu now has one group of four: **Prefer · Normal · Lower ·
 ## Anti-SEO auto-Lower (M2)
 Each search's first page is checked for SEO signs (scraper copies of another result, "search volume" bait, stale "best … 2023" lists, AI-written wording, essay-writing services). A site with signs on most of the searches it's in (at least 5) is set to **Lower**, and its menu says "Lowered automatically". Only Lower, never Hide; any choice you make wins and stops it for that site. On your recorded searches it would lower nothing (the one scraper it spotted, an MDN copy, showed up once). Off switch: Settings → Clean Titles → "Lower SEO junk automatically".
 
+## Paywall tag (M2)
+Results from sites where most articles need a subscription (nytimes.com incl. Wirecutter and Cooking, wsj.com, ft.com, bloomberg.com, …) show a gray **Paywall** word on the source line. Try `$AAPL` or `best laptop 2026`.
+
 ## Not in this preview yet
-The Paywall tag and the Images-only blocklist (rest of M2). Then answer cards (M3/M4) and the rest of the spec.
+The Paywall tag's archive link (M5) and the Images-only blocklist (rest of M2). Then answer cards (M3/M4) and the rest of the spec.

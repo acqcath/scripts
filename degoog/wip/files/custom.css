@@ -26,6 +26,8 @@ html:root { --ct-desc-pc: 15px; --ct-desc-phone: 13.5px; }
 .result-url-row .ct-date { flex: none; margin-left: -4px; font-size: 13px; line-height: 18px; white-space: nowrap; color: var(--text-cite); font-variant-numeric: tabular-nums; }
 .result-url-row .ct-date::before { content: "·"; margin-right: 4px; }
 @media (max-width: 767px) { .result-url-row .ct-date { color: var(--text-secondary); } }
+.result-url-row .ct-paywall { flex: none; margin-left: -4px; font-size: 13px; line-height: 18px; white-space: nowrap; color: var(--text-secondary); }
+.result-url-row .ct-paywall::before { content: "·"; margin-right: 4px; }
 /* "N more from site.com ⌄": blue = tappable, underline on hover only; tucked under the site's 2nd result
    (results carry 12px top/bottom padding, so -8px leaves 4px between) */
 .ct-fold { margin: -8px 0 4px; }

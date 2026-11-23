@@ -1068,6 +1068,13 @@ const seoSigns = (items, psl, now = Date.now()) => {
 const SEO_MIN = 5;
 const seoVerdict = (t) => !!t && t.seen >= SEO_MIN && t.hits * 2 > t.seen;
 
+// ===== Paywall tag =====
+// Sites where most articles need a subscription (hard or tight metered paywalls). Hand-kept, well-known names only;
+// a "Paywall" word on the source line, nothing hidden or moved.
+const PAYWALL_SITES = new Set(["nytimes.com", "wsj.com", "ft.com", "economist.com", "bloomberg.com", "washingtonpost.com", "theatlantic.com", "newyorker.com", "wired.com", "thetimes.co.uk", "thetimes.com", "telegraph.co.uk", "barrons.com", "hbr.org", "theinformation.com", "latimes.com", "bostonglobe.com", "businessinsider.com", "foreignaffairs.com", "foreignpolicy.com", "nymag.com", "vanityfair.com", "technologyreview.com", "scientificamerican.com", "newscientist.com", "chicagotribune.com", "sfchronicle.com", "seekingalpha.com", "theathletic.com", "thestar.com", "theglobeandmail.com", "afr.com", "spectator.co.uk", "marketwatch.com", "lemonde.fr", "spiegel.de", "nzz.ch", "haaretz.com"]);
+// The Athletic lives under nytimes.com/athletic/ but nytimes.com itself is listed anyway
+const paywalled = (host, psl) => PAYWALL_SITES.has(regDomain(String(host || "").toLowerCase(), psl));
+
 // ===== Snippet cleanup =====
 const MON = "(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\\.?";
 const DATE_RE = new RegExp(`^\\s*(${MON} \\d{1,2},? \\d{4}|\\d{1,2} ${MON},? \\d{4}|\\d{4}-\\d{2}-\\d{2}|\\d{1,2}/\\d{1,2}/\\d{2,4}|\\d+ (?:sec|second|min|minute|hour|hr|day|week|month|year)s? ago|yesterday|today)\\s*(?:\\.\\.\\.|…|—|–|-|·|:)\\s*`, "i");
@@ -1128,7 +1135,7 @@ const cmuCourse = (q, courses) => {
   return { id, level, prof: /prof|instructor|teacher/.test(rest) };
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, cleanSnippet, dateLabel, relDate, upsValid, isbnValid, cmuCourse };
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, dateLabel, relDate, upsValid, isbnValid, cmuCourse };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -1475,6 +1482,8 @@ const row = (el) => {
     const label = dRaw ? CT.dateLabel(dRaw) : "";
     if (label && cite) { const d = mk("span", "ct-date", label); d.dataset.raw = dRaw; cite.after(d); }
   }
+  // "Paywall": a word on the source line, drawn with the result (core PAYWALL_SITES)
+  if (cite && u && CT.paywalled(u.hostname, PSL())) { const t = mk("span", "ct-paywall", "Paywall"); (el.querySelector(".result-url-row .ct-date") || cite).after(t); }
   const img = el.querySelector(".result-thumbnail-wrap img");
   if (img) { if (/[?&]type=news\b/.test(location.search)) lowres(el, img); work.set(el, () => hdImg(img)); near.observe(el); }
 };
@@ -2393,6 +2402,8 @@ html:root { --ct-desc-pc: 15px; --ct-desc-phone: 13.5px; }
 .result-url-row .ct-date { flex: none; margin-left: -4px; font-size: 13px; line-height: 18px; white-space: nowrap; color: var(--text-cite); font-variant-numeric: tabular-nums; }
 .result-url-row .ct-date::before { content: "·"; margin-right: 4px; }
 @media (max-width: 767px) { .result-url-row .ct-date { color: var(--text-secondary); } }
+.result-url-row .ct-paywall { flex: none; margin-left: -4px; font-size: 13px; line-height: 18px; white-space: nowrap; color: var(--text-secondary); }
+.result-url-row .ct-paywall::before { content: "·"; margin-right: 4px; }
 /* "N more from site.com ⌄": blue = tappable, underline on hover only; tucked under the site's 2nd result
    (results carry 12px top/bottom padding, so -8px leaves 4px between) */
 .ct-fold { margin: -8px 0 4px; }
