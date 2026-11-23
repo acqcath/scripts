@@ -1,0 +1,582 @@
+/* Catppuccin Mocha colors */
+html:root {
+  --bg: #1e1e2e !important;
+  --bg-light: #313244 !important;
+  --bg-hover: #45475a !important;
+  --border: #585b70 !important;
+  --border-light: #313244 !important;
+  --text-primary: #cdd6f4 !important;
+  --text-secondary: #a6adc8 !important;
+  --text-snippet: #bac2de !important;
+  --text-cite: #9399b2 !important;
+  --text-link: #89b4fa !important;
+  --text-link-visited: #cba6f7 !important;
+  --primary: #89b4fa !important;
+  --primary-hover: #74c7ec !important;
+  --search-bar-bg: #313244 !important;
+  --search-bar-bg-hover: #45475a !important;
+  --btn-bg: #313244 !important;
+  --modal-footer: #181825 !important;
+}
+
+/* DESCRIPTION SIZE: change these two numbers to resize the descriptions on every tab (PC, then iPhone) */
+html:root { --ct-desc-pc: 15px; --ct-desc-phone: 13.5px; }
+/* Dates at the start of a description: dimmer, so they read as a label */
+.result-snippet .ct-date { color: var(--text-cite) !important; }
+/* Typo fix line above results (Google's "Showing results for") */
+#ct-fix { margin: 0 0 16px; padding-left: var(--ct-x, 0px); font-size: 14px; line-height: 21px; color: var(--text-secondary); }
+/* Everything the plugin adds enters with degoog's own result fade-in */
+.ct-in { animation: resultFadeIn .3s ease-out both; }
+@media (prefers-reduced-motion: reduce) { .ct-in { animation: none; } }
+#ct-fix a, #ct-fix a :is(b, i) { color: var(--text-link) !important; font-weight: 400; }
+#ct-fix a b { font-weight: 600; }
+#ct-fix .ct-fix-alt { font-size: 13px; color: var(--text-cite); }
+#ct-fix .ct-fix-alt a { font-weight: 400; }
+/* Related searches under the results: compact pills, 2 per row on PC, 1 per row on phones */
+#ct-related { margin: 16px 0 8px; }
+#ct-related h3 { font-size: 17px; line-height: 22px; font-weight: 500; color: var(--text-primary); margin: 0 0 10px; }
+#ct-related .ct-rel-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+#ct-related a { display: block; padding: 11px 16px; border-radius: 999px; background: var(--bg-light); color: var(--text-primary) !important; font-size: 14px; line-height: 18px; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (hover: hover) { #ct-related a:hover { background: var(--bg-hover); } }
+@media (max-width: 767px) { #ct-related .ct-rel-grid { grid-template-columns: minmax(0, 1fr); } }
+
+/* Google-style images */
+.image-grid { gap: 12px !important; }
+.image-column { gap: 16px !important; }
+.image-card { overflow: visible !important; border-radius: 0 !important; }
+.image-card:hover { opacity: 1 !important; }
+.image-thumb-wrap { border-radius: 14px; background: var(--bg-light); }
+/* Broken or still-loading pictures: plain tile, no alt text spilling over it */
+.image-thumb { color: transparent !important; font-size: 0 !important; }
+@media (hover: hover) {
+  .image-card:hover .image-thumb { filter: brightness(0.85); }
+}
+.image-info {
+  position: static !important; opacity: 1 !important; background: none !important;
+  padding: 6px 2px 2px !important; gap: 2px !important;
+}
+.image-title { color: var(--text-primary) !important; font-size: 13.5px !important; font-weight: 500; }
+.image-source { color: var(--text-secondary) !important; font-size: 12.5px !important; }
+
+/* Images: title on one line, then the site name in grey, like Google Images */
+.image-title, .image-source { display: block !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; }
+.image-source { color: var(--text-cite) !important; }
+
+/* Images tab: no side panel, full width */
+#results-layout.media-mode #sidebar-col,
+#results-layout.media-mode #image-filters-bar { display: none !important; }
+#results-layout.media-mode #results-main { max-width: none !important; }
+
+/* Cleaner web results */
+.result-engines { display: none !important; }
+#results-meta { display: none !important; }
+#tools-bar { display: none !important; }
+.engine-performance-panel { display: none !important; }
+.result-snippet {
+  display: -webkit-box !important;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.result-snippet:empty { display: none !important; }
+/* Titles: one even weight (Google only highlights matches in the description) */
+.result-title :is(b, strong, em, mark) { font-weight: inherit !important; font-style: inherit !important; background: none !important; color: var(--text-link) !important; }
+/* Visited titles: highlighted words turn purple with the rest (plain "inherit" skips the visited colour in Safari) */
+:is(a:visited, .result-title:visited) :is(b, strong, em, mark) { color: var(--text-link-visited) !important; }
+/* Descriptions: matches brighter, not just heavier */
+.result-snippet :is(b, strong, em, mark) { color: inherit !important; font-weight: inherit !important; font-style: inherit !important; background: none !important; }
+
+/* Tabs: edge-to-edge divider, first label lines up with the logo */
+#results-tabs {
+  border-bottom: 1px solid transparent !important;
+  border-image: linear-gradient(var(--border-light), var(--border-light)) 0 0 1 0 / 0 0 1px 0 / 0 100vw !important;
+}
+#results-tabs { scrollbar-width: none; }
+@media (min-width: 768px) {
+  #results-tabs .results-tab:first-child { margin-left: -1rem !important; }
+}
+
+/* Summary box */
+#at-a-glance > * {
+  margin: 16px 0 0 -16px !important;
+  background: rgba(49, 50, 68, 0.85) !important;
+  border: none !important; border-radius: 12px !important;
+}
+
+/* Wikipedia card: Google-size picture (tall photos like a phone no longer stretch the
+   card into a big empty box) and plain body text instead of link blue */
+.wiki-card .wiki-thumb { max-width: 36% !important; max-height: 180px !important; width: auto !important; height: auto !important; object-fit: contain !important; background: none !important; border-radius: 10px !important; margin: 0 0 8px 16px !important; }
+.wiki-card .wiki-extract { color: var(--text-primary) !important; }
+/* Never too long: every part has a ceiling. Description 5 lines (4 on phones), subtitle
+   2 lines, title 2 lines, picture 180px (120px on phones), logo 60px; the full article
+   is one tap away via the Wikipedia link. So the card tops out around 260px on PC */
+.wiki-card .wiki-extract { display: -webkit-box !important; -webkit-box-orient: vertical; -webkit-line-clamp: 5; overflow: hidden !important; margin: 0 !important; }
+.wiki-card .wiki-desc { display: -webkit-box !important; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden !important; }
+.wiki-card .wiki-title { display: -webkit-box !important; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden !important; }
+.wiki-card .wiki-thumb--logo { max-height: 60px !important; }
+@media (max-width: 767px) {
+  .wiki-card .wiki-thumb { max-height: 120px !important; max-width: 34% !important; }
+  .wiki-card .wiki-extract { -webkit-line-clamp: 4; }
+}
+
+/* Info panel: always open, no dropdown or duplicate title */
+.degoog-accordion-toggle--sidebar { display: none !important; }
+.sidebar-accordion .degoog-accordion-body { display: block !important; }
+
+/* Phones: panel on top (degoog default), proper spacing, summary card below it */
+@media (max-width: 767px) {
+  .sidebar-accordion .degoog-accordion-body { padding-top: 16px !important; }
+  #at-a-glance > * { margin: 12px 0 12px 0 !important; }
+}
+
+@media (min-width: 768px) {
+  /* Image preview floats over the grid */
+  #media-preview-panel {
+    position: fixed !important; top: 0 !important; right: 0 !important;
+    height: 100vh !important; z-index: 300 !important;
+  }
+  #media-preview-panel.open {
+    width: 34vw !important; min-width: 360px !important;
+    margin-inline-start: 0 !important;
+    box-shadow: -8px 0 24px rgba(0,0,0,.5) !important;
+  }
+
+  /* Header: search bar ends at the 44rem content edge, gear in the corner */
+  #results-header .results-logo { flex: none !important; width: 6.5rem !important; }
+  #results-header #results-search-bar { flex: none !important; width: 36.75rem !important; max-width: none !important; }
+  #nav-settings-results {
+    position: absolute !important;
+    top: 1rem !important; right: 1.25rem !important;
+    height: 2.75rem !important; margin: 0 !important;
+    display: flex !important; align-items: center !important;
+  }
+
+  /* One column like the phone: info panel, then AI summary, then results */
+  #results-layout:not(.media-mode) {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 0;
+    align-items: start;
+    max-width: 76rem;
+  }
+  #results-layout:not(.media-mode) #results-main { display: contents; }
+  #results-layout:not(.media-mode) #results-main > * { grid-column: 1; order: 2; max-width: 44rem !important; }
+  #results-layout:not(.media-mode) #at-a-glance { order: 1; }
+  #results-layout:not(.media-mode) #sidebar-col {
+    grid-column: 1; order: 0; width: auto !important;
+    margin: 16px 0 0 -16px !important; max-width: calc(44rem + 16px) !important;
+  }
+  #results-layout:not(.media-mode) .skeleton-card,
+  #results-layout:not(.media-mode) .command-result { max-width: none !important; }
+  #results-page.centered-mode #results-header,
+  #results-page.centered-mode #results-tabs,
+  #results-page.centered-mode #results-layout:not(.media-mode) { max-width: 76rem !important; }
+}
+
+/* Hide the empty info-panel placeholders (results and AI summary still show loading) */
+#results-layout:not(.media-mode) :is(.skeleton-sidebar, .skeleton-sidebar-panel) { display: none !important; }
+
+/* Phones: degoog's own 3-column masonry (every picture keeps its real shape, no square
+   cropping, no gaps), tight 4px gutters, rounded corners, and just the site name in
+   small grey text under each picture. Titles stay on PC, where there is room */
+@media (max-width: 767px) {
+  /* Same 8px margin on both sides of the screen (the right column ran into the edge) */
+  #results-layout.media-mode, #results-layout.media-mode #results-main { padding-inline: 0 !important; margin-inline: 0 !important; max-width: none !important; width: 100% !important; box-sizing: border-box !important; }
+  .image-grid { gap: 4px !important; padding: 8px 8px 24px !important; margin: 0 !important; width: 100% !important; box-sizing: border-box !important; }
+  .image-column { gap: 10px !important; }
+  .image-thumb-wrap { background: var(--bg-light) !important; }
+  .image-card { border-radius: 0 !important; overflow: visible !important; }
+  .image-thumb-wrap { border-radius: 8px !important; overflow: hidden !important; }
+  .image-thumb { height: auto !important; object-fit: contain !important; }
+  .image-info { padding: 4px 2px 0 !important; gap: 2px !important; }
+  .image-title { display: block !important; font-size: 12px !important; line-height: 15px !important; font-weight: 400 !important; color: var(--text-primary) !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; }
+  .image-source { font-size: 11px !important; line-height: 14px !important; }
+}
+
+/* ===== Tabs ======================================================
+   Sizes measured from Google's own pages (Nov 2026), in your Catppuccin theme.
+   degoog bug: when the window regains focus it redraws the tab bar and forgets
+   the active tab, so each tab's look also applies when the results on the page
+   show which tab it is, and the tab underline is put back. */
+
+/* Images: underline after the reset */
+#results-page:not(:has(.results-tab.active)):has(#results-layout.media-mode) .results-tab[data-type="tab:engine:images"] { color: var(--text-primary) !important; border-bottom-color: var(--text-primary) !important; }
+
+/* Every tab shares Google's web-result look (slim source line with a 16px favicon on top, flush with the title, 21px one-line title,
+   15px snippet, 28px between results). Inside a result the lines sit tight so they read as one
+   block; the bigger gap between results does the separating. Tab sections below only add differences */
+.result-item { margin: 0 !important; padding: 12px 0 !important; border: 0 !important; }
+/* First result sits a bit closer to the tabs */
+.result-item:nth-child(1 of .result-item) { padding-top: 6px !important; }
+.result-item .result-body { display: flex !important; flex-direction: column !important; }
+.result-item .result-body > * { order: 4; }
+.result-url-row { order: 0 !important; gap: 8px !important; margin-top: 0 !important; height: 18px !important; align-items: center !important; overflow: visible !important; min-width: 0 !important; }
+.result-item :is(.result-favicon, .result-favicon-missing) { box-sizing: border-box !important; display: block !important; align-self: center !important; position: relative !important; top: 1.5px !important; margin: 0 0 0 1px !important; width: 16px !important; height: 16px !important; padding: 0 !important; border-radius: 4px !important; background: none !important; object-fit: contain; font-size: 9px !important; flex: none !important; }
+.result-item .result-favicon-missing { border-radius: 4px !important; background: var(--bg-hover) !important; color: var(--text-primary) !important; font-size: 10px !important; font-weight: 600 !important; line-height: 1 !important; padding: 0 !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; }
+/* Site icon that failed to load (degoog swaps in a letter): same grey 16px square as a missing icon, not a bare floating letter */
+.result-item .result-favicon.result-favicon-fallback { border-radius: 4px !important; background: var(--bg-hover) !important; color: var(--text-primary) !important; font-size: 10px !important; font-weight: 600 !important; line-height: 1 !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; }
+/* Link line stays calm: long URLs stop at ~Google's breadcrumb width instead of running the full column */
+.result-item .result-cite { max-width: 440px !important; }
+.result-item .result-cite { font-size: 13px !important; line-height: 18px !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; min-width: 0 !important; }
+.result-item .result-title { order: 1 !important; margin-top: 4px !important; font-size: 21px !important; line-height: 26px !important; font-weight: 400 !important; display: block !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; }
+@media (max-width: 767px) { .result-item .result-title { white-space: normal !important; display: -webkit-box !important; -webkit-line-clamp: 2 !important; -webkit-box-orient: vertical; } }
+/* Phones: title leads; summary and link line step back (smaller and greyer) so only the title asks for attention */
+@media (max-width: 767px) {
+  .result-item .result-title { font-size: 18px !important; line-height: 23px !important; margin-top: 5px !important; letter-spacing: -0.1px; }
+  /* .result-body raises priority: the shared rule further down would otherwise win on phones too */
+  .result-item .result-body .result-snippet { font-size: var(--ct-desc-phone) !important; line-height: 19px !important; margin-top: 4px !important; color: var(--text-secondary) !important; }
+  /* Web pictures: smaller, top lined up with the title (not the link line), so results stop looking like product ads */
+  .result-item .result-item-inner .result-thumbnail-wrap { width: 76px !important; height: 76px !important; margin-top: 22px !important; border-radius: 8px !important; }
+  .result-item .result-cite { font-size: 13px !important; color: var(--text-secondary) !important; }
+  /* Results 24px apart, no lines (lines made them look like ad units) */
+  .result-item { padding-block: 12px !important; }
+}
+.result-item .result-snippet { order: 3 !important; -webkit-line-clamp: 2 !important; margin-top: 3px !important; font-size: var(--ct-desc-pc) !important; line-height: calc(var(--ct-desc-pc) * 1.47) !important; color: var(--text-snippet) !important; }
+.result-insecure-badge { border: 0 !important; background: none !important; padding: 0 !important; color: var(--text-cite) !important; font-size: 12px !important; font-weight: 400 !important; }
+.result-date { color: var(--text-cite) !important; }
+/* Thumbnails: Google's 92px rounded squares (Videos and News set their own) */
+.result-item .result-thumbnail-wrap { width: 92px !important; height: 92px !important; border-radius: 8px !important; overflow: hidden !important; }
+.result-item .result-thumbnail-wrap img { width: 100% !important; height: 100% !important; object-fit: cover !important; }
+/* AI summary "Read more": filled grey pill, centred, no blue outline */
+#at-a-glance :is(button, a):is([class*="more" i], [class*="expand" i]):not([hidden]) { border: 0 !important; outline: 0 !important; background: var(--bg-light) !important; color: var(--text-primary) !important; border-radius: 999px !important; width: auto !important; margin-inline: auto !important; padding: 8px 20px !important; display: flex !important; }
+
+/* Science: shared look, plus Scholar's green source line */
+#results-page:is(:has(.results-tab.active[data-type="tab:engine:science"]), :not(:has(.results-tab.active)):has(.result-item:is([data-result-url*="doi.org/"], [data-result-url*="openalex.org/"], [data-result-url*="semanticscholar.org/"], [data-result-url*="ncbi.nlm.nih.gov/"], [data-result-url*="arxiv.org/"], [data-result-url*="researchhub.com/"]))) {
+  & .results-tab[data-type="tab:engine:science"] { color: var(--text-primary) !important; border-bottom-color: var(--text-primary) !important; }
+  & .result-thumbnail-wrap { display: none !important; }
+  & .result-cite { color: #9fc5a8 !important; }
+  & .result-snippet { -webkit-line-clamp: 2 !important; }
+  & .result-insecure-badge { display: none !important; }
+}
+
+/* Forums: shared look, no thumbnails, 2-line titles and snippets */
+#results-page:is(:has(.results-tab.active[data-type="tab:engine:forums"]), :not(:has(.results-tab.active)):not(:has(.result-item:is([data-result-url*="doi.org/"], [data-result-url*="openalex.org/"], [data-result-url*="semanticscholar.org/"], [data-result-url*="ncbi.nlm.nih.gov/"], [data-result-url*="arxiv.org/"], [data-result-url*="researchhub.com/"]))):has(.result-item:is([data-result-url*="reddit.com/r/"], [data-result-url*="stackoverflow.com/"], [data-result-url*="stackexchange.com/"], [data-result-url*="superuser.com/"], [data-result-url*="serverfault.com/"], [data-result-url*="askubuntu.com/"], [data-result-url*="news.ycombinator.com/"]))) {
+  & .results-tab[data-type="tab:engine:forums"] { color: var(--text-primary) !important; border-bottom-color: var(--text-primary) !important; }
+  & .result-thumbnail-wrap { display: none !important; }
+  & .result-snippet { -webkit-line-clamp: 2 !important; }
+  /* Phones: forums keep the tighter 24px gaps (short results read better close together) */
+  @media (max-width: 767px) {
+    & .result-item { padding-block: 12px !important; }
+    & .result-item:nth-child(1 of .result-item) { padding-top: 6px !important; }
+  }
+}
+
+/* News = Google/Apple News cards: 2-column grid, image on top, bold headline; lead story full width */
+#results-page:is(:has(.results-tab.active[data-type="tab:engine:news"]), :not(:has(.results-tab.active, #results-layout.media-mode, .degoog-result--thumb--video, .result-item:is([data-result-url*="doi.org/"], [data-result-url*="openalex.org/"], [data-result-url*="semanticscholar.org/"], [data-result-url*="ncbi.nlm.nih.gov/"], [data-result-url*="arxiv.org/"], [data-result-url*="researchhub.com/"]), .result-item:is([data-result-url*="reddit.com/r/"], [data-result-url*="stackoverflow.com/"], [data-result-url*="stackexchange.com/"], [data-result-url*="superuser.com/"], [data-result-url*="serverfault.com/"], [data-result-url*="askubuntu.com/"], [data-result-url*="news.ycombinator.com/"])))) {
+  & .results-tab[data-type="tab:engine:news"] { color: var(--text-primary) !important; border-bottom-color: var(--text-primary) !important; }
+  /* Cards: every picture is the same 16:9 frame; stories without a picture become full-width
+     text cards, and pictured cards pack in pairs (dense), so no half-empty rows */
+  & :has(> .result-item) { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; grid-auto-flow: row dense !important; gap: 0 16px !important; margin: 0 0 0 -16px !important; max-width: calc(44rem + 16px) !important; padding-top: 0 !important; }
+  & :has(> .result-item) > :not(.result-item) { grid-column: 1 / -1 !important; }
+  & .result-item { padding: 0 !important; border: 0 !important; border-radius: 12px !important; background: rgba(49, 50, 68, .45) !important; overflow: hidden !important; }
+  & .result-item::before { inset: 0; border-radius: 12px; }
+  & .result-item:hover::before { background-color: rgba(69, 71, 90, .35); }
+  & .result-item-inner { display: flex !important; flex-direction: column !important; align-items: stretch !important; gap: 0 !important; height: 100% !important; }
+  & .result-body { flex: 1 !important; min-width: 0 !important; width: auto !important; max-width: none !important; box-sizing: border-box !important; padding: 14px 16px 16px !important; }
+  & .result-thumbnail-wrap {
+    order: -1 !important; flex: none !important; float: none !important; margin: 0 !important; background: var(--bg-light) !important;
+    width: 100% !important; height: auto !important; aspect-ratio: 16 / 9 !important; border-radius: 0 !important; align-self: stretch !important;
+  }
+  & .result-thumbnail-wrap img { width: 100% !important; height: 100% !important; object-fit: cover !important; }
+  & .result-url-row { order: 0 !important; margin: 0 !important; height: 18px !important; }
+  & .result-cite { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  & .result-title { margin-top: 8px !important; font-size: 18px !important; line-height: 24px !important; font-weight: 500 !important; white-space: normal !important; display: -webkit-box !important; -webkit-line-clamp: 3 !important; -webkit-box-orient: vertical; overflow: hidden; }
+  & .result-snippet { margin-top: 6px !important; font-size: calc(var(--ct-desc-pc) - 1.5px) !important; line-height: calc((var(--ct-desc-pc) - 1.5px) * 1.48) !important; -webkit-line-clamp: 2 !important; }
+  /* No picture (or one that failed to load: degoog then hides its frame with an inline
+     display:none but leaves the img inside): full-width text card */
+  & .result-item:not(:has(.result-thumbnail-wrap:not([style*="none"]) img)) { grid-column: 1 / -1 !important; }
+  /* Stories with a picture are tiles; stories without one are a compact list split by thin lines (same as
+     Discussions and People also ask), not a stack of mostly-empty tiles */
+  & .result-item:has(.result-thumbnail-wrap:not([style*="none"]) img) { margin: 8px 0 !important; }
+  & .result-item:not(:has(.result-thumbnail-wrap:not([style*="none"]) img)) { background: transparent !important; border-radius: 0 !important; border-bottom: 1px solid rgba(88, 91, 112, .45) !important; }
+  & .result-item:not(:has(.result-thumbnail-wrap:not([style*="none"]) img)) .result-body { padding: 12px 16px !important; }
+  & .result-item:not(:has(.result-thumbnail-wrap:not([style*="none"]) img)) .result-thumbnail-wrap { display: none !important; }
+  & .result-item:not(:has(.result-thumbnail-wrap:not([style*="none"]) img)) .result-title { -webkit-line-clamp: 2 !important; }
+  /* Pictures too small for a banner (the plugin marks them ct-lowres after trying for a sharper copy):
+     Google News style, a small sharp thumbnail beside the text instead of a blurry full-width banner */
+  & .result-item.ct-lowres { grid-column: 1 / -1 !important; }
+  & .result-item.ct-lowres .result-item-inner { flex-direction: row-reverse !important; align-items: flex-start !important; }
+  & .result-item.ct-lowres .result-thumbnail-wrap { order: 0 !important; flex: none !important; width: 92px !important; height: 92px !important; aspect-ratio: auto !important; border-radius: 8px !important; margin: 14px 14px 14px 0 !important; align-self: flex-start !important; }
+  /* Lead story (if it has a picture): full width, picture on the right */
+  @media (min-width: 768px) {
+    & .result-item:not(.ct-lowres):nth-child(1 of .result-item):has(.result-thumbnail-wrap:not([style*="none"]) img) { grid-column: 1 / -1 !important; }
+    & .result-item:not(.ct-lowres):nth-child(1 of .result-item):has(.result-thumbnail-wrap:not([style*="none"]) img) .result-item-inner { flex-direction: row !important; }
+    & .result-item:not(.ct-lowres):nth-child(1 of .result-item):has(.result-thumbnail-wrap:not([style*="none"]) img) .result-thumbnail-wrap { order: 2 !important; flex: 0 0 50% !important; width: 50% !important; aspect-ratio: 16 / 9 !important; align-self: center !important; }
+    & .result-item:not(.ct-lowres):nth-child(1 of .result-item):has(.result-thumbnail-wrap:not([style*="none"]) img) .result-body { padding: 20px 20px 20px 16px !important; }
+    & .result-item:not(.ct-lowres):nth-child(1 of .result-item):has(.result-thumbnail-wrap:not([style*="none"]) img) .result-title { font-size: 22px !important; line-height: 28px !important; -webkit-line-clamp: 2 !important; }
+  }
+  /* Phones: one card per row, Google News mobile style: every picture is a sharp 92px thumbnail beside
+     the headline (news sources rarely have a sharp full-width copy, so big banners came out blurry) */
+  @media (max-width: 767px) {
+    & :has(> .result-item) { grid-template-columns: minmax(0, 1fr) !important; gap: 0 !important; margin: 0 !important; max-width: none !important; }
+    & .result-item:has(.result-thumbnail-wrap:not([style*="none"]) img) { margin: 6px 0 !important; }
+    & .result-title { font-size: 18px !important; line-height: 24px !important; }
+    & .result-snippet { font-size: var(--ct-desc-phone) !important; line-height: calc(var(--ct-desc-phone) * 1.44) !important; }
+    & .result-item-inner { flex-direction: row-reverse !important; align-items: flex-start !important; }
+    & .result-thumbnail-wrap { order: 0 !important; flex: none !important; width: 92px !important; height: 92px !important; aspect-ratio: auto !important; border-radius: 8px !important; margin: 16px 16px 16px 0 !important; align-self: flex-start !important; }
+    /* Like Google News on phones: source, headline beside the picture, date; no description, so every
+       card is the same height, text never wraps into the empty space under the picture, and 16px padding all round */
+    & .result-body { padding: 16px !important; }
+    & .result-item:not(:has(.result-thumbnail-wrap:not([style*="none"]) img)) .result-body { padding: 12px 16px !important; }
+    & .result-snippet { font-size: 0 !important; line-height: 0 !important; margin-top: 6px !important; }
+    & .result-snippet:not(:has(.result-date)) { display: none !important; }
+    & .result-snippet .result-date { display: inline-block !important; font-size: 12.5px !important; line-height: 18px !important; }
+  }
+}
+
+/* Videos: Google's sizes, but the thumbnail sits beside the title so rows stay even
+   when a video has no description (common in your results; Google always has one) */
+#results-page:is(:has(.results-tab.active[data-type="tab:engine:videos"]), :not(:has(.results-tab.active)):has(.degoog-result--thumb--video)) {
+  & .results-tab[data-type="tab:engine:videos"] { color: var(--text-primary) !important; border-bottom-color: var(--text-primary) !important; }
+  /* Same link line, sizes and gaps as every other tab; the text block (18 + 4 + 26 + 3 + 44 = 95px)
+     sits beside the 94px thumbnail, tops lined up */
+  /* Non-video results: no empty thumbnail gap, text starts at the left edge */
+  & .result-item:not(:has(.degoog-result--thumb--video)) .result-thumbnail-wrap { display: none !important; }
+  /* Videos: thumbnail pinned left, text beside it; each row is as tall as the thumbnail
+     (or the text, if longer), whatever else degoog puts inside the result */
+  & .result-item:has(.degoog-result--thumb--video) {
+    box-sizing: content-box !important; min-height: 94px !important; padding-left: 184px !important; padding-top: 12px !important;
+    & .result-item-inner { display: block !important; }
+    & .result-body { min-width: 0 !important; }
+    & .result-body > :empty { display: none !important; }
+    & .result-thumbnail-wrap {
+      position: absolute !important; left: 0 !important; top: 12px !important; float: none !important;
+      width: 168px !important; height: 94px !important; border-radius: 8px !important; margin: 0 !important;
+    }
+    & .result-snippet { -webkit-line-clamp: 2 !important; }
+  }
+  @media (max-width: 767px) {
+    & .result-item:has(.degoog-result--thumb--video) { min-height: 72px !important; padding-left: 140px !important; padding-block: 12px !important; }
+    & .result-item:has(.degoog-result--thumb--video) .result-thumbnail-wrap { width: 128px !important; height: 72px !important; top: 12px !important; }
+    & .result-item .result-title { font-size: 16px !important; line-height: 21px !important; }
+    & .result-item:has(.degoog-result--thumb--video) .result-snippet { display: none !important; }
+  }
+}
+
+/* ===== Interaction (beyond Google) ================================
+   The whole result is one big click/tap target with a soft highlight on hover,
+   so you don't have to aim for the title. Thumbnails, the menu and links in
+   the AI summary stay separately clickable. Keyboard focus is clearly visible. */
+.result-item { position: relative !important; isolation: isolate; }
+.result-item::before { content: ""; position: absolute; inset: 0 -16px; z-index: -1; border-radius: 12px; pointer-events: none; transition: background-color .15s; }
+.result-item .result-title::after { content: ""; position: absolute; inset: 0; z-index: 1; }
+.result-item :is(.result-thumbnail-wrap, .result-actions) { position: relative; z-index: 2; }
+@media (hover: hover) {
+  .result-item:hover { background-color: transparent !important; box-shadow: none !important; }
+  .result-item:hover::before { background-color: rgba(49, 50, 68, .45); }
+  .result-item:hover .result-title { text-decoration: underline; text-underline-offset: 3px; }
+}
+.result-title:focus-visible { outline: none; }
+.result-item:has(.result-title:focus-visible)::before { background-color: rgba(49, 50, 68, .45); outline: 2px solid var(--primary); }
+::selection { background: rgba(137, 180, 250, .3); }
+
+/* ===== Platform polish ============================================ */
+
+/* Mac: crisper light-on-dark text. iPhone: no font inflation in landscape,
+   no grey flash when tapping, and the page colour shows when you over-scroll */
+html { background: var(--bg) !important; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+:is(.results-tab, .result-item a, .result-thumbnail-wrap, .image-card) { -webkit-tap-highlight-color: transparent; }
+
+/* iPhone: text boxes at 16px so Safari doesn't zoom in when you tap the search bar */
+@media (max-width: 767px) {
+  :is(input[type="text"], input[type="search"], input:not([type]), textarea) { font-size: 16px !important; }
+  .results-tab { padding-block: 12px !important; }
+}
+
+/* AI summary: normal text colour and size, slim follow-up box */
+.glance-ai :is(p, li, span:not(.glance-ai-sources-label)) { color: var(--text-primary) !important; }
+.glance-ai :is(p, li) { font-size: 15px !important; line-height: 1.6 !important; }
+/* AI summary sources, Google AI Overview style: a small link icon right after the sentence
+   it supports (site name and details pop up on hover / tap), so the text reads cleanly and
+   icons never wrap onto a line of their own. "+1" stays when a sentence has more sources */
+.glance-ai .glance-ai-cite { background: rgba(69, 71, 90, .55) !important; border-radius: 999px !important; padding: 0 5px !important; margin: 0 0 0 3px !important; gap: 3px !important; height: 20px !important; min-width: 20px !important; max-width: none !important; justify-content: center !important; vertical-align: -3px !important; color: var(--text-secondary) !important; transition: background-color .15s; }
+.glance-ai .glance-ai-cite .glance-ai-cite-host { display: none !important; }
+.glance-ai .glance-ai-cite .glance-ai-cite-more { font-size: 11.5px !important; line-height: 18px !important; color: var(--text-secondary) !important; opacity: 1 !important; padding-right: 1px; }
+.glance-ai .glance-ai-cite-favicon { width: 13px !important; height: 13px !important; border-radius: 3px !important; }
+/* Show less: the plugin parks it half off the bottom edge of the card in the page colour,
+   where it is nearly invisible; put it under the text as the same pill as Read more */
+.glance-ai .glance-ai-collapse:not([hidden]) { position: static !important; transform: none !important; align-self: center !important; display: flex !important; margin: 12px auto 0 !important; padding: 8px 20px !important; border: 0 !important; border-radius: 999px !important; background: var(--bg-light) !important; color: var(--text-primary) !important; font-size: 13px !important; }
+.glance-ai:has(.glance-ai-collapse:not([hidden])) { padding-bottom: 16px !important; margin-bottom: 0 !important; }
+@media (hover: hover) { #at-a-glance :is(.glance-ai-expand, .glance-ai-collapse):hover { background: var(--bg-hover) !important; } }
+@media (hover: hover) { .glance-ai .glance-ai-cite:hover { background: var(--bg-hover) !important; } }
+.glance-ai .glance-ai-cite--open { background: var(--bg-hover) !important; }
+/* Key phrases: bold like Google, no tinted box behind them */
+.glance-ai .glance-ai-key { background: none !important; padding: 0 !important; color: var(--text-primary) !important; font-weight: 600 !important; }
+.glance-ai textarea {
+  min-height: 0 !important; height: 40px !important; resize: none !important;
+  padding: 9px 14px !important; border-radius: 20px !important;
+}
+
+/* ===== Instant answers (define, time, weather, math, every ! command) ======
+   Same card as the AI summary. degoog wraps each plugin's card in a second
+   .command-result and both add 24px above and below with no side padding, so the
+   outer one becomes one evenly padded, full-width card and the inner one goes flat.
+   Boxes inside a card (buttons, tables, icon tiles) sit one shade darker so they
+   don't vanish into the card, and lines use a visible grey. */
+#at-a-glance > .command-result { width: auto !important; max-width: none !important; padding: 20px 24px 16px !important; }
+#at-a-glance .command-result .command-result { padding: 0 !important; margin: 0 !important; max-width: none !important; width: auto !important; background: none !important; }
+#at-a-glance .command-result :is(h3, h4):first-child { margin-top: 0 !important; }
+#at-a-glance .command-result > :last-child, #at-a-glance .command-result .command-result > :last-child { margin-bottom: 0 !important; }
+#at-a-glance :is(.weather-hero-icon, .weather-week-wrap, .math-calc-key, .math-calc-expr) { background: rgba(17, 17, 27, .45) !important; border: 0 !important; }
+#at-a-glance :is(.weather-hero, .weather-week th, .weather-week td, .command-help-table th, .command-help-table td) { border-color: rgba(88, 91, 112, .45) !important; }
+#at-a-glance .math-widget { background: none !important; }
+@media (max-width: 767px) {
+  #at-a-glance > .command-result { padding: 16px 18px 12px !important; }
+}
+
+/* Time: Google's clock card (big light time, date under it, place and zone in grey) */
+#at-a-glance .time-place { font-size: 14px !important; line-height: 20px !important; font-weight: 400 !important; color: var(--text-secondary) !important; margin: 0 !important; }
+#at-a-glance .time-time { font-size: 44px !important; line-height: 52px !important; font-weight: 400 !important; margin: 4px 0 2px !important; color: var(--text-primary) !important; font-variant-numeric: tabular-nums; }
+#at-a-glance .time-date { font-size: 15px !important; line-height: 22px !important; color: var(--text-primary) !important; margin: 0 !important; }
+#at-a-glance .time-zone { font-size: 13px !important; line-height: 18px !important; color: var(--text-cite) !important; margin: 4px 0 0 !important; }
+
+/* Weather: Google's big light temperature; details 2 per row on phones */
+#at-a-glance .weather-result { max-width: none !important; }
+#at-a-glance .weather-location { font-size: 15px !important; font-weight: 500 !important; color: var(--text-secondary) !important; margin: 0 0 12px !important; }
+#at-a-glance .weather-hero { margin-bottom: 16px !important; padding-bottom: 16px !important; }
+#at-a-glance .weather-hero-icon { border-radius: 14px !important; }
+#at-a-glance .weather-temp { font-size: 44px !important; line-height: 52px !important; font-weight: 400 !important; }
+#at-a-glance .weather-desc { font-size: 15px !important; opacity: 1 !important; }
+#at-a-glance .weather-now-grid { gap: 10px 16px !important; margin-bottom: 16px !important; }
+#at-a-glance .weather-now-item { font-size: 13.5px !important; }
+#at-a-glance .weather-week-wrap { border-radius: 12px !important; }
+@media (max-width: 767px) {
+  #at-a-glance .weather-now-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  #at-a-glance .weather-temp { font-size: 38px !important; line-height: 44px !important; }
+  #at-a-glance .weather-hero-icon { width: 56px !important; height: 56px !important; }
+}
+
+/* Math: Google's calculator (light result, darker keys, blue equals) */
+#at-a-glance .math-query { font-size: 15px !important; font-weight: 400 !important; letter-spacing: 0 !important; }
+#at-a-glance .math-equals { display: none !important; }
+#at-a-glance .math-result { font-size: 36px !important; line-height: 44px !important; font-weight: 400 !important; font-variant-numeric: tabular-nums; }
+#at-a-glance .math-calc { max-width: none !important; }
+#at-a-glance .math-calc-expr { font-weight: 400 !important; border-radius: 10px !important; }
+#at-a-glance .math-calc-key { border-radius: 10px !important; }
+@media (hover: hover) { #at-a-glance .math-calc-key:hover { background: var(--bg-hover) !important; } }
+#at-a-glance .math-calc-eq { background: var(--primary) !important; color: #11111b !important; font-weight: 600 !important; }
+
+/* Define (def / define word): Google's dictionary box */
+#at-a-glance .define-result { padding: 0 !important; margin: 0 !important; max-width: none !important; width: auto !important; background: none !important; }
+#at-a-glance .define-result .define-word { font-size: 28px !important; line-height: 36px !important; font-weight: 400 !important; margin: 0 !important; color: var(--text-primary) !important; }
+#at-a-glance .define-phonetic { font-size: 14px !important; line-height: 20px !important; margin: 2px 0 14px !important; color: var(--text-secondary) !important; }
+#at-a-glance .define-meaning { margin: 0 0 10px !important; }
+#at-a-glance .define-pos { display: block !important; font-style: italic !important; font-size: 14px !important; line-height: 20px !important; color: var(--text-secondary) !important; margin-bottom: 6px !important; }
+#at-a-glance .define-list { list-style: decimal !important; margin: 0 !important; padding-left: 22px !important; }
+#at-a-glance .define-list li { font-size: 15px !important; line-height: 22px !important; margin: 0 0 8px !important; padding-left: 4px !important; color: var(--text-primary) !important; }
+#at-a-glance .define-list li::marker { color: var(--text-secondary); }
+#at-a-glance .define-example { display: block !important; font-size: 14px !important; line-height: 20px !important; margin-top: 2px !important; color: var(--text-secondary) !important; }
+@media (max-width: 767px) {
+  #at-a-glance > .command-result:has(.define-result) { padding: 16px 18px 8px !important; }
+  #at-a-glance .define-result .define-word { font-size: 24px !important; line-height: 32px !important; }
+}
+
+/* PC: the hover box around a result ends where the AI summary box ends (it ran 16px past it) */
+@media (min-width: 768px) { .result-item::before { right: 0 !important; } }
+
+/* Result menu: a tiny faint dot button that brightens when used; only Rank higher / Rank lower / Block inside */
+.result-actions-toggle { width: 16px !important; height: 16px !important; min-width: 0 !important; padding: 0 !important; margin: 0 0 0 4px !important; border: 0 !important; background: none !important; font-size: 12px !important; line-height: 16px !important; color: var(--text-cite) !important; opacity: .5; }
+.result-actions-toggle:hover, .result-actions-toggle[aria-expanded="true"] { opacity: 1; }
+[id^="result-action-score-"], [id^="result-action-refresh-"], [id^="result-action-replace-"] { display: none !important; }
+.result-actions-menu .result-actions-item { font-size: 13px !important; padding: 6px 12px !important; }
+.result-item.ct-moved { animation: ct-flash 1.2s ease; }
+@keyframes ct-flash { from { background: rgba(137, 180, 250, .12); } to { background: transparent; } }
+
+/* People also ask: Google's layout, sized like your results (heading = title size, answer = description, source = link line + title) */
+#ct-qa { margin: 12px 0 12px; }
+#ct-qa h3 { font-size: 20px; line-height: 26px; font-weight: 400; margin: 0 0 10px; color: var(--text-primary); }
+#ct-qa details { border-top: 1px solid rgba(88, 91, 112, .45); }
+#ct-qa details:last-child { border-bottom: 1px solid rgba(88, 91, 112, .45); }
+#ct-qa summary { list-style: none; cursor: pointer; min-height: 48px; box-sizing: border-box; display: flex; align-items: center; padding: 12px 36px 12px 0; position: relative; font-size: 16px; line-height: 22px; color: var(--text-primary); }
+#ct-qa summary::-webkit-details-marker { display: none; }
+#ct-qa summary::after { content: ""; position: absolute; right: 8px; top: 50%; width: 8px; height: 8px; margin-top: -6px; border-right: 2px solid var(--text-secondary); border-bottom: 2px solid var(--text-secondary); transform: rotate(45deg); transition: transform .2s, margin-top .2s; }
+#ct-qa details[open] summary::after { transform: rotate(-135deg); margin-top: -1px; }
+.ct-qa-a { padding: 0 0 16px; }
+.ct-qa-text { margin: 0 0 12px; font-size: var(--ct-desc-pc); line-height: calc(var(--ct-desc-pc) * 1.47); color: var(--text-snippet); }
+.ct-qa-site { display: flex; align-items: center; gap: 8px; height: 18px; }
+.ct-qa-site img { width: 16px; height: 16px; border-radius: 4px; object-fit: contain; }
+.ct-qa-site cite { font-style: normal; font-size: 13px; line-height: 18px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ct-qa-src { display: block; margin: 4px 0 12px; font-size: 21px; line-height: 26px; color: var(--text-link); text-decoration: none; }
+.ct-qa-more { font-size: 14px; color: var(--text-link); text-decoration: none; }
+@media (max-width: 767px) {
+  #ct-qa h3 { font-size: 18px; line-height: 23px; }
+  .ct-qa-text { font-size: var(--ct-desc-phone); line-height: 19px; color: var(--text-secondary); }
+  .ct-qa-src { font-size: 18px; line-height: 23px; margin-top: 5px; }
+}
+
+/* Sitelinks, Discussions and forums, Videos, Top stories: same family as People also ask (heading, dividers)
+   and your News cards (12px rounded tiles); every row is one big tap target */
+.result-item.ct-grouped { display: none !important; }
+.ct-grp { margin: 4px 0 24px; }
+.ct-gh { font-size: 20px; line-height: 26px; font-weight: 400; margin: 0 0 12px; color: var(--text-primary); }
+.ct-meta { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; line-height: 18px; color: var(--text-secondary); }
+.ct-fav { width: 16px; height: 16px; flex: none; border-radius: 4px; object-fit: contain; }
+.ct-fav-x { background: var(--bg-light); }
+.ct-src { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ct-when { flex: none; white-space: nowrap; color: var(--text-cite); }
+.ct-src + .ct-when::before { content: "·"; margin-right: 6px; }
+.ct-more { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; height: 40px; margin-top: 12px; border: 1px solid rgba(88, 91, 112, .45); border-radius: 20px; background: transparent; color: var(--text-primary); font: inherit; font-size: 14px; cursor: pointer; }
+.ct-more::after { content: ""; width: 6px; height: 6px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); }
+.ct-more:hover { background: rgba(69, 71, 90, .35); }
+/* Discussions: rows split by the same thin lines as People also ask */
+.ct-list { border-top: 1px solid rgba(88, 91, 112, .45); }
+.ct-fi { display: flex; flex-direction: column; gap: 4px; padding: 12px 0; border-bottom: 1px solid rgba(88, 91, 112, .45); text-decoration: none; }
+.ct-ft { font-size: 18px; line-height: 24px; color: var(--text-link); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.ct-fi:visited .ct-ft { color: var(--text-link-visited); }
+.ct-fi:hover .ct-ft { text-decoration: underline; }
+.ct-fs { font-size: var(--ct-desc-pc); line-height: calc(var(--ct-desc-pc) * 1.47); color: var(--text-snippet); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+/* Videos and Top stories: a sideways row of News-style tiles, 3 across on PC, swipeable with a peek on phones */
+.ct-rowwrap { position: relative; }
+.ct-row { display: grid; grid-auto-flow: column; grid-auto-columns: calc((100% - 24px) / 3); gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior-x: contain; }
+.ct-row::-webkit-scrollbar { display: none; }
+.ct-card { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding-bottom: 12px; border-radius: 12px; background: rgba(49, 50, 68, .45); overflow: hidden; text-decoration: none; scroll-snap-align: start; }
+.ct-card:hover { background: rgba(69, 71, 90, .45); }
+.ct-card > :not(.ct-pic) { margin: 0 12px; }
+.ct-pic { position: relative; display: block; aspect-ratio: 16 / 9; background: var(--bg-light); overflow: hidden; }
+.ct-pic img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.ct-play { position: absolute; left: 50%; top: 50%; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; background: rgba(17, 17, 27, .6); }
+.ct-play::after { content: ""; position: absolute; left: 16px; top: 12px; border-style: solid; border-width: 8px 0 8px 12px; border-color: transparent transparent transparent #fff; }
+.ct-dur { position: absolute; right: 6px; bottom: 6px; padding: 1px 5px; border-radius: 4px; background: rgba(17, 17, 27, .8); color: #fff; font-size: 12px; line-height: 16px; font-variant-numeric: tabular-nums; }
+.ct-ct { font-size: 15px; line-height: 20px; font-weight: 500; color: var(--text-primary); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.ct-vc .ct-ct { margin-top: 6px !important; }
+.ct-sc .ct-meta { margin-top: 10px !important; }
+.ct-sc .ct-ct { -webkit-line-clamp: 3; }
+.ct-sc.ct-nopic .ct-ct { -webkit-line-clamp: 5; }
+.ct-sc > .ct-when { margin-top: auto !important; font-size: 13px; }
+.ct-arr { position: absolute; top: calc(50% - 18px); z-index: 2; width: 36px; height: 36px; padding: 0; border: 1px solid rgba(88, 91, 112, .45); border-radius: 50%; background: var(--bg-light); color: var(--text-primary); cursor: pointer; opacity: 0; pointer-events: none; transition: opacity .15s; }
+.ct-arr::after { content: ""; position: absolute; left: 50%; top: 50%; width: 7px; height: 7px; margin: -4px 0 0 -5px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); }
+.ct-prev::after { margin-left: -2px; transform: rotate(135deg); }
+.ct-prev { left: -18px; }
+.ct-next { right: -18px; }
+.ct-can-prev .ct-prev, .ct-can-next .ct-next { opacity: 1; pointer-events: auto; }
+/* Sitelinks: 2 columns of page + one-line summary under the top result */
+.ct-sl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 32px; margin-top: 14px; }
+.ct-sl-i { display: flex; flex-direction: column; gap: 2px; min-width: 0; text-decoration: none; }
+.ct-sl-t { font-size: 16px; line-height: 22px; color: var(--text-link); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ct-sl-i:visited .ct-sl-t { color: var(--text-link-visited); }
+.ct-sl-i:hover .ct-sl-t { text-decoration: underline; }
+.ct-sl-d { font-size: 13px; line-height: 18px; color: var(--text-snippet); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+@media (hover: none) { .ct-arr { display: none; } }
+@media (max-width: 767px) {
+  .ct-gh { font-size: 18px; line-height: 23px; }
+  .ct-ft { font-size: 16px; line-height: 22px; }
+  .ct-fs { font-size: var(--ct-desc-phone); line-height: 19px; color: var(--text-secondary); }
+  .ct-row { grid-auto-columns: 72%; }
+  .ct-news .ct-row { grid-auto-columns: 80%; }
+  /* Phones: a tappable list with a chevron, like Google mobile */
+  .ct-sl { grid-template-columns: 1fr; gap: 0; margin-top: 10px; border-top: 1px solid rgba(88, 91, 112, .45); }
+  .ct-sl-i { position: relative; justify-content: center; min-height: 44px; padding-right: 28px; border-bottom: 1px solid rgba(88, 91, 112, .45); }
+  .ct-sl-i::after { content: ""; position: absolute; right: 8px; top: 50%; width: 7px; height: 7px; margin-top: -4px; border-right: 2px solid var(--text-secondary); border-bottom: 2px solid var(--text-secondary); transform: rotate(-45deg); }
+  .ct-sl-d { display: none; }
+}
+
+/* Tools: a small link beside the tabs, opening Google-style advanced search fields */
+#ct-tools { background: none; border: 0; padding: 0 12px; font: inherit; font-size: 13.5px; color: var(--text-secondary); cursor: pointer; margin-left: auto; }
+#ct-tools[aria-expanded="true"] { color: var(--text-primary); }
+#ct-adv { display: grid; grid-template-columns: max-content minmax(0, 360px); gap: 8px 16px; align-items: center; padding: 14px 0 16px; max-width: 600px; font-size: 13.5px; color: var(--text-secondary); }
+#ct-adv label { display: contents; }
+#ct-adv input { font: inherit; color: var(--text-primary); background: var(--bg-light); border: 1px solid var(--border-light); border-radius: 8px; padding: 7px 10px; outline: none; }
+#ct-adv input:focus { border-color: var(--primary); }
+#ct-adv button { grid-column: 2; justify-self: start; font: 600 13.5px system-ui, sans-serif; padding: 8px 18px; border: 0; border-radius: 999px; background: var(--primary); color: #11111b; cursor: pointer; }
+@media (max-width: 767px) { #ct-adv { grid-template-columns: 1fr; gap: 4px; padding: 12px 16px; } #ct-adv input { margin-bottom: 6px; font-size: 16px; } #ct-adv button { grid-column: 1; } }

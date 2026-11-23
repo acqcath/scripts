@@ -1,0 +1,219 @@
+// clean-titles v50 core: pure functions (no DOM), shared by the page script and the tests.
+// Everything here runs synchronously before first paint, so it only uses data already in the page.
+
+// ===== Sites: registrable domain via the public suffix list =====
+// The list arrives compiled as a tree string (reversed labels): "uk(co,org,...),jp(ac,...)", "!" = also a rule itself
+export const pslParse = (enc) => {
+  const root = {}, stack = [];
+  let name = "", cur = root, last = null;
+  // Small hand parser: one pass, no regex backtracking
+  for (let i = 0; i <= enc.length; i++) {
+    const ch = enc[i];
+    if (ch === undefined || ch === "," || ch === "(" || ch === ")") {
+      if (name) {
+        const also = name.endsWith("!"), k = also ? name.slice(0, -1) : name;
+        const n = cur[k] || (cur[k] = {});
+        if (ch !== "(" || also) n.$ = 1;
+        last = n;
+        name = "";
+      }
+      if (ch === "(") { stack.push(cur); cur = last; }
+      else if (ch === ")") cur = stack.pop();
+    } else name += ch;
+  }
+  return root;
+};
+// Rules: plain, "*" wildcard, "!" exception (stored as key "!x"). Default rule "*": the last label is the suffix.
+export const regDomain = (host, psl) => {
+  host = String(host || "").toLowerCase().replace(/\.$/, "");
+  if (!host || /^[\d.]+$/.test(host) || host.includes(":")) return host;
+  const L = host.split(".");
+  let n = psl, sfx = 1; // number of labels in the longest matching suffix
+  for (let i = L.length - 1, d = 1; i >= 0 && n; i--, d++) {
+    const lab = L[i];
+    if (n["!" + lab]) { sfx = d - 1; break; }
+    const next = n[lab] || n["*"];
+    if (!next) break;
+    if (next.$) sfx = d;
+    n = next;
+  }
+  return sfx >= L.length ? host : L.slice(L.length - sfx - 1).join(".");
+};
+
+// ===== Dedupe: one key per document =====
+// Hosts that are another site's copy or mirror, mapped to the original
+const WIKI_MIRROR = /^(?:www\.)?(?:wikiwand\.com|wikipedia\.com|wiki2\.org|wikizero\.com|db0nus869y26v\.cloudfront\.net|everybodywiki\.com|en\.wikibrief\.org|newworldencyclopedia\.org)$/;
+const SHORT = { "apple.co": "apple.com", "youtu.be": "youtube.com", "redd.it": "reddit.com", "amzn.to": "amazon.com", "amzn.eu": "amazon.com" };
+export const shortTarget = (host) => SHORT[host] || "";
+// Locale path segments ("/en-us/", "/de_DE/", "/ja/") on sites that publish one page per locale
+const LOCALE_SEG = /^(?:[a-z]{2}(?:[-_][a-z]{2,4})?|[a-z]{2}-[a-z]{4}(?:-[a-z]{2})?)$/i;
+const LOCALE_SITES = /(^|\.)(apple\.com|microsoft\.com|mozilla\.org|developer\.mozilla\.org|learn\.microsoft\.com|docs\.github\.com|cloud\.google\.com|developer\.android\.com|docs\.aws\.amazon\.com|nextjs\.org|vuejs\.org|kotlinlang\.org|docs\.python\.org)$/;
+// Wikipedia article key, from any mirror or form: "wiki:<lang>:<title>" (simple. counts as en)
+const wikiKey = (h, path, sp) => {
+  let m = /^(?:([a-z-]{2,12})\.)?(?:m\.)?wikipedia\.(?:org|com)$/.exec(h);
+  let lang = m ? m[1] || "en" : "", title = "";
+  if (m) {
+    if (lang === "www") lang = "en";
+    if (lang === "simple") lang = "en";
+    const t = /^\/wiki\/(.+)$/.exec(path);
+    title = t ? t[1] : sp.get("title") || "";
+  } else if (/^(?:www\.)?wikiwand\.com$/.test(h)) {
+    const t = /^\/([a-z-]{2,12})\/(?:articles\/)?(.+)$/.exec(path) || [null, "en", path.slice(1)];
+    lang = t[1]; title = t[2];
+  } else if (WIKI_MIRROR.test(h)) {
+    const t = /^\/(?:wiki|entry|en\/wiki)\/(.+)$/.exec(path);
+    if (!t) return "";
+    lang = "en"; title = t[1];
+  } else return "";
+  if (!title) return "";
+  try { title = decodeURIComponent(title); } catch {}
+  title = title.replace(/_/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+  return title ? `wiki:${lang}:${title}` : "";
+};
+// arXiv paper key: abs/pdf/html, any version, ar5iv and export mirrors -> "arxiv:<id>" (version kept separately)
+export const arxivId = (h, path) => {
+  if (!/(^|\.)(arxiv\.org|ar5iv\.org|ar5iv\.labs\.arxiv\.org|alphaxiv\.org)$/.test(h)) return null;
+  const m = /^\/(?:abs|pdf|html|papers?|overview)\/((?:\d{4}\.\d{4,5})|(?:[a-z-]+(?:\.[A-Z]{2})?\/\d{7}))(v\d+)?(?:\.pdf)?\/?$/i.exec(path);
+  return m ? { id: m[1].toLowerCase(), v: m[2] ? Number(m[2].slice(1)) : 0, kind: /^\/pdf\//.test(path) ? "PDF" : /^\/html\//.test(path) || /ar5iv/.test(h) ? "HTML" : "abs" } : null;
+};
+// Pagination and comment pages that belong to the same article
+// (a bare "/2" counts only after a word-like segment: "/my-article/2", never "/2" or "/2024/11")
+const PAGE_TAIL = /\/(?:page|comment-page|p)-?\d+\/?$|\/(?:page|comments?|amp|all|print)\/?\d*\/?$|(?<=\/[a-z][^/]*[a-z][^/]*)\/\d{1,2}\/?$/i;
+const DROP_PARAMS = /^(page|p|pg|start|comments?|cpage|amp|output|view|print|lang|hl|locale|ref|src|from|utm_\w+|fbclid|gclid|share|s|sh|via)$/i;
+export const docKey = (raw) => {
+  let u;
+  try { u = new URL(raw); } catch { return String(raw || ""); }
+  let h = u.hostname.toLowerCase().replace(/^(?:www\d?|m|mobile|amp|old|new)\./, "");
+  if (SHORT[h]) h = SHORT[h];
+  const path0 = u.pathname.replace(/\/+$/, "") || "/";
+  const w = wikiKey(u.hostname.toLowerCase(), u.pathname, u.searchParams);
+  if (w) return w;
+  const ax = arxivId(h, u.pathname);
+  if (ax) return `arxiv:${ax.id}`;
+  // *.react.dev language mirrors (es.react.dev, zh-hans.react.dev) are react.dev
+  if (/\.react\.dev$/.test(h)) h = "react.dev";
+  let segs = path0.split("/").filter(Boolean);
+  if (LOCALE_SITES.test(h)) {
+    segs = segs.filter((s, i) => !(i < 2 && LOCALE_SEG.test(s) && !/^(kb|api|docs|en)$/i.test(s) || (i < 2 && /^(en|kb)$/i.test(s))));
+    // Apple support: /kb/HT201295, /en-us/HT201295 and /HT201295 are one article
+  }
+  let path = "/" + segs.join("/");
+  path = path.replace(PAGE_TAIL, "").replace(/\.amp(?:\.html)?$|\/amp$/i, "").replace(/\/index\.(?:html?|php)$/i, "").replace(/\/+$/, "") || "/";
+  const keep = [...u.searchParams].filter(([k]) => !DROP_PARAMS.test(k)).sort(([a], [b]) => (a < b ? -1 : 1));
+  const qs = keep.length ? "?" + keep.map(([k, v]) => `${k}=${v}`).join("&") : "";
+  return `${h}${path.toLowerCase()}${qs}`;
+};
+// Title for same-title comparisons: lowercase words only, site-name tail and "(page 2)" style bits dropped
+export const titleKey = (t) => String(t || "").toLowerCase()
+  .replace(/\s*[|–—·:-]\s*(?:page|part)\s*\d+(?:\s*of\s*\d+)?\s*$/, "").replace(/\((?:page|part)\s*\d+\)/g, "")
+  .replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+
+// Merge results: same document key, then same title within the same site. Input: [{url, title, ...}] in rank
+// order. Output: kept items (first = best ranked), each with .alts = [{url, label}] for its other versions.
+export const dedupe = (items, psl) => {
+  const out = [], byKey = new Map(), byTitle = new Map();
+  for (const it of items) {
+    let host = "";
+    try { host = new URL(it.url).hostname.toLowerCase(); } catch {}
+    const site = regDomain(SHORT[host.replace(/^www\./, "")] || host, psl);
+    const k = docKey(it.url);
+    const tk = titleKey(it.title);
+    const tkey = tk.length >= 12 ? `${site} ${tk}` : "";
+    const hit = byKey.get(k) || (tkey && byTitle.get(tkey));
+    if (hit) { addAlt(hit, it); continue; }
+    const rec = { ...it, site, key: k, alts: [] };
+    byKey.set(k, rec);
+    if (tkey) byTitle.set(tkey, rec);
+    out.push(rec);
+  }
+  for (const r of out) r.alts = altLabels(r);
+  return out;
+};
+const addAlt = (rec, it) => { (rec._m || (rec._m = [])).push(it); };
+// Extra versions shown as small links: "PDF · HTML · v7 latest" (papers); other merged copies add nothing
+const altLabels = (r) => {
+  const all = [r, ...(r._m || [])];
+  delete r._m;
+  if (!r.key.startsWith("arxiv:")) return [];
+  let host = "";
+  const info = all.map((x) => { try { const u = new URL(x.url); host = u.hostname.replace(/^www\./, ""); return { x, a: arxivId(host, u.pathname) }; } catch { return null; } }).filter((y) => y && y.a);
+  const id = r.key.slice(6), labs = [], seen = new Set([info[0] && info[0].a.kind]);
+  for (const kind of ["PDF", "HTML"]) if (!seen.has(kind)) { seen.add(kind); labs.push({ label: kind, url: kind === "PDF" ? `https://arxiv.org/pdf/${id}` : `https://arxiv.org/html/${id}` }); }
+  const vmax = Math.max(0, ...info.map((y) => y.a.v));
+  const shownV = info[0] ? info[0].a.v : 0;
+  if (vmax > 1 && shownV && shownV < vmax) labs.push({ label: `v${vmax} latest`, url: `https://arxiv.org/abs/${id}` });
+  return labs;
+};
+
+// ===== Site cap: 2 per site, the rest folded =====
+// Returns {shown, folds: Map(site -> [items])}. Lifts for a site the search names ("site:x", "reddit", "apple support")
+export const namedSites = (q, psl) => {
+  const s = new Set();
+  const m = /(?:^|\s)site:(\S+)/i.exec(q);
+  if (m) s.add(regDomain(m[1].replace(/^https?:\/\//, "").replace(/\/.*$/, ""), psl));
+  return { set: s, words: new Set(String(q).toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 3)) };
+};
+const siteNamed = (site, named) => named.set.has(site) || named.words.has(site.split(".")[0]);
+export const capSites = (items, q, psl, cap = 2) => {
+  const named = namedSites(q, psl), n = new Map(), shown = [], folds = new Map();
+  for (const it of items) {
+    const k = it.site;
+    const c = n.get(k) || 0;
+    n.set(k, c + 1);
+    if (c < cap || siteNamed(k, named)) shown.push(it);
+    else { if (!folds.has(k)) folds.set(k, []); folds.get(k).push(it); }
+  }
+  return { shown, folds };
+};
+
+// ===== Snippet cleanup =====
+const MON = "(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\\.?";
+const DATE_RE = new RegExp(`^\\s*(${MON} \\d{1,2},? \\d{4}|\\d{1,2} ${MON},? \\d{4}|\\d{4}-\\d{2}-\\d{2}|\\d{1,2}/\\d{1,2}/\\d{2,4}|\\d+ (?:sec|second|min|minute|hour|hr|day|week|month|year)s? ago|yesterday|today)\\s*(?:\\.\\.\\.|…|—|–|-|·|:)\\s*`, "i");
+// Returns {date, text}: leading date moved out, junk ellipses removed, whitespace tidied
+export const cleanSnippet = (s) => {
+  let t = String(s || "").replace(/\s+/g, " ").trim();
+  let date = "";
+  const m = DATE_RE.exec(t);
+  if (m && t.length > m[0].length + 8) { date = m[1]; t = t.slice(m[0].length); }
+  t = t.replace(/^(?:\.\.\.|…)\s*/, "").replace(/\s*(?:\.\.\.|…)\s*(?:\.\.\.|…)+/g, " … ").replace(/\s+(?:\.\.\.|…)$/, "…").replace(/\.\.\./g, "…").trim();
+  return { date, text: t };
+};
+// "yesterday", "3 days ago" within about a week; otherwise the exact date. now injectable for tests
+export const relDate = (d, now = Date.now()) => {
+  const t = d instanceof Date ? d.getTime() : Date.parse(d);
+  if (!Number.isFinite(t)) return "";
+  const day = (x) => { const y = new Date(x); return Date.UTC(y.getFullYear(), y.getMonth(), y.getDate()); };
+  const days = Math.round((day(now) - day(t)) / 864e5);
+  if (days === 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days > 1 && days <= 6) return `${days} days ago`;
+  return new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+};
+
+// ===== Patterns ("paste anything") =====
+// UPS 1Z: 1Z + 15 characters + check digit. Letters count as (code - 63) % 10 (A=2 ... I=0, J=1 ...)
+export const upsValid = (s) => {
+  const m = /^1Z([0-9A-Z]{15})(\d)$/.exec(String(s).toUpperCase().replace(/\s/g, ""));
+  if (!m) return false;
+  let sum = 0;
+  [...m[1]].forEach((c, i) => { const v = /\d/.test(c) ? +c : (c.charCodeAt(0) - 63) % 10; sum += i % 2 ? v * 2 : v; });
+  return (10 - (sum % 10)) % 10 === +m[2];
+};
+export const isbnValid = (s) => {
+  const x = String(s).toUpperCase().replace(/[\s-]/g, "");
+  if (/^\d{9}[\dX]$/.test(x)) { let t = 0; for (let i = 0; i < 10; i++) t += (x[i] === "X" ? 10 : +x[i]) * (10 - i); return t % 11 === 0; }
+  if (/^97[89]\d{10}$/.test(x)) { let t = 0; for (let i = 0; i < 13; i++) t += +x[i] * (i % 2 ? 3 : 1); return t % 10 === 0; }
+  return false;
+};
+// CMU course numbers: "15-213" always looks like a course; bare "15213" only when that course exists
+export const cmuCourse = (q, courses) => {
+  const s = String(q).trim();
+  let m = /^(\d{2})-?(\d{3})\b(.*)$/.exec(s);
+  if (!m) return null;
+  const id = `${m[1]}-${m[2]}`, dashed = /^\d{2}-\d{3}/.test(s);
+  if (!dashed && !(courses && courses.has(id))) return null;
+  const rest = m[3].trim().toLowerCase();
+  // Course-level only: nothing after, or a word about the course itself. A topic ("malloc lab") -> no card
+  const level = !rest || /^(?:cmu\s*)?(?:course|class|workload|hours?|units?|fces?|reviews?|ratings?|professors?|profs?|instructors?|teachers?|syllabus|prereqs?|prerequisites?|difficulty|hard|easy|worth it)\s*\??$/.test(rest);
+  return { id, level, prof: /prof|instructor|teacher/.test(rest) };
+};
