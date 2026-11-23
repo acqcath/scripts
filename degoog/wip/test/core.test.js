@@ -210,3 +210,17 @@ test("tidyText: the engines' stray spaces around bolded words go; inch marks, ti
   expect(doiPublisher("https://doi.org/10.1016/j.annals.2024.103800")).toBe("Elsevier");
   expect(doiPublisher("https://example.com/10.1016/x")).toBe("");
 });
+
+test("tab skew on the user's recorded News / Science / Forums searches", async () => {
+  const { tabLow } = await import("../files/core.js");
+  const fs = await import("fs");
+  const d = JSON.parse(fs.readFileSync(new URL("../rec/tab-searches.json", import.meta.url), "utf8"));
+  const lowOf = (type, q) => { const s = d.searches.find((x) => x.type === type && x.q === q); const seen = new Map(); return s.results.filter((r) => tabLow(type, new URL(r.url).hostname, r.title, seen)).map((r) => new URL(r.url).hostname.replace(/^www\./, "")); };
+  const sci = lowOf("science", "best mechanical keyboard");
+  expect(sci.filter((h) => h === "computerstationnation.com").length).toBe(10);
+  expect(lowOf("science", "sleep deprivation").length).toBeLessThan(5);
+  const news = lowOf("news", "something");
+  expect(news).toEqual(expect.arrayContaining(["word.tips", "tryhardguides.com", "minutecryptic.today", "x.com"]));
+  expect(lowOf("news", "best mechanical keyboard").filter((h) => h === "rtings.com").length).toBe(4);
+  for (const q of ["shit", "python", "steelers"]) expect(lowOf("forums", q)).toEqual([]);
+});

@@ -219,6 +219,9 @@ Everything else in FEATURES 1-15, RULES, LOADING and DESIGN SYSTEM is built and 
 ## Self-check round 3 (user, ~15:55 UTC): ALL PASS (Wikidata x2, ESPN, KP, meanings, archive 4 s, quick view, touchy searches, Safe Search everywhere).
 - install.ps1 at v50 BUILT on the branch (build_installer.py release; same as the preview but "v50"). Not marked READY TO SHIP yet: the user's newer ask (News/Science/Forums skewed to their kind, junk out) waits on record-tabs.ps1's file. If the user says ship without it, mark READY TO SHIP as is.
 
+- Tab skew DONE (16:08) from rec/tab-searches.json (24 searches, user's server): core tabLow + page tabPass (non-web tabs: off-kind -> end of the inserted batch before paint; same host+title -> hidden). Science lowers only SHOP hosts / COMMERCE titles off SCHOLAR hosts (a scholarly allowlist alone lowered real libraries/journals); News lowers PUZZLE titles, SOCIAL hosts, 3rd+ per site. Forums unchanged (all Reddit). No adult results in any recorded tab search.
+- **READY TO SHIP (2026-11-23 16:08 UTC):** self-check round 3 ALL PASS; install.ps1 rebuilt at v50 with everything above; tests 95 pass; headless CLS 0 (10 cases). The user pushes v50-wip's degoog/install.ps1 to main.
+
 ## Next
 - **Status 2026-11-23 14:56 UTC (live run 14:48):** waiting for the user's 2nd self-check table (round-1 fixes + reasons) and the recordings of their 10 snippet searches (list below). Then fix/cut remaining FAILs, build the featured snippet, install.ps1 at v50, READY TO SHIP.
 - **Status 2026-11-23 11:18 UTC (run 11:16):** startup notice when a degoog update wiped the page part (the old "restore at startup" todo; restore itself is impossible, see below). Tests 89 pass. Still blocked on the user: (a) self-check table from install-preview.ps1, (b) ~10 recorded fact/how-to searches for the featured snippet. Nothing else unblocked is left that passes "works on real data"; runs should exit quickly until the user replies.
