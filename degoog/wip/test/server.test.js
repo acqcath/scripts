@@ -494,3 +494,15 @@ test("net: a 403 is asked once more through degoog's curl-impersonate transport 
   expect((await srv.net("https://x.test/")).status).toBe(403);
   expect(seen.length).toBe(3);
 });
+
+test("load timings: only numbers kept, last 60, nothing else stored", async () => {
+  const srv = await import("../files/index.js");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ct-perf-"));
+  srv.default.init({ id: "clean-titles", dir });
+  const body = JSON.stringify({ dev: "phone", nav: { wait: 0, dns: 12, ready: 340, type: "navigate", q: "secret search" }, search: { wait: 900, total: 420, url: "x" } });
+  await srv.default.execute(`bridge perf ${new URLSearchParams({ __body: body })}`);
+  const saved = JSON.parse(fs.readFileSync(path.join(dir, "perf.json"), "utf8"));
+  expect(saved[0].dev).toBe("phone");
+  expect(saved[0].nav).toEqual({ wait: 0, dns: 12, ready: 340, type: "navigate" });
+  expect(JSON.stringify(saved)).not.toContain("secret");
+});

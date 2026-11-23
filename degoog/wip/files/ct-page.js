@@ -3117,3 +3117,25 @@ const init = () => {
 };
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
 else init();
+// ===== Load timing (for the self-check; no searches, no addresses, only milliseconds) =====
+// Where the wait goes when degoog opens slowly: name lookup, connection, encryption, server, download, page work,
+// and the first search request after the page opened. Kept on this server (last 60), printed by the installer.
+(() => {
+  const r = (x) => (Number.isFinite(x) && x >= 0 ? Math.round(x) : -1);
+  const send = () => {
+    try {
+      const n = performance.getEntriesByType("navigation")[0];
+      if (!n) return;
+      const first = performance.getEntriesByType("resource").find((e) => /\/api\/(?:search|command)\b/.test(e.name) && !/cleantitles/.test(e.name));
+      const ph = (x) => (x ? { wait: r(x.startTime), dns: r(x.domainLookupEnd - x.domainLookupStart), connect: r(x.connectEnd - x.connectStart), tls: r(x.secureConnectionStart > 0 ? x.connectEnd - x.secureConnectionStart : 0), server: r(x.responseStart - x.requestStart), download: r(x.responseEnd - x.responseStart), total: r(x.duration) } : null);
+      const nav = ph(n);
+      nav.ready = r(n.domContentLoadedEventEnd);
+      nav.loaded = r(n.loadEventEnd);
+      nav.type = n.type;
+      nav.cached = n.transferSize === 0;
+      bridge("perf", {}, JSON.stringify({ dev: PHONE.matches ? "phone" : "pc", nav, search: ph(first) })).catch(() => {});
+    } catch {}
+  };
+  const go = () => setTimeout(send, 4000); // after the first search usually finished
+  if (document.readyState === "complete") go(); else addEventListener("load", go, { once: true });
+})();
