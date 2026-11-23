@@ -5767,6 +5767,33 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
     } catch { counts.push("no answer"); }
   }
   row("Touchy searches get full results", blocked ? "SKIP" : counts.every((c) => { const m = /^(\d+) results\/(\d+) sites$/.exec(c); return m && +m[1] >= 8 && +m[2] >= 5; }), blocked || counts.join(" · "));
+  // Every installed web engine on its own (degoog's own engine code and transport, even if it's switched off in
+  // Settings), 3 searches each: results and time per search. Informational: shows which engines are worth turning on.
+  try {
+    const DATA = process.env.DEGOOG_DATA_DIR || "/app/data";
+    const ids = [];
+    try { for (const d of fs.readdirSync(process.env.DEGOOG_ENGINES_DIR || `${DATA}/engines`, { withFileTypes: true })) if (d.isDirectory() && !/-(?:images|news|videos)$/i.test(d.name)) ids.push(d.name.toLowerCase().endsWith("-engine") ? d.name.toLowerCase() : `${d.name.toLowerCase()}-engine`); } catch {}
+    const qs = ["pittsburgh steelers schedule", "how to reset airpods", "python list comprehension"];
+    for (const id of ids) {
+      let n = 0, ms = 0, got = 0, name = id.replace(/^degoog-org-official-extensions-/, "").replace(/-engine$/, "");
+      for (const q of qs) {
+        const p = new URLSearchParams({ q });
+        for (const o of ids) p.set(o, o === id ? "true" : "false");
+        const t0 = Date.now();
+        try {
+          const r = await fetch(`http://127.0.0.1:${PORT}/api/search?${p}`, { signal: AbortSignal.timeout(20000) });
+          const j = await r.json();
+          const ts = (Array.isArray(j.engineTimings) ? j.engineTimings : []).filter((x) => x && x.name);
+          if (ts.length > 1) { name += " (couldn't test it alone)"; got = 0; break; }
+          const e = ts[0] || {};
+          n += Number(e.count ?? (j.results || []).length) || 0; ms += Number(e.time) || (Date.now() - t0); got++;
+          if (e.name) name = e.name;
+        } catch { ms += Date.now() - t0; }
+      }
+      const avgN = got ? Math.round(n / qs.length) : 0, avgMs = Math.round(ms / qs.length);
+      rows.push([`Engine: ${name}`, avgN >= 8 && avgMs <= 2500 ? "GOOD" : avgN === 0 ? "NONE" : "WEAK", `${avgN} results · ${avgMs} ms per search`]);
+    }
+  } catch {}
   // Safe Search off on every engine that has it (set by the installer just before the restart)
   let safe = [];
   try {
