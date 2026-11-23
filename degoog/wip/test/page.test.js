@@ -191,7 +191,7 @@ test("page: a command card (weather at the end of the search) goes in only befor
   const d = b.document.createElement("div");
   b.document.getElementById("results-list").append(d);
   b.fire([d]);
-  expect(b.document.querySelector("#at-a-glance .ct-card")).toBeNull();
+  expect(!!b.document.querySelector("#at-a-glance .ct-card")).toBe(false);
   b.win.close();
 });
 
@@ -202,7 +202,7 @@ test("page: Top stories only for news-like results, drawn before paint, never in
   // First visit to a news-like search: no News search was started, so nothing is added; the search is remembered
   const a = await run("steelers", { news: {} });
   expect(a.errors).toEqual([]);
-  expect(a.document.querySelector(".ct-news")).toBeNull();
+  expect(!!a.document.querySelector(".ct-news")).toBe(false);
   const store = { "ct-newsy": a.win.localStorage.getItem("ct-newsy") };
   expect(store["ct-newsy"]).not.toContain("steelers"); // a hash, not the words
   // Next visit: the News search starts at page load; in hand before the results -> drawn in the same pass
@@ -215,7 +215,7 @@ test("page: Top stories only for news-like results, drawn before paint, never in
   const c = await run("steelers", { news: { delay: 60 }, store, engines: 0 });
   await new Promise((r) => setTimeout(r, 120));
   c.fire([]);
-  expect(c.document.querySelector(".ct-news")).toBeNull();
+  expect(!!c.document.querySelector(".ct-news")).toBe(false);
 });
 
 test("page: News tab layout is decided before paint; recorded News pictures (upgradable hosts) keep the banner", async () => {
@@ -334,7 +334,7 @@ test("page: local answer card is in the panel area in the same pass as the resul
   const p = await run("CVE-2021-44228");
   expect(p.document.querySelector("#at-a-glance .ct-ans a.ct-ans-title").getAttribute("href")).toBe("https://nvd.nist.gov/vuln/detail/CVE-2021-44228");
   const n = await run("how to reset airpods");
-  expect(n.document.querySelector(".ct-ans")).toBeNull();
+  expect(!!n.document.querySelector(".ct-ans")).toBe(false);
   // Tap copies and says so in the label line
   let copied = "";
   win.navigator.clipboard.writeText = async (t) => { copied = t; };
@@ -401,7 +401,9 @@ test("page: endoflife.date answer drawn with the results when in hand; dropped w
   const b = await run("is windows 10 supported", { engines: 0, bridge: { eol: { data: { cycles: win }, delay: 60 } } });
   await new Promise((r) => setTimeout(r, 80));
   b.fire([]);
-  expect(b.document.querySelector(".ct-ans")).toBeNull();
+  // The late answer is dropped; what's there is the featured snippet, drawn with the results in the same pass
+  expect(b.document.querySelector(".ct-ans")?.dataset.kind ?? "none").toBe("snippet");
+  expect(b.document.querySelector(".ct-ans .ct-ans-text").textContent).toContain("Windows 10");
   expect(a.errors.concat(b.errors)).toEqual([]);
 });
 
@@ -433,7 +435,7 @@ test("page: CMU card for '15-213' and '15213' (server says the course exists), n
   const calls = [];
   const m = await run("15-213 malloc lab", { engines: 40, calls, bridge: { cmu: { data: { c }, delay: 5 } } });
   expect(calls.some((x) => x.route === "cmu")).toBe(false);
-  expect(m.document.querySelector(".ct-ans")).toBeNull();
+  expect(!!m.document.querySelector(".ct-ans")).toBe(false);
 });
 
 test("page: sports card for 'steelers' drawn with the results when in hand: logos boxed, scores, winner, status", async () => {
@@ -451,7 +453,7 @@ test("page: sports card for 'steelers' drawn with the results when in hand: logo
   expect(a.errors).toEqual([]);
   // A word that isn't a team: asked (the server knows team names) but no card
   const b = await run("python", { engines: 40, bridge: { sports: { data: { g: null }, delay: 5 } } });
-  expect(b.document.querySelector(".ct-ans")).toBeNull();
+  expect(!!b.document.querySelector(".ct-ans")).toBe(false);
 });
 
 test("page: knowledge panel for real 'taylor swift' (Britannica article in the results), compact on narrow screens; dropped when late; none without the article", async () => {
@@ -476,10 +478,10 @@ test("page: knowledge panel for real 'taylor swift' (Britannica article in the r
   const b = await run("taylor swift", { engines: 0, bridge: { kp: { data: { kp }, delay: 60 } } });
   await new Promise((r) => setTimeout(r, 80));
   b.fire([]);
-  expect(b.document.querySelector(".ct-kp")).toBeNull();
+  expect(!!b.document.querySelector(".ct-kp")).toBe(false);
   // Real 'jaguar': no Jaguar article in the results (cars first) -> no panel; how-to searches never ask
   const c = await run("jaguar", { engines: 40, bridge: { kp: { data: { kp: { ...kp, title: "Jaguar", name: "Jaguar" } }, delay: 5 } } });
-  expect(c.document.querySelector(".ct-kp")).toBeNull();
+  expect(!!c.document.querySelector(".ct-kp")).toBe(false);
   const calls2 = [];
   await run("how to reset airpods", { engines: 0, calls: calls2 });
   expect(calls2.some((x) => x.route === "kp")).toBe(false);
@@ -497,7 +499,7 @@ test("page: same-shape results on real searches: reddit threads as plain results
   expect(p.document.querySelectorAll(".ct-grp").length).toBe(0);
   const d = await run("react useEffect cleanup", { engines: 0 });
   expect(new URL(d.visible[0].querySelector("a.result-title").href).hostname).toBe("react.dev");
-  expect(d.document.querySelector(".ct-only")).toBeNull();
+  expect(!!d.document.querySelector(".ct-only")).toBe(false);
   // Not shaped: boxes still come (airpods has Discussions + Videos)
   const a = await run("how to reset airpods", { engines: 0 });
   expect(a.document.querySelectorAll(".ct-grp").length).toBeGreaterThan(0);
@@ -537,7 +539,7 @@ test("page: images row for a search you opened the Images tab for (real 'golden 
   const b = await run("golden gate bridge", { engines: 0, store, images: { delay: 60 } });
   await new Promise((r) => setTimeout(r, 80));
   b.fire([]);
-  expect(b.document.querySelector(".ct-imgs")).toBeNull();
+  expect(!!b.document.querySelector(".ct-imgs")).toBe(false);
   // Not visual (no picture words, never opened the Images tab): no image search at all
   const c = [];
   await run("golden gate bridge", { engines: 0, imgCalls: c, images: { delay: 0 } });

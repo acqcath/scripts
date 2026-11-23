@@ -626,6 +626,12 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .ct-ans-sw { display: inline-block; width: 22px; height: 22px; margin-right: 10px; vertical-align: -3px; border-radius: 6px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .25); }
 .ct-ans-title { display: block; margin-top: 2px; font-size: 18px; line-height: 24px; color: var(--text-link); text-decoration: none; text-wrap: balance; overflow-wrap: anywhere; }
 .ct-ans-title:visited { color: var(--text-link-visited); }
+/* Featured snippet: the sentence at reading size, then the page's title as its link */
+.ct-ans-text { margin-top: 4px; font-size: 16px; line-height: 24px; color: var(--text-primary); overflow-wrap: anywhere; }
+.ct-ans-src { display: inline-block; margin-top: 4px; font-size: 14px; line-height: 20px; color: var(--text-link); text-decoration: none; overflow-wrap: anywhere; }
+.ct-ans-src:visited { color: var(--text-link-visited); }
+.ct-ans-src:hover { text-decoration: underline; }
+@media (max-width: 767px) { .ct-ans-src { min-height: 44px; display: flex; align-items: center; } }
 .ct-ans-title:hover { text-decoration: underline; }
 .ct-ans-detail { margin-top: 2px; font-size: 13px; line-height: 18px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; font-variant-numeric: tabular-nums; }
 @media (hover: hover) { .ct-ans[data-copy]:hover .ct-ans-label::after { content: "⧉"; margin-left: 6px; font-size: 12px; color: var(--text-secondary); } }
