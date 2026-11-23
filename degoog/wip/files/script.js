@@ -1533,6 +1533,28 @@ const starsPass = () => {
   }).catch(() => {}), 0);
 };
 
+// Meaning line (spec 9): "Also: snakes · Monty Python" above the results when the words have several meanings and
+// the results cover one (CT.meaningLine, from the knowledge panel's answer). Results pass only, never later.
+let meanKey = "";
+const meanPass = () => {
+  const key = searchId(location.href), list = document.getElementById("results-list");
+  if (!webTab || !list || meanKey === key || drawnFor === key) return;
+  const rows = [...list.querySelectorAll(".result-item")].filter((x) => x.style.display !== "none");
+  if (!rows.length) return;
+  meanKey = key;
+  document.querySelectorAll(".ct-mean").forEach((x) => x.remove());
+  const d = ready("kp", key), alts = d && d.kp && d.kp.alts;
+  if (!alts) return;
+  const q = curQ();
+  const chips = CT.meaningLine(q, alts, rows.slice(0, 10).map((x) => `${x.querySelector("a.result-title")?.textContent || ""} ${x.querySelector(".result-snippet")?.textContent || ""}`));
+  if (!chips) return;
+  const line = mk("div", "ct-mean");
+  line.append(mk("span", "ct-mean-l", "Also: "));
+  chips.forEach((c, i) => { if (i) line.append(mk("span", "ct-mean-dot", " · ")); const a = mk("a", "ct-mean-a", c.text); a.href = goTo(c.q); line.append(a); });
+  const after = [...list.children].find((x) => x.classList.contains("ct-kp") || x.classList.contains("ct-only"));
+  if (after) after.after(line); else list.prepend(line);
+};
+
 // ===== Knowledge panel (spec 3) =====
 // Asked at page load for short name-like searches that get no other answer, no AI and no plain type/site list.
 // Shown only when the results hold the same article (CT.kpMatch); the Wikipedia result itself is then hidden, and
@@ -1620,7 +1642,7 @@ const init = () => {
   safe("scan", () => scan(document.body));
   safe("skeleton", () => skel(document.body));
   safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools);
-  safe("kp", kpPass); safe("only", onlyPass); safe("stars", starsPass);
+  safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass);
   safe("drawn", markDrawn);
   // Runs right after degoog inserts results and before the screen updates; only looks inside what was added
   new MutationObserver((muts) => {
@@ -1630,7 +1652,7 @@ const init = () => {
     safe("list", listPass);
     for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { safe("scan", () => scan(n)); safe("skeleton", () => skel(n)); safe("usage", () => noUsage(n)); }
     safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("card", glance);
-    safe("kp", kpPass); safe("only", onlyPass); safe("stars", starsPass);
+    safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass);
     safe("drawn", markDrawn);
     safe("ai", () => { const g = document.getElementById("at-a-glance"); if (g) aiPass(g, searchId(location.href)); });
   }).observe(document.body, { childList: true, subtree: true });

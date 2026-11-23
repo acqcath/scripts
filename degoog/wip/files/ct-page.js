@@ -1034,6 +1034,37 @@ const kpMatch = (title, urls) => {
 // Phone line: up to 3 facts, short ("Born Dec 13, 1989 · Height 330 m (1,083 ft)"); the page drops what doesn't fit
 const kpLine = (facts) => (facts || []).slice(0, 4).map((f) => `${f.k} ${f.v}`);
 
+// ----- Meaning line (spec 9): the search's words have several meanings (Wikidata's matches for them), and the
+// results cover just one: "Also: snakes · Monty Python", each a search that adds the word. Results covering two or
+// more meanings (mercury: planet, element, bank) get no line. Never reorders or interleaves results.
+const MEAN_STOP = new Set("about after also american british from into known like main more most other over part such than that their them then there these they this used uses using very were what when where which while with within without world".split(" "));
+const meanWords = (t) => new Set(String(t || "").toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 4 && !MEAN_STOP.has(w)).map((w) => w.replace(/(?<=\w{3})s$/, "")));
+const meaningLine = (q, alts, texts) => {
+  const s = String(q || "").trim().toLowerCase();
+  if (!s || !Array.isArray(alts) || alts.length < 2) return null;
+  const qw = meanWords(s);
+  const sets = alts.map((a) => { const w = meanWords(a.desc); for (const x of meanWords(a.label)) if (!qw.has(x)) w.add(x); for (const x of qw) w.delete(x); return w; });
+  const count = new Map();
+  for (const w of sets) for (const x of w) count.set(x, (count.get(x) || 0) + 1);
+  const own = sets.map((w) => [...w].filter((x) => count.get(x) === 1));
+  const docs = (texts || []).slice(0, 10).map((t) => meanWords(t));
+  const cov = own.map((ws) => docs.filter((d) => ws.some((x) => d.has(x))).length);
+  const top = cov.indexOf(Math.max(...cov));
+  if (cov[top] < 3 || cov.some((c, i) => i !== top && c > 0)) return null;
+  const chips = [];
+  alts.forEach((a, i) => {
+    if (i === top || !own[i].length || chips.length >= 3) return;
+    const label = String(a.label).trim(), ll = label.toLowerCase();
+    if (ll !== s && ` ${ll.replace(/[^\p{L}\p{N}]+/gu, " ")} `.includes(` ${s.replace(/[^\p{L}\p{N}]+/gu, " ")} `)) { if (!chips.some((c) => c.q === label)) chips.push({ text: label, q: label }); return; }
+    // the description's last own word ("family of snakes" -> "snake", as the search would say it)
+    const dw = String(a.desc).toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => own[i].includes(w.replace(/(?<=\w{3})s$/, "")));
+    const w = dw.length ? dw[dw.length - 1] : own[i][0];
+    const nq = `${String(q).trim()} ${w}`;
+    if (!chips.some((c) => c.q === nq)) chips.push({ text: w, q: nq });
+  });
+  return chips.length ? chips : null;
+};
+
 // ----- Images row (spec 12): searches that clearly want pictures, from their words -----
 const VISUAL = /\b(?:pictures?|photos?|photographs?|images?|pics?|wallpapers?|logos?|aesthetic|tattoos?|outfits?|hairstyles?|haircuts?|drawings?|paintings?|memes?|gifs?|clipart|inspo|nail designs?|room ideas|decor ideas|cake ideas|what does .+ look like)\b/i;
 // …but not tasks about image files ("image processing python", "resize photo", "logo generator")
@@ -1060,7 +1091,7 @@ const answer = (q, now = Date.now(), data = {}) => {
   return pattern(s) || convert(s) || currency(s, data.fx) || percent(s) || dateMath(s, now) || calc(s);
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, dateLabel, relDate, upsValid, isbnValid, cmuCourse, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, visualQ, deeplUrl, answer };
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, dateLabel, relDate, upsValid, isbnValid, cmuCourse, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -2597,6 +2628,28 @@ const starsPass = () => {
   }).catch(() => {}), 0);
 };
 
+// Meaning line (spec 9): "Also: snakes · Monty Python" above the results when the words have several meanings and
+// the results cover one (CT.meaningLine, from the knowledge panel's answer). Results pass only, never later.
+let meanKey = "";
+const meanPass = () => {
+  const key = searchId(location.href), list = document.getElementById("results-list");
+  if (!webTab || !list || meanKey === key || drawnFor === key) return;
+  const rows = [...list.querySelectorAll(".result-item")].filter((x) => x.style.display !== "none");
+  if (!rows.length) return;
+  meanKey = key;
+  document.querySelectorAll(".ct-mean").forEach((x) => x.remove());
+  const d = ready("kp", key), alts = d && d.kp && d.kp.alts;
+  if (!alts) return;
+  const q = curQ();
+  const chips = CT.meaningLine(q, alts, rows.slice(0, 10).map((x) => `${x.querySelector("a.result-title")?.textContent || ""} ${x.querySelector(".result-snippet")?.textContent || ""}`));
+  if (!chips) return;
+  const line = mk("div", "ct-mean");
+  line.append(mk("span", "ct-mean-l", "Also: "));
+  chips.forEach((c, i) => { if (i) line.append(mk("span", "ct-mean-dot", " · ")); const a = mk("a", "ct-mean-a", c.text); a.href = goTo(c.q); line.append(a); });
+  const after = [...list.children].find((x) => x.classList.contains("ct-kp") || x.classList.contains("ct-only"));
+  if (after) after.after(line); else list.prepend(line);
+};
+
 // ===== Knowledge panel (spec 3) =====
 // Asked at page load for short name-like searches that get no other answer, no AI and no plain type/site list.
 // Shown only when the results hold the same article (CT.kpMatch); the Wikipedia result itself is then hidden, and
@@ -2684,7 +2737,7 @@ const init = () => {
   safe("scan", () => scan(document.body));
   safe("skeleton", () => skel(document.body));
   safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools);
-  safe("kp", kpPass); safe("only", onlyPass); safe("stars", starsPass);
+  safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass);
   safe("drawn", markDrawn);
   // Runs right after degoog inserts results and before the screen updates; only looks inside what was added
   new MutationObserver((muts) => {
@@ -2694,7 +2747,7 @@ const init = () => {
     safe("list", listPass);
     for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { safe("scan", () => scan(n)); safe("skeleton", () => skel(n)); safe("usage", () => noUsage(n)); }
     safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("card", glance);
-    safe("kp", kpPass); safe("only", onlyPass); safe("stars", starsPass);
+    safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass);
     safe("drawn", markDrawn);
     safe("ai", () => { const g = document.getElementById("at-a-glance"); if (g) aiPass(g, searchId(location.href)); });
   }).observe(document.body, { childList: true, subtree: true });

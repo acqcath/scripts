@@ -439,8 +439,10 @@ export const kpFor = async (q) => {
   if (hit && Date.now() - hit.t < TTL) return hit.v;
   let v = null;
   try {
-    const s = await wdGet({ action: "wbsearchentities", search: name, language: "en", uselang: "en", type: "item", limit: "1" });
+    const s = await wdGet({ action: "wbsearchentities", search: name, language: "en", uselang: "en", type: "item", limit: "7" });
     const h = s && Array.isArray(s.search) && s.search[0];
+    // Other meanings of the same words (spec 9 meaning line), from the same answer: label + short description
+    const alts = (s && Array.isArray(s.search) ? s.search : []).filter((x) => x && x.label && x.description && !/disambiguation|wikimedia|family name|given name|surname|scholarly article|list of/i.test(x.description)).slice(0, 7).map((x) => ({ label: String(x.label).slice(0, 80), desc: String(x.description).slice(0, 120) }));
     const e = h && h.id && await wdGet({ action: "wbgetentities", ids: h.id, props: "claims|sitelinks", sitefilter: "enwiki" });
     const ent = e && e.entities && e.entities[h.id];
     if (ent) {
@@ -460,6 +462,7 @@ export const kpFor = async (q) => {
         v = { qid: h.id, title: plan.title, name: h.label || plan.title, type: plan.type, desc: h.description || (sj && sj.description) || "", extract: sj && typeof sj.extract === "string" ? sj.extract : "", facts, photo: photo && _sign ? _sign(photo) : "" };
       }
     }
+    if (alts.length >= 2) v = { ...(v || {}), alts };
   } catch { v = null; }
   if (_kp.size > 1000) _kp.clear();
   _kp.set(key, { t: v ? Date.now() : Date.now() - TTL + 600000, v });

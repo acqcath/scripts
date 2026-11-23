@@ -154,3 +154,15 @@ test("images row: clearly visual searches from their words", () => {
   for (const q of ["golden gate bridge photos", "eiffel tower pictures", "nike logo", "short hairstyles", "what does a capybara look like", "minimalist wallpaper"]) expect([q, A.visualQ(q)]).toEqual([q, true]);
   for (const q of ["golden gate bridge", "how to reset airpods", "image processing python", "resize photo", "logo generator", "!images cats", ""]) expect([q, A.visualQ(q)]).toEqual([q, false]);
 });
+
+test("meaning line: only when the results cover one meaning; tap adds the word", () => {
+  const R = JSON.parse(require("node:zlib").gunzipSync(require("node:fs").readFileSync(new URL("../rec/ct-recordings.json.gz", import.meta.url))));
+  const texts = (q) => R.searches.find((x) => x.q === q && !x.type).results.map((r) => `${r.title} ${r.snippet}`);
+  // Descriptions written the way Wikidata writes them (not fetched here)
+  const python = [{ label: "Python", desc: "general-purpose programming language" }, { label: "Pythonidae", desc: "family of snakes" }, { label: "Monty Python", desc: "British comedy troupe" }];
+  expect(A.meaningLine("python", python, texts("python"))).toEqual([{ text: "snakes", q: "python snakes" }, { text: "Monty Python", q: "Monty Python" }]);
+  const mercury = [{ label: "Mercury", desc: "planet closest to the Sun" }, { label: "mercury", desc: "chemical element with symbol Hg and atomic number 80" }, { label: "Mercury", desc: "American financial technology company" }];
+  expect(A.meaningLine("mercury", mercury, texts("mercury"))).toBeNull(); // results cover the planet, the element and the bank
+  expect(A.meaningLine("python", python.slice(0, 1), texts("python"))).toBeNull();
+  expect(A.meaningLine("python", python, ["a", "b"])).toBeNull();
+});

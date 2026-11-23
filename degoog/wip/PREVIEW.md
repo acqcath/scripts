@@ -68,5 +68,8 @@ Searches that clearly want pictures (`… photos`, `… wallpaper`, `… logo`, 
 ## Smaller changes (M5)
 Bing suggestions back off from 1 minute (doubling, up to an hour) when Bing stops answering, instead of a flat hour.
 
+## Other meanings (M5)
+When a search's words mean several things but all your results are about one of them, a line above the results offers the others: `python` → "Also: snakes · Monty Python" (tap to search that). `mercury` gets no line: its results already cover the planet, the element and the bank.
+
 ## Not in this preview yet
-The meaning line for searches with several meanings (M5), then M6 (full test pass, installer self-check of every outside source: currency, versions, Wikidata, CMU, ESPN, knowledge panel, archives, quick view).
+M6 (full test pass, installer self-check of every outside source: currency, versions, Wikidata, CMU, ESPN, knowledge panel, archives, quick view).

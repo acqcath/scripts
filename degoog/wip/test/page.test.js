@@ -592,3 +592,15 @@ test("page: recipe search: stars + time on the source line from this browser's c
   expect(calls2.some((x) => x.route === "qvs")).toBe(false);
   expect(r.errors).toEqual([]);
 });
+
+test("page: meaning line on real 'python' results (all about the language), none on real 'mercury'", async () => {
+  const alts = [{ label: "Python", desc: "general-purpose programming language" }, { label: "Pythonidae", desc: "family of snakes" }, { label: "Monty Python", desc: "British comedy troupe" }];
+  const a = await run("python", { engines: 40, bridge: { kp: { data: { kp: { alts } }, delay: 5 } } });
+  const line = a.document.querySelector("#results-list > .ct-mean");
+  expect(line && line.textContent).toBe("Also: snakes · Monty Python");
+  expect(new URL(line.querySelector("a").href).searchParams.get("q")).toBe("python snakes");
+  expect(a.document.querySelectorAll(".ct-kp").length).toBe(0); // alts only: no panel
+  const m = await run("mercury", { engines: 40, bridge: { kp: { data: { kp: { alts: [{ label: "Mercury", desc: "planet closest to the Sun" }, { label: "mercury", desc: "chemical element with symbol Hg" }] } }, delay: 5 } } });
+  expect(m.document.querySelectorAll(".ct-mean").length).toBe(0);
+  expect(a.errors.concat(m.errors)).toEqual([]);
+});
