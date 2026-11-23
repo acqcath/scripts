@@ -5,7 +5,7 @@
 - ET = UTC-5 (EST, until 2027-03-14).
 - NIGHT = a run starting 1:00-9:59 AM ET (06:00-14:59 UTC). The user is asleep: use as much of each session as it allows. No per-window limit. Each run: at most 90 work-minutes (keeps the context fresh), then end cleanly; the next hourly fire carries on. Getting cut off by the session limit is expected and fine.
 - DAY = any other start time. The user keeps ~30% of each session for themselves: work-minutes logged in the trailing 5 hours (count overlap) must stay <= 100. That's ~70% of a session at ~0.7%/min (a guess; recalibrate). Each day run: at most min(60, 100 - trailing-5h minutes).
-- Weekly: the window resets Wednesday 12:00 PM ET (17:00 UTC). The user keeps 20% of the week, so runs may use up to 80% - 44% = 36% more. That's ~200 more work-minutes, so the cap is 220 logged work-minutes in total since the last reset (~15 were logged before this recalibration). After the reset: 400/week until the main chat recalibrates.
+- Weekly: the window resets Wednesday 12:00 PM ET (17:00 UTC). The user keeps 10% of the week (lowered from 20% on 2026-11-23 at their request), so runs may use up to 90% - 44% = 46% more. That's ~255 more work-minutes, so the cap is 270 logged work-minutes in total since the last reset (~15 were logged before this recalibration). After the reset: 400/week until the main chat recalibrates.
 
 ## Rule for each run (the schedule fires hourly; fires that exit should take seconds)
 1. If LOCK is fresh → exit.
