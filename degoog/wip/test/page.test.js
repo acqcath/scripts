@@ -476,3 +476,22 @@ test("page: knowledge panel for real 'taylor swift' (Britannica article in the r
   await run("how to reset airpods", { engines: 0, calls: calls2 });
   expect(calls2.some((x) => x.route === "kp")).toBe(false);
 });
+
+test("page: same-shape results on real searches: reddit threads as plain results (no boxes, no PAA), PDF word, react.dev first", async () => {
+  const r = await run("best mechanical keyboard reddit", { engines: 0 });
+  expect(r.document.querySelectorAll(".ct-grp").length).toBe(0); // no Discussions / Videos box
+  expect(r.document.getElementById("ct-qa")).toBeNull();
+  expect(r.errors).toEqual([]);
+  const p = await run("attention is all you need pdf", { engines: 0 });
+  const pdfs = [...p.document.querySelectorAll(".result-item")].filter((el) => el.querySelector(".ct-pdf"));
+  expect(pdfs.length).toBeGreaterThan(0);
+  for (const el of pdfs) { const u = new URL(el.querySelector("a.result-title").href); expect(/\.pdf$/i.test(u.pathname) || /arxiv\.org$/.test(u.hostname)).toBe(true); }
+  expect(p.document.querySelectorAll(".ct-grp").length).toBe(0);
+  const d = await run("react useEffect cleanup", { engines: 0 });
+  expect(new URL(d.visible[0].querySelector("a.result-title").href).hostname).toBe("react.dev");
+  expect(d.document.querySelector(".ct-only")).toBeNull();
+  // Not shaped: boxes still come (airpods has Discussions + Videos)
+  const a = await run("how to reset airpods", { engines: 0 });
+  expect(a.document.querySelectorAll(".ct-grp").length).toBeGreaterThan(0);
+  expect(p.errors.concat(d.errors, a.errors)).toEqual([]);
+});

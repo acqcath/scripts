@@ -184,7 +184,39 @@ const capSites = (items, q, psl, cap = 2) => {
 // ===== One page of results, planned before paint =====
 // The page script applies the plan; it keeps no logic of its own. ctx lives for one search (endless scroll pages
 // reuse it): listCtx(q, psl, prefs) with prefs = {site: "prefer" | "lower" | "hide"} (missing = normal).
-const listCtx = (q, psl, prefs = {}) => ({ add: deduper(psl), named: namedSites(q, psl), count: new Map(), prefs, cap: 2 });
+const listCtx = (q, psl, prefs = {}) => ({ add: deduper(psl), named: namedSites(q, psl), count: new Map(), prefs, cap: 2, docs: docsFor(q), docsDone: false });
+
+// ===== Same-shape results (spec 8) =====
+// A search that names a type of result gets a plain list of that type: no boxes, rows, panels or AI on top.
+const SHAPE_WORDS = [["pdf", /\b(?:pdf|pdfs)\b/], ["paper", /\b(?:paper|papers|arxiv|preprint)\b/], ["forum", /\b(?:reddit|forum|forums|thread|stackoverflow|stack overflow)\b/], ["docs", /\b(?:docs|documentation|api reference|reference manual)\b/], ["recipe", /\b(?:recipe|recipes)\b/], ["code", /\b(?:github|gitlab|repo|repository)\b/], ["lab", /\blab\b/], ["lecture", /\b(?:lecture|lectures|lecture notes)\b/], ["slides", /\b(?:slides|slide deck|ppt|pptx)\b/], ["video", /\b(?:video|videos|youtube)\b/]];
+const shapeOf = (q) => { const s = String(q || "").toLowerCase(); const t = SHAPE_WORDS.find(([, re]) => re.test(s)); return t ? t[0] : ""; };
+// A site named to filter by ("… reddit", "mdn …"): only well-known destination words, and only with other words
+// beside it (a search that is just "reddit" or "steelers" is a navigation, not a filter). Returns the domain or "".
+const FILTER_SITE = { reddit: "reddit.com", stackoverflow: "stackoverflow.com", github: "github.com", youtube: "youtube.com", wikipedia: "wikipedia.org", wiki: "wikipedia.org", quora: "quora.com", mdn: "mozilla.org", npm: "npmjs.com", pypi: "pypi.org", imdb: "imdb.com", amazon: "amazon.com", ebay: "ebay.com", etsy: "etsy.com", twitter: "x.com", hackernews: "ycombinator.com", arxiv: "arxiv.org", goodreads: "goodreads.com", letterboxd: "letterboxd.com", yelp: "yelp.com", tripadvisor: "tripadvisor.com" };
+const filterSite = (q) => {
+  const s = String(q || "").toLowerCase();
+  if (/(?:^|\s)site:/.test(s)) return "";
+  const words = s.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  if (words.length < 2) return "";
+  const w = words.find((x) => FILTER_SITE[x]);
+  return w ? FILTER_SITE[w] : "";
+};
+// "Only reddit.com results ›" line: the named site has fewer than 3 of the first 10 results
+const onlyLine = (q, sites) => { const d = filterSite(q); return d && sites.slice(0, 10).filter((x) => x === d).length < 3 ? d : ""; };
+// The site: search the line runs when tapped: the named word is replaced by the operator
+const onlyQuery = (q, d) => { const w = Object.keys(FILTER_SITE).find((k) => FILTER_SITE[k] === d && new RegExp(`\\b${k}\\b`, "i").test(q)); return `${String(q).replace(w ? new RegExp(`\\s*\\b${w}\\b\\s*`, "i") : /$^/, " ").trim()} site:${d}`; };
+// Programming searches: the official docs result goes first. Keys are words of the search, values host suffixes.
+const DOCS = { react: ["react.dev"], reactjs: ["react.dev"], javascript: ["developer.mozilla.org"], js: ["developer.mozilla.org"], css: ["developer.mozilla.org"], html: ["developer.mozilla.org"], dom: ["developer.mozilla.org"], python: ["docs.python.org"], typescript: ["typescriptlang.org"], ts: ["typescriptlang.org"], rust: ["doc.rust-lang.org", "docs.rs"], golang: ["go.dev", "pkg.go.dev"], nodejs: ["nodejs.org"], node: ["nodejs.org"], kotlin: ["kotlinlang.org"], django: ["docs.djangoproject.com"], flask: ["flask.palletsprojects.com"], vue: ["vuejs.org"], vuejs: ["vuejs.org"], angular: ["angular.dev"], svelte: ["svelte.dev"], nextjs: ["nextjs.org"], tailwind: ["tailwindcss.com"], numpy: ["numpy.org"], pandas: ["pandas.pydata.org"], git: ["git-scm.com"], docker: ["docs.docker.com"], kubernetes: ["kubernetes.io"], postgres: ["postgresql.org"], postgresql: ["postgresql.org"], sqlite: ["sqlite.org"], php: ["php.net"], csharp: ["learn.microsoft.com"], dotnet: ["learn.microsoft.com"], powershell: ["learn.microsoft.com"], bun: ["bun.sh", "bun.com"], deno: ["docs.deno.com"] };
+// Only searches that also look like code (a known API-ish word or camelCase), so "python snake" or "rust removal" don't
+const CODEY = /\p{Ll}\p{Lu}|\b(?:function|method|class|array|map|filter|reduce|string|list|dict|object|async|await|promise|hook|hooks|use\w+|component|props|state|import|export|module|install|syntax|error|exception|loop|for loop|while|lambda|regex|json|api|query|selector|flexbox|grid|type|types|interface|enum|struct|trait|macro|decorator|generator|iterator|cleanup|effect|ref|context|router|config|cli|command|tutorial|docs?|example)\b/u;
+const docsFor = (q) => {
+  const s = String(q || "");
+  const words = s.toLowerCase().split(/[^a-z0-9#]+/).filter(Boolean);
+  const k = words.find((w) => DOCS[w]);
+  if (!k || words.length < 2 || !CODEY.test(s)) return null; // a bare "python" wants python.org, not its docs
+  return DOCS[k];
+};
+const hostOf = (u) => { try { return new URL(u).hostname.toLowerCase(); } catch { return ""; } };
 const WEIGHT = { prefer: 0, lower: 2 };
 // items: [{url, title, ...}] in page order. Returns {shown, dups, hidden (Hide pref), capped (past the cap with no
 // result of that site on this page), folds: Map(site -> {after, items})}.
@@ -196,6 +228,12 @@ const planPage = (items, ctx) => {
   const kept = recs.filter((r) => (ctx.prefs[r.site] === "hide" ? (hidden.push(r), false) : true));
   const w = (r) => WEIGHT[ctx.prefs[r.site]] ?? 1;
   kept.sort((a, b) => w(a) - w(b)); // stable: rank order kept inside each group
+  // Programming search: the official docs result goes first (first page only: later pages never move what's above)
+  if (ctx.docs && !ctx.docsDone) {
+    ctx.docsDone = true;
+    const i = kept.findIndex((r) => { const h = hostOf(r.url); return ctx.docs.some((d) => h === d || h.endsWith(`.${d}`)); });
+    if (i > 0 && ctx.prefs[kept[i].site] !== "lower") kept.unshift(kept.splice(i, 1)[0]);
+  }
   const shown = [], folds = new Map();
   for (const r of kept) {
     const c = ctx.count.get(r.site) || 0;
@@ -1004,7 +1042,7 @@ const answer = (q, now = Date.now(), data = {}) => {
   return pattern(s) || convert(s) || currency(s, data.fx) || percent(s) || dateMath(s, now) || calc(s);
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, dateLabel, relDate, upsValid, isbnValid, cmuCourse, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, answer };
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, dateLabel, relDate, upsValid, isbnValid, cmuCourse, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, answer };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -1055,6 +1093,10 @@ addEventListener("resize", () => requestAnimationFrame(lineUp), { passive: true 
 // Which search a page address is, ignoring what endless scroll adds while you scroll (&loaded=2) and any #
 const searchId = (h) => { try { const u = new URL(h); u.hash = ""; u.searchParams.delete("loaded"); return u.toString(); } catch { return String(h).split("#")[0]; } };
 const sameSearch = (k) => searchId(location.href) === searchId(k);
+// Same-shape results (spec 8): the search names a type of result (pdf, reddit, docs, recipe, video…) or a site to
+// filter by: a plain list of that type, with no boxes, rows, panels, People also ask or AI on top.
+const curQ = () => { try { return (new URL(location.href).searchParams.get("q") || "").trim(); } catch { return ""; } };
+const shaped = (q = curQ()) => !!(CT.shapeOf(q) || CT.filterSite(q) || /(?:^|\s)site:\S/i.test(q));
 
 
 // clean-titles: ONE pass per new result, run before the browser draws it (no timers, no re-scans).
@@ -1356,6 +1398,8 @@ const row = (el) => {
   }
   // "Paywall": a word on the source line, drawn with the result (core PAYWALL_SITES)
   if (cite && u && CT.paywalled(u.hostname, PSL())) { const t = mk("span", "ct-paywall", "Paywall"); (el.querySelector(".result-url-row .ct-date") || cite).after(t); }
+  // "PDF" on the source line for PDF files (any search), like the Paywall word
+  if (cite && u && (/\.pdf$/i.test(u.pathname) || /(^|\.)arxiv\.org$/.test(u.hostname) && /^\/pdf\//.test(u.pathname))) { const t = mk("span", "ct-paywall ct-pdf", "PDF"); (el.querySelector(".result-url-row .ct-paywall, .result-url-row .ct-date") || cite).after(t); }
   const img = el.querySelector(".result-thumbnail-wrap img");
   if (img) { if (/[?&]type=news\b/.test(location.search)) lowres(el, img); work.set(el, () => hdImg(img)); near.observe(el); }
 };
@@ -1509,7 +1553,7 @@ const earlyStart = () => {
     // Knowledge panel: only the name is sent (this server asks Wikidata/Wikipedia); shown only if the results agree
     if (!eq && !wq && !cq && kpWanted(q)) ask("kp", key, { q: CT.kpQuery(q) });
     // Top stories: the News search starts now, in parallel, only for a search that looked like news last time
-    if (SHOW.news && newsy.has(qHash(q))) {
+    if (SHOW.news && !shaped(q) && newsy.has(qHash(q))) {
       const e = { key, data: undefined };
       early.set("news", e);
       fetch(`/api/search?q=${encodeURIComponent(q)}&type=news`).then((x) => (x.ok ? x.json() : null))
@@ -1750,7 +1794,7 @@ const paa = () => {
   const old = document.getElementById("ct-qa");
   if (old) old.remove();
   paaBox = null;
-  if (!q || page > 1 || q.startsWith("!")) return;
+  if (!q || page > 1 || q.startsWith("!") || shaped(q)) return;
   ((j) => {
       // Not in hand when the results came (or none): dropped for this search
       if (!j || !Array.isArray(j.q)) return;
@@ -2123,6 +2167,7 @@ const groups = () => {
     for (const r of c.slice(0, Math.max(0, max - n))) { s.row.append(build(r)); r.el.classList.add("ct-grouped"); }
     s.wrap?.upd();
   };
+  if (shaped()) return; // a plain list of the type asked for: no boxes or rows
   if (SHOW.forum) box("forum", (r) => !!r.forum, 4, forumRow, "Discussions and forums", "forums", "More discussions", false);
   if (SHOW.video) box("video", (r) => r.video, 8, videoCard, "Videos", "videos", "More videos", true);
 
@@ -2174,7 +2219,7 @@ const AI_WORDS = /^(?:why|how (?:does|do|did|is|are|can|come)|explain|what(?:'s|
 const TYPE_WORDS = /\b(?:pdf|paper|reddit|docs|documentation|recipe|github|lab|lecture|slides|video|videos|youtube|wiki|wikipedia)\b/i;
 const aiWanted = (q) => {
   if (!AI_ON.on || !q || q.startsWith("!") || (AI_ON.qmark && !q.trim().endsWith("?"))) return false;
-  if (!AI_WORDS.test(q) || TYPE_WORDS.test(q) || /\bbest buy\b/i.test(q)) return false;
+  if (!AI_WORDS.test(q) || TYPE_WORDS.test(q) || shaped(q) || /\bbest buy\b/i.test(q)) return false;
   if (CT.eolQuery(q) || CT.wdQuery(q)) return false; // a fact or version answer comes first
   try { if (CT.namedSites(q, PSL()).size) return false; } catch {}
   return true;
@@ -2355,6 +2400,32 @@ const ansCopy = (e) => {
 document.addEventListener("click", ansCopy);
 document.addEventListener("keydown", ansCopy);
 
+// "Only reddit.com results ›": a search naming a site to filter by, where that site has few of the first results.
+// Drawn above the results in the pass that draws them (never later); runs the site: search only when tapped.
+let onlyKey = "";
+const onlyPass = () => {
+  const key = searchId(location.href), list = document.getElementById("results-list");
+  if (!webTab || !list || onlyKey === key || drawnFor === key) return;
+  const rows = [...list.querySelectorAll(".result-item")].filter((x) => x.style.display !== "none");
+  if (!rows.length) return;
+  onlyKey = key;
+  document.querySelectorAll(".ct-only").forEach((x) => x.remove());
+  let page = 1;
+  try { page = Number(new URL(key).searchParams.get("page") || 1); } catch {}
+  const q = curQ();
+  if (page > 1) return;
+  const d = CT.onlyLine(q, rows.map((x) => siteOf(rowHost(x))));
+  if (!d) return;
+  const a = mk("a", "ct-only", `Only ${d} results`);
+  a.append(mk("span", "ct-chev", " ›"));
+  const u = new URL(location.href);
+  u.searchParams.set("q", CT.onlyQuery(q, d));
+  u.searchParams.delete("page");
+  a.href = u.pathname + u.search;
+  const kpEl = list.querySelector(":scope > .ct-kp");
+  if (kpEl) kpEl.after(a); else list.prepend(a);
+};
+
 // ===== Knowledge panel (spec 3) =====
 // Asked at page load for short name-like searches that get no other answer, no AI and no plain type/site list.
 // Shown only when the results hold the same article (CT.kpMatch); the Wikipedia result itself is then hidden, and
@@ -2364,7 +2435,7 @@ document.addEventListener("keydown", ansCopy);
 // at the top of the list, drawn only in the pass that draws the results.
 const KP_WIDE = "(min-width: 1180px)";
 const kpWanted = (q) => {
-  if (!webTab || !CT.kpQuery(q) || bangFor(q) || TYPE_WORDS.test(q) || CT.answer(q, Date.now(), { fx: FX }) || aiWanted(q) || AI_WORDS.test(q)) return false;
+  if (!webTab || !CT.kpQuery(q) || shaped(q) || bangFor(q) || TYPE_WORDS.test(q) || CT.answer(q, Date.now(), { fx: FX }) || aiWanted(q) || AI_WORDS.test(q)) return false;
   try { if (CT.namedSites(q, PSL()).size) return false; } catch {}
   return true;
 };
@@ -2442,7 +2513,7 @@ const init = () => {
   safe("scan", () => scan(document.body));
   safe("skeleton", () => skel(document.body));
   safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools);
-  safe("kp", kpPass);
+  safe("kp", kpPass); safe("only", onlyPass);
   safe("drawn", markDrawn);
   // Runs right after degoog inserts results and before the screen updates; only looks inside what was added
   new MutationObserver((muts) => {
@@ -2452,7 +2523,7 @@ const init = () => {
     safe("list", listPass);
     for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { safe("scan", () => scan(n)); safe("skeleton", () => skel(n)); safe("usage", () => noUsage(n)); }
     safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("card", glance);
-    safe("kp", kpPass);
+    safe("kp", kpPass); safe("only", onlyPass);
     safe("drawn", markDrawn);
     safe("ai", () => { const g = document.getElementById("at-a-glance"); if (g) aiPass(g, searchId(location.href)); });
   }).observe(document.body, { childList: true, subtree: true });

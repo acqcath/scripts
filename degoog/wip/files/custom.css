@@ -715,3 +715,9 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
   .ct-kp-wide { position: absolute; top: 0; left: calc(100% + 40px); width: 320px; margin: 0; }
 }
 @media (max-width: 1179px) { .ct-kp-wide { display: none; } }
+
+/* Same-shape results (spec 8): "PDF" and reply counts sit on the source line like the Paywall word */
+.result-url-row .ct-pdf { color: var(--text-cite); font-weight: 500; }
+/* "Only reddit.com results ›": one line above the results; taps run the site: search */
+.ct-only { display: flex; align-items: center; min-height: 44px; margin: 0 0 4px; font-size: 14px; line-height: 20px; color: var(--text-link) !important; text-decoration: none; }
+.ct-only:hover { text-decoration: underline; }

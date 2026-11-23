@@ -47,6 +47,10 @@ addEventListener("resize", () => requestAnimationFrame(lineUp), { passive: true 
 // Which search a page address is, ignoring what endless scroll adds while you scroll (&loaded=2) and any #
 const searchId = (h) => { try { const u = new URL(h); u.hash = ""; u.searchParams.delete("loaded"); return u.toString(); } catch { return String(h).split("#")[0]; } };
 const sameSearch = (k) => searchId(location.href) === searchId(k);
+// Same-shape results (spec 8): the search names a type of result (pdf, reddit, docs, recipe, video…) or a site to
+// filter by: a plain list of that type, with no boxes, rows, panels, People also ask or AI on top.
+const curQ = () => { try { return (new URL(location.href).searchParams.get("q") || "").trim(); } catch { return ""; } };
+const shaped = (q = curQ()) => !!(CT.shapeOf(q) || CT.filterSite(q) || /(?:^|\s)site:\S/i.test(q));
 
 
 // clean-titles: ONE pass per new result, run before the browser draws it (no timers, no re-scans).
@@ -348,6 +352,8 @@ const row = (el) => {
   }
   // "Paywall": a word on the source line, drawn with the result (core PAYWALL_SITES)
   if (cite && u && CT.paywalled(u.hostname, PSL())) { const t = mk("span", "ct-paywall", "Paywall"); (el.querySelector(".result-url-row .ct-date") || cite).after(t); }
+  // "PDF" on the source line for PDF files (any search), like the Paywall word
+  if (cite && u && (/\.pdf$/i.test(u.pathname) || /(^|\.)arxiv\.org$/.test(u.hostname) && /^\/pdf\//.test(u.pathname))) { const t = mk("span", "ct-paywall ct-pdf", "PDF"); (el.querySelector(".result-url-row .ct-paywall, .result-url-row .ct-date") || cite).after(t); }
   const img = el.querySelector(".result-thumbnail-wrap img");
   if (img) { if (/[?&]type=news\b/.test(location.search)) lowres(el, img); work.set(el, () => hdImg(img)); near.observe(el); }
 };
@@ -501,7 +507,7 @@ const earlyStart = () => {
     // Knowledge panel: only the name is sent (this server asks Wikidata/Wikipedia); shown only if the results agree
     if (!eq && !wq && !cq && kpWanted(q)) ask("kp", key, { q: CT.kpQuery(q) });
     // Top stories: the News search starts now, in parallel, only for a search that looked like news last time
-    if (SHOW.news && newsy.has(qHash(q))) {
+    if (SHOW.news && !shaped(q) && newsy.has(qHash(q))) {
       const e = { key, data: undefined };
       early.set("news", e);
       fetch(`/api/search?q=${encodeURIComponent(q)}&type=news`).then((x) => (x.ok ? x.json() : null))
@@ -742,7 +748,7 @@ const paa = () => {
   const old = document.getElementById("ct-qa");
   if (old) old.remove();
   paaBox = null;
-  if (!q || page > 1 || q.startsWith("!")) return;
+  if (!q || page > 1 || q.startsWith("!") || shaped(q)) return;
   ((j) => {
       // Not in hand when the results came (or none): dropped for this search
       if (!j || !Array.isArray(j.q)) return;
@@ -1115,6 +1121,7 @@ const groups = () => {
     for (const r of c.slice(0, Math.max(0, max - n))) { s.row.append(build(r)); r.el.classList.add("ct-grouped"); }
     s.wrap?.upd();
   };
+  if (shaped()) return; // a plain list of the type asked for: no boxes or rows
   if (SHOW.forum) box("forum", (r) => !!r.forum, 4, forumRow, "Discussions and forums", "forums", "More discussions", false);
   if (SHOW.video) box("video", (r) => r.video, 8, videoCard, "Videos", "videos", "More videos", true);
 
@@ -1166,7 +1173,7 @@ const AI_WORDS = /^(?:why|how (?:does|do|did|is|are|can|come)|explain|what(?:'s|
 const TYPE_WORDS = /\b(?:pdf|paper|reddit|docs|documentation|recipe|github|lab|lecture|slides|video|videos|youtube|wiki|wikipedia)\b/i;
 const aiWanted = (q) => {
   if (!AI_ON.on || !q || q.startsWith("!") || (AI_ON.qmark && !q.trim().endsWith("?"))) return false;
-  if (!AI_WORDS.test(q) || TYPE_WORDS.test(q) || /\bbest buy\b/i.test(q)) return false;
+  if (!AI_WORDS.test(q) || TYPE_WORDS.test(q) || shaped(q) || /\bbest buy\b/i.test(q)) return false;
   if (CT.eolQuery(q) || CT.wdQuery(q)) return false; // a fact or version answer comes first
   try { if (CT.namedSites(q, PSL()).size) return false; } catch {}
   return true;
@@ -1347,6 +1354,32 @@ const ansCopy = (e) => {
 document.addEventListener("click", ansCopy);
 document.addEventListener("keydown", ansCopy);
 
+// "Only reddit.com results ›": a search naming a site to filter by, where that site has few of the first results.
+// Drawn above the results in the pass that draws them (never later); runs the site: search only when tapped.
+let onlyKey = "";
+const onlyPass = () => {
+  const key = searchId(location.href), list = document.getElementById("results-list");
+  if (!webTab || !list || onlyKey === key || drawnFor === key) return;
+  const rows = [...list.querySelectorAll(".result-item")].filter((x) => x.style.display !== "none");
+  if (!rows.length) return;
+  onlyKey = key;
+  document.querySelectorAll(".ct-only").forEach((x) => x.remove());
+  let page = 1;
+  try { page = Number(new URL(key).searchParams.get("page") || 1); } catch {}
+  const q = curQ();
+  if (page > 1) return;
+  const d = CT.onlyLine(q, rows.map((x) => siteOf(rowHost(x))));
+  if (!d) return;
+  const a = mk("a", "ct-only", `Only ${d} results`);
+  a.append(mk("span", "ct-chev", " ›"));
+  const u = new URL(location.href);
+  u.searchParams.set("q", CT.onlyQuery(q, d));
+  u.searchParams.delete("page");
+  a.href = u.pathname + u.search;
+  const kpEl = list.querySelector(":scope > .ct-kp");
+  if (kpEl) kpEl.after(a); else list.prepend(a);
+};
+
 // ===== Knowledge panel (spec 3) =====
 // Asked at page load for short name-like searches that get no other answer, no AI and no plain type/site list.
 // Shown only when the results hold the same article (CT.kpMatch); the Wikipedia result itself is then hidden, and
@@ -1356,7 +1389,7 @@ document.addEventListener("keydown", ansCopy);
 // at the top of the list, drawn only in the pass that draws the results.
 const KP_WIDE = "(min-width: 1180px)";
 const kpWanted = (q) => {
-  if (!webTab || !CT.kpQuery(q) || bangFor(q) || TYPE_WORDS.test(q) || CT.answer(q, Date.now(), { fx: FX }) || aiWanted(q) || AI_WORDS.test(q)) return false;
+  if (!webTab || !CT.kpQuery(q) || shaped(q) || bangFor(q) || TYPE_WORDS.test(q) || CT.answer(q, Date.now(), { fx: FX }) || aiWanted(q) || AI_WORDS.test(q)) return false;
   try { if (CT.namedSites(q, PSL()).size) return false; } catch {}
   return true;
 };
@@ -1434,7 +1467,7 @@ const init = () => {
   safe("scan", () => scan(document.body));
   safe("skeleton", () => skel(document.body));
   safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools);
-  safe("kp", kpPass);
+  safe("kp", kpPass); safe("only", onlyPass);
   safe("drawn", markDrawn);
   // Runs right after degoog inserts results and before the screen updates; only looks inside what was added
   new MutationObserver((muts) => {
@@ -1444,7 +1477,7 @@ const init = () => {
     safe("list", listPass);
     for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { safe("scan", () => scan(n)); safe("skeleton", () => skel(n)); safe("usage", () => noUsage(n)); }
     safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("card", glance);
-    safe("kp", kpPass);
+    safe("kp", kpPass); safe("only", onlyPass);
     safe("drawn", markDrawn);
     safe("ai", () => { const g = document.getElementById("at-a-glance"); if (g) aiPass(g, searchId(location.href)); });
   }).observe(document.body, { childList: true, subtree: true });
