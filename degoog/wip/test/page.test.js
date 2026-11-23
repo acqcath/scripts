@@ -22,7 +22,7 @@ const ctx = (r, i) => ({ index: i, title: r.title, url: r.url, cite_url: r.url.r
   sources: (r.sources || []).map((name) => ({ name })), duration: r.duration || "", is_video: !!r.duration, show_actions: true, action_block: true, action_score: true });
 
 const run = async (q, opts = {}) => {
-  const win = new Window({ url: `https://degoog.local/search?q=${encodeURIComponent(q)}` });
+  const win = new Window({ url: `https://degoog.local/search?q=${encodeURIComponent(q)}${opts.type ? `&type=${opts.type}` : ""}` });
   const { document } = win;
   document.body.innerHTML = '<div id="at-a-glance"></div><div id="results-list"></div>';
   if (!opts.noPsl) win.CT_PSL = PSL;
@@ -73,7 +73,7 @@ const run = async (q, opts = {}) => {
   });
   new Function("scope", `with (scope) {\nconst __PLUGIN_ID__="clean-titles";\n${CODE}\n}`)(scope);
   const fire = (nodes) => { for (const m of mos) m.cb([{ type: "childList", addedNodes: nodes }], m); };
-  const res = REC.searches.find((x) => x.q === q && !x.type || x.q === q && x.type === "web").results;
+  const res = REC.searches.find((x) => x.q === q && (opts.type ? x.type === opts.type : !x.type || x.type === "web")).results;
   // The page script starts at page load, before any results (as in degoog: results come from a later fetch)
   if (document.readyState === "loading") await new Promise((r) => document.addEventListener("DOMContentLoaded", r, { once: true }));
   await new Promise((r) => setTimeout(r, opts.engines || 0)); // the engines' time, while early answers arrive
@@ -208,4 +208,13 @@ test("page: Top stories only for news-like results, drawn before paint, never in
   await new Promise((r) => setTimeout(r, 120));
   c.fire([]);
   expect(c.document.querySelector(".ct-news")).toBeNull();
+});
+
+test("page: News tab layout is decided before paint; recorded News pictures (upgradable hosts) keep the banner", async () => {
+  for (const q of ["steelers", "nvidia"]) {
+    const { items, errors } = await run(q, { type: "news" });
+    expect(errors).toEqual([]);
+    expect(items.length).toBeGreaterThan(40);
+    expect(items.filter((el) => el.classList.contains("ct-lowres")).length).toBe(0);
+  }
 });

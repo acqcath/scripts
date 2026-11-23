@@ -312,7 +312,7 @@ html:root { --ct-desc-pc: 15px; --ct-desc-phone: 13.5px; }
   & .result-item:not(:has(.result-thumbnail-wrap:not([style*="none"]) img)) .result-body { padding: 12px 16px !important; }
   & .result-item:not(:has(.result-thumbnail-wrap:not([style*="none"]) img)) .result-thumbnail-wrap { display: none !important; }
   & .result-item:not(:has(.result-thumbnail-wrap:not([style*="none"]) img)) .result-title { -webkit-line-clamp: 2 !important; }
-  /* Pictures too small for a banner (the plugin marks them ct-lowres after trying for a sharper copy):
+  /* Pictures too small for a banner (the plugin marks them ct-lowres before paint, from the address):
      Google News style, a small sharp thumbnail beside the text instead of a blurry full-width banner */
   & .result-item.ct-lowres { grid-column: 1 / -1 !important; }
   & .result-item.ct-lowres .result-item-inner { flex-direction: row-reverse !important; align-items: flex-start !important; }

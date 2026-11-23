@@ -222,9 +222,20 @@ const canHD = (src) => {
     return HD_HOST.test(new URL(inner).hostname);
   } catch { return false; }
 };
-// A picture that stays far below the size it's shown at gets class ct-lowres: your CSS then shows it as a
-// small thumbnail beside the text instead of a blurry banner (any engine, any host)
-const low = (img, w, need) => { if (w && w < need * 0.6) img.closest(".result-item")?.classList.add("ct-lowres"); };
+// News-tab layout (banner vs small thumbnail beside the text, class ct-lowres) is decided once, before paint, from
+// what the address says: a host the plugin can upgrade (hdImg crossfades the sharp copy into the same box) or a
+// size hint of 480px+ keeps the banner; anything else gets the thumbnail. v49 added ct-lowres after the picture
+// loaded, which re-laid the card after paint. All recorded News pictures (steelers, nvidia) are bing.com th?w=234
+// or Brave rs:fit:200, both upgradable, so they keep the banner.
+const sizeHint = (src) => {
+  try {
+    const u = new URL(src, location.href);
+    const inner = new URL(u.pathname.includes("/api/proxy/image") ? u.searchParams.get("url") || "" : u.href);
+    const w = Number(inner.searchParams.get("w")) || Number((/\/rs:fit:(\d+)/.exec(inner.pathname) || [])[1]) || 0;
+    return w;
+  } catch { return 0; }
+};
+const lowres = (el, img) => { const src = img.getAttribute("src") || ""; if (!canHD(src) && sizeHint(src) < 480) el.classList.add("ct-lowres"); };
 const hdImg = (img) => {
   // Wait for the small picture so its real size is known
   if (!img.complete) { img.addEventListener("load", () => hdImg(img), { once: true }); img.addEventListener("error", () => hdImg(img), { once: true }); return; }
@@ -233,12 +244,12 @@ const hdImg = (img) => {
   const need = nw ? Math.ceil(Math.max(img.clientWidth, nh ? img.clientHeight * nw / nh : 0) * (window.devicePixelRatio || 1)) : 640;
   if (nw && need <= nw * 1.15) return; // already sharp at this size: no request at all
   const orig = img.getAttribute("src") || "";
-  if (!canHD(orig)) { low(img, nw, need); return; } // no bigger copy exists anywhere
+  if (!canHD(orig)) return; // no bigger copy exists anywhere
   const probe = new Image();
   probe.onload = () => {
     const wrap = img.parentElement;
     // A frame degoog hid (small picture failed) stays hidden: showing it now would push the text over
-    if (!(probe.naturalWidth > nw) || img.getAttribute("src") !== orig || !wrap || wrap.style.display === "none" || !img.isConnected) { low(img, Math.max(nw, probe.naturalWidth), need); return; }
+    if (!(probe.naturalWidth > nw) || img.getAttribute("src") !== orig || !wrap || wrap.style.display === "none" || !img.isConnected) return;
     // Same-size crossfade: the sharp copy, decoded first, lies exactly over the small one (same box, same
     // object-fit) and fades in with opacity only, so nothing moves or blinks
     (probe.decode ? probe.decode() : Promise.resolve()).catch(() => {}).then(() => {
@@ -246,13 +257,11 @@ const hdImg = (img) => {
       probe.alt = "";
       probe.className = `${img.className} ct-hd`;
       wrap.append(probe);
-      low(img, probe.naturalWidth, need);
     });
   };
-  probe.onerror = () => low(img, nw, need);
   bridge("hd", { w: Math.min(1280, Math.max(160, need)), src: orig })
-    .then((j) => { if (j && j.to) probe.src = j.to; else low(img, nw, need); })
-    .catch(() => low(img, nw, need));
+    .then((j) => { if (j && j.to) probe.src = j.to; })
+    .catch(() => {});
 };
 
 const PHONE = matchMedia("(max-width: 767px)");
@@ -310,7 +319,7 @@ const row = (el) => {
     if (label && cite) { const d = mk("span", "ct-date", label); d.dataset.raw = dRaw; cite.after(d); }
   }
   const img = el.querySelector(".result-thumbnail-wrap img");
-  if (img) { work.set(el, () => hdImg(img)); near.observe(el); }
+  if (img) { if (/[?&]type=news\b/.test(location.search)) lowres(el, img); work.set(el, () => hdImg(img)); near.observe(el); }
 };
 
 const card = (el, isImage) => {
