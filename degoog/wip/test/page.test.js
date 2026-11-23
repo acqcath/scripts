@@ -495,3 +495,21 @@ test("page: same-shape results on real searches: reddit threads as plain results
   expect(a.document.querySelectorAll(".ct-grp").length).toBeGreaterThan(0);
   expect(p.errors.concat(d.errors, a.errors)).toEqual([]);
 });
+
+test("page: 'Open archived copy' in each result's menu asks the server only on tap and opens what it found", async () => {
+  const calls = [];
+  const r = await run("$AAPL", { engines: 0, calls, bridge: { arch: { data: { a: { url: "https://archive.ph/AbC12", src: "archive.today" } }, delay: 5 } } });
+  const items = [...r.document.querySelectorAll("#results-list .result-item")];
+  expect(items.filter((el) => el.querySelector(".result-actions-menu .ct-arch")).length).toBe(items.filter((el) => el.querySelector(".result-actions-menu")).length);
+  expect(calls.some((c) => c.route === "arch")).toBe(false); // nothing asked before the tap
+  const wsj = items.find((el) => /(^|\.)wsj\.com$/.test(new URL(el.querySelector("a.result-title").href).hostname));
+  const opened = [];
+  r.win.open = () => { const w = { closed: false, document: { body: {} }, location: { replace: (u) => opened.push(u) } }; return w; };
+  wsj.querySelector(".ct-arch").click();
+  await new Promise((res) => setTimeout(res, 30));
+  const c = calls.find((x) => x.route === "arch");
+  expect(c.params.get("u")).toBe(wsj.querySelector("a.result-title").href);
+  expect(c.params.get("pw")).toBe("1");
+  expect(opened).toEqual(["https://archive.ph/AbC12"]);
+  expect(r.errors).toEqual([]);
+});
