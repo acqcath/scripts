@@ -470,7 +470,7 @@ const early = new Map();
 const ask = (route, key, params) => {
   const e = { key, data: undefined };
   early.set(route, e);
-  bridge(route, params).then((j) => { e.data = j || null; }, () => { e.data = null; });
+  bridge(route, params).then((j) => { e.data = j || null; if (route === "kp") safe("kp", kpPass); }, () => { e.data = null; });
 };
 const ready = (route, key) => { const e = early.get(route); return e && e.key === key ? e.data : undefined; };
 let earlyFor = "";
@@ -498,6 +498,8 @@ const earlyStart = () => {
     if (cq && cq.level) ask("cmu", key, { id: cq.id });
     // A team's game (ESPN): short searches made of words only go to this server, which knows the team names
     if (!eq && !wq && !cq && /^[a-z][a-z .'&-]*$/i.test(q) && q.split(/\s+/).length <= 6 && !CT.answer(q, Date.now(), { fx: FX })) ask("sports", key, { q });
+    // Knowledge panel: only the name is sent (this server asks Wikidata/Wikipedia); shown only if the results agree
+    if (!eq && !wq && !cq && kpWanted(q)) ask("kp", key, { q: CT.kpQuery(q) });
     // Top stories: the News search starts now, in parallel, only for a search that looked like news last time
     if (SHOW.news && newsy.has(qHash(q))) {
       const e = { key, data: undefined };
@@ -713,7 +715,7 @@ document.addEventListener("click", async (e) => {
   if (!list || pref === "normal") return;
   const rows = [...list.querySelectorAll(".result-item")].filter((x) => siteOf(rowHost(x)) === site);
   if (pref === "hide") rows.forEach((x) => { x.style.display = "none"; x.dataset.ctHide = "1"; });
-  else if (pref === "prefer") list.prepend(...rows);
+  else if (pref === "prefer") { const kpEl = list.querySelector(":scope > .ct-kp"); if (kpEl) kpEl.after(...rows); else list.prepend(...rows); }
   else list.append(...rows);
 }, true);
 
@@ -1345,6 +1347,82 @@ const ansCopy = (e) => {
 document.addEventListener("click", ansCopy);
 document.addEventListener("keydown", ansCopy);
 
+// ===== Knowledge panel (spec 3) =====
+// Asked at page load for short name-like searches that get no other answer, no AI and no plain type/site list.
+// Shown only when the results hold the same article (CT.kpMatch); the Wikipedia result itself is then hidden, and
+// degoog's own Wikipedia card is always hidden (CSS): this replaces it, and it arrived late on phones (sidebar on top).
+// Wide screens: a right column top-aligned with the first result, laid out absolutely beside the list, so it moves
+// nothing even when it arrives after the results. Narrower: a compact card (name, type, one line of facts, More ⌄)
+// at the top of the list, drawn only in the pass that draws the results.
+const KP_WIDE = "(min-width: 1180px)";
+const kpWanted = (q) => {
+  if (!webTab || !CT.kpQuery(q) || bangFor(q) || TYPE_WORDS.test(q) || CT.answer(q, Date.now(), { fx: FX }) || aiWanted(q) || AI_WORDS.test(q)) return false;
+  try { if (CT.namedSites(q, PSL()).size) return false; } catch {}
+  return true;
+};
+let kpKey = "";
+const kpCard = (kp, wide) => {
+  const box = mk("aside", `ct-kp${wide ? " ct-kp-wide" : ""}`);
+  box.setAttribute("aria-label", `About ${kp.name}`);
+  const wiki = `https://en.wikipedia.org/wiki/${encodeURIComponent(kp.title.replace(/ /g, "_"))}`;
+  if (wide && kp.photo) {
+    const ph = mk("div", `ct-kp-photo${kp.type === "person" ? " ct-kp-portrait" : ""}`);
+    const im = new Image(); im.alt = ""; im.decoding = "async"; im.referrerPolicy = "no-referrer";
+    im.onload = () => im.classList.add("ct-on"); im.onerror = () => { ph.style.visibility = "hidden"; };
+    im.src = kp.photo; ph.append(im); box.append(ph);
+  }
+  const head = mk("div", "ct-kp-head");
+  const name = mk("a", "ct-kp-name", kp.name); name.href = wiki; name.rel = "noopener";
+  head.append(name);
+  const type = kp.desc ? kp.desc.charAt(0).toUpperCase() + kp.desc.slice(1) : "";
+  if (type) head.append(mk("div", "ct-kp-type", type));
+  box.append(head);
+  const ext = mk("p", "ct-kp-ext", kp.extract || "");
+  const facts = mk("dl", "ct-kp-facts");
+  for (const f of kp.facts || []) { const r = mk("div", "ct-kp-f"); r.append(mk("dt", "", f.k), mk("dd", "", f.v)); facts.append(r); }
+  // Source line; its "Wikipedia" opens the article (the 2-line description is clamped, so the link lives here)
+  const src = mk("div", "ct-kp-src");
+  const wl = mk("a", "ct-kp-wl", "Wikipedia ↗"); wl.href = wiki; wl.rel = "noopener";
+  src.append(wl, " · Wikidata");
+  if (wide) { if (kp.extract) box.append(ext); if (kp.facts && kp.facts.length) box.append(facts); box.append(src); return box; }
+  // Compact: one line of facts that never wraps (fitLine drops whole facts from the end), More ⌄ opens the rest here
+  const line = mk("div", "ct-kp-line ct-fit ct-fit-drop");
+  for (const t of CT.kpLine(kp.facts)) line.append(mk("span", "ct-it", t));
+  if (line.children.length) box.append(line);
+  const more = mk("div", "ct-kp-more");
+  if (kp.extract) more.append(ext);
+  if (kp.facts && kp.facts.length) more.append(facts);
+  more.append(src);
+  more.hidden = true;
+  const b = mk("button", "ct-kp-open", "More ⌄"); b.type = "button"; b.setAttribute("aria-expanded", "false");
+  box.append(more, b);
+  return box;
+};
+document.addEventListener("click", (e) => {
+  const b = e.target.closest && e.target.closest(".ct-kp-open");
+  if (!b) return;
+  const more = b.parentElement.querySelector(".ct-kp-more"), open = more.hidden;
+  more.hidden = !open; b.textContent = open ? "Less ⌃" : "More ⌄"; b.setAttribute("aria-expanded", String(open));
+});
+const kpPass = () => {
+  const key = searchId(location.href), list = document.getElementById("results-list");
+  if (kpKey !== key) { kpKey = key; document.querySelectorAll(".ct-kp").forEach((x) => x.remove()); }
+  if (!list || !webTab || list.querySelector(":scope > .ct-kp")) return;
+  const d = ready("kp", key), kp = d && d.kp;
+  if (!kp || !kp.title || !kp.name) return;
+  const late = drawnFor === key, wide = !!(window.matchMedia && matchMedia(KP_WIDE).matches);
+  if (late && !wide) return; // on top of the list, after the results are on screen: would push them down
+  const rows = [...list.querySelectorAll(".result-item")];
+  if (!rows.length) return;
+  const m = CT.kpMatch(kp.title, rows.map((r) => r.querySelector("a.result-title")?.href || ""));
+  if (!m.ok) return;
+  if (!late) for (const i of m.wiki) rows[i].dataset.ctKp = "1"; // the panel replaces that result (before paint only)
+  const card = kpCard(kp, wide);
+  list.prepend(card);
+  card.querySelectorAll(".ct-fit").forEach(fitLine);
+  if (fitRO) fitRO.observe(card);
+};
+
 const safe = (name, fn) => { try { fn(); } catch (e) { console.error(`clean-titles ${name}:`, e); } };
 const init = () => {
   safe("query", readQuery);
@@ -1356,6 +1434,7 @@ const init = () => {
   safe("scan", () => scan(document.body));
   safe("skeleton", () => skel(document.body));
   safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools);
+  safe("kp", kpPass);
   safe("drawn", markDrawn);
   // Runs right after degoog inserts results and before the screen updates; only looks inside what was added
   new MutationObserver((muts) => {
@@ -1365,6 +1444,7 @@ const init = () => {
     safe("list", listPass);
     for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { safe("scan", () => scan(n)); safe("skeleton", () => skel(n)); safe("usage", () => noUsage(n)); }
     safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("card", glance);
+    safe("kp", kpPass);
     safe("drawn", markDrawn);
     safe("ai", () => { const g = document.getElementById("at-a-glance"); if (g) aiPass(g, searchId(location.href)); });
   }).observe(document.body, { childList: true, subtree: true });

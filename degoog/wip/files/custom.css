@@ -586,6 +586,8 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .ct-sl-i:hover .ct-sl-t { text-decoration: underline; }
 .ct-sl-d { font-size: 13px; line-height: 18px; color: var(--text-snippet); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 @media (hover: none) { .ct-arr { display: none; } }
+/* Narrow windows with a mouse: arrows stay inside the page (no sideways scroll) */
+@media (max-width: 767px) { .ct-prev { left: 0; } .ct-next { right: 0; } }
 @media (max-width: 767px) {
   .ct-gh { font-size: 18px; line-height: 23px; }
   .ct-ft { font-size: 16px; line-height: 22px; }
@@ -679,3 +681,37 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 @media (prefers-reduced-motion: no-preference) { .ct-live-dot { animation: ctLive 1.6s ease-in-out infinite; } .ct-sp-logo img { transition: opacity .3s; } }
 @media (prefers-reduced-motion: reduce) { .ct-sp-logo img { transition: none; } }
 @keyframes ctLive { 50% { opacity: .35; } }
+
+/* Knowledge panel (spec 3). degoog's own Wikipedia card is replaced by it, always (it also came after the results on
+   phones, where the sidebar sits on top). The Wikipedia result the panel stands for is hidden before paint. */
+#results-sidebar > .sidebar-accordion:has(.wiki-card), #results-sidebar > :has(> .wiki-card) { display: none !important; }
+.result-item[data-ct-kp] { display: none !important; }
+.ct-kp { margin: 8px 0 20px; color: var(--text-primary); }
+.ct-kp-name { display: block; font-size: 20px; line-height: 26px; font-weight: 500; color: var(--text-primary) !important; text-decoration: none; overflow-wrap: anywhere; }
+.ct-kp-name:hover { text-decoration: underline; }
+.ct-kp-type { margin-top: 1px; font-size: 13px; line-height: 18px; color: var(--text-secondary); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.ct-kp-line { margin-top: 4px; font-size: 13px; line-height: 18px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; }
+.ct-kp-ext { margin: 10px 0 0; font-size: 14px; line-height: 20px; color: var(--text-snippet); }
+.ct-kp-wl { color: var(--text-link) !important; text-decoration: none; white-space: nowrap; }
+.ct-kp-wl:hover { text-decoration: underline; }
+.ct-kp-facts { margin: 10px 0 0; padding: 0; font-size: 14px; line-height: 20px; }
+.ct-kp-f { display: flex; gap: 6px; padding: 2px 0; }
+.ct-kp-f dt { flex: none; font-weight: 500; color: var(--text-primary); }
+.ct-kp-f dt::after { content: ":"; }
+.ct-kp-f dd { margin: 0; min-width: 0; color: var(--text-snippet); overflow-wrap: anywhere; }
+.ct-kp-src { margin-top: 10px; font-size: 12px; line-height: 16px; color: var(--text-cite); }
+.ct-kp-open { display: inline-flex; align-items: center; min-height: 44px; margin: 0 0 -10px; padding: 0; border: 0; background: none; font: inherit; font-size: 14px; color: var(--text-link); cursor: pointer; }
+.ct-kp-more .ct-kp-ext { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; }
+/* Wide screens: right column, top-aligned with the first result, out of the list's flow (moves nothing) */
+.ct-kp-photo { width: 100%; aspect-ratio: 16 / 9; margin-bottom: 12px; border-radius: 12px; overflow: hidden; background: var(--bg-light); }
+.ct-kp-photo.ct-kp-portrait { float: right; width: 96px; height: 120px; aspect-ratio: auto; margin: 0 0 8px 12px; }
+.ct-kp-photo img { display: block; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .3s; }
+.ct-kp-photo img.ct-on { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .ct-kp-photo img { transition: none; } }
+.ct-kp-wide .ct-kp-ext { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; clear: none; }
+.ct-kp-wide .ct-kp-facts { clear: both; }
+@media (min-width: 1180px) {
+  #results-list:has(> .ct-kp-wide) { position: relative; }
+  .ct-kp-wide { position: absolute; top: 0; left: calc(100% + 40px); width: 320px; margin: 0; }
+}
+@media (max-width: 1179px) { .ct-kp-wide { display: none; } }

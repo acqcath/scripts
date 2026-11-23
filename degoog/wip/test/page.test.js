@@ -445,3 +445,34 @@ test("page: sports card for 'steelers' drawn with the results when in hand: logo
   const b = await run("python", { engines: 40, bridge: { sports: { data: { g: null }, delay: 5 } } });
   expect(b.document.querySelector(".ct-ans")).toBeNull();
 });
+
+test("page: knowledge panel for real 'taylor swift' (Britannica article in the results), compact on narrow screens; dropped when late; none without the article", async () => {
+  const kp = { qid: "Q26876", title: "Taylor Swift", name: "Taylor Swift", type: "person", desc: "American singer-songwriter (born 1989)", extract: "Taylor Alison Swift is an American singer-songwriter.", facts: [{ k: "Born", v: "Dec 13, 1989" }, { k: "Occupation", v: "singer-songwriter, record producer" }], photo: "/api/proxy/image?url=x&sig=1" };
+  const calls = [];
+  const a = await run("taylor swift", { engines: 40, calls, bridge: { kp: { data: { kp }, delay: 5 } } });
+  expect(calls.find((x) => x.route === "kp").params.get("q")).toBe("taylor swift");
+  const card = a.document.querySelector("#results-list > .ct-kp");
+  expect(card).not.toBeNull();
+  expect(a.document.querySelector("#results-list").firstElementChild).toBe(card);
+  expect(card.querySelector(".ct-kp-name").textContent).toBe("Taylor Swift");
+  expect(card.querySelector(".ct-kp-name").getAttribute("href")).toBe("https://en.wikipedia.org/wiki/Taylor_Swift");
+  expect(card.querySelector(".ct-kp-type").textContent).toBe("American singer-songwriter (born 1989)");
+  expect([...card.querySelectorAll(".ct-kp-line .ct-it")].map((x) => x.textContent)).toEqual(["Born Dec 13, 1989", "Occupation singer-songwriter, record producer"]);
+  expect(card.querySelector(".ct-kp-more").hidden).toBe(true);
+  expect(card.querySelector(".ct-kp-photo")).toBeNull(); // compact: no photo
+  card.querySelector(".ct-kp-open").click();
+  expect(card.querySelector(".ct-kp-more").hidden).toBe(false);
+  expect(card.querySelector(".ct-kp-src").textContent).toBe("Wikipedia ↗ · Wikidata");
+  expect(a.errors).toEqual([]);
+  // Same answer after the results are on screen: not put on top of them
+  const b = await run("taylor swift", { engines: 0, bridge: { kp: { data: { kp }, delay: 60 } } });
+  await new Promise((r) => setTimeout(r, 80));
+  b.fire([]);
+  expect(b.document.querySelector(".ct-kp")).toBeNull();
+  // Real 'jaguar': no Jaguar article in the results (cars first) -> no panel; how-to searches never ask
+  const c = await run("jaguar", { engines: 40, bridge: { kp: { data: { kp: { ...kp, title: "Jaguar", name: "Jaguar" } }, delay: 5 } } });
+  expect(c.document.querySelector(".ct-kp")).toBeNull();
+  const calls2 = [];
+  await run("how to reset airpods", { engines: 0, calls: calls2 });
+  expect(calls2.some((x) => x.route === "kp")).toBe(false);
+});
