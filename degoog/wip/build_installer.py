@@ -1,10 +1,10 @@
-# Builds an installer from main's install.ps1 skeleton with the v50 files from files/ (run build.py first).
+# Builds an installer from v49's install.ps1 (main at 9daedd5, before v50 was merged) as the skeleton with the v50 files from files/ (run build.py first).
 #   python3 build_installer.py preview  -> install-preview.ps1 (prints "clean-titles v50-preview")
 #   python3 build_installer.py release  -> ../install.ps1 on this branch (v50); only at READY TO SHIP
 import re, sys, subprocess
 mode = sys.argv[1] if len(sys.argv) > 1 else 'preview'
 ver = 'v50-preview' if mode == 'preview' else 'v50'
-src = subprocess.run(['git', 'show', 'main:degoog/install.ps1'], capture_output=True, text=True, check=True).stdout
+src = subprocess.run(['git', 'show', '9daedd5:degoog/install.ps1'], capture_output=True, text=True, check=True).stdout
 page = open('files/ct-page.js', encoding='utf-8').read()
 page = re.sub(r'^// clean-titles \S+', f'// clean-titles {ver}', page, count=1)
 files = {n: open(f'files/{n}', encoding='utf-8').read() for n in ['index.js', 'names.js', 'inline.js', 'custom.css', 'setcss.js']}

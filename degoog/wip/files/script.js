@@ -33,6 +33,22 @@ window.fetch = async (input, init) => {
 };
 // One look for everything the plugin adds: it enters with degoog's own result fade (once, not again when
 // re-attached after a redraw), and lines that sit above results start exactly where the results' text starts
+// Browser history: degoog's endless scroll rewrites the address with &loaded=2, 3, … as pages load, and Firefox-
+// based browsers (Zen) record each rewrite as another history entry for the same search. Same search -> the address
+// stays as it is; history.state still carries the page count, which back/forward restore from.
+try {
+  const rs = history.replaceState.bind(history);
+  history.replaceState = function (st, t, url) {
+    try {
+      if (url != null) {
+        const n = new URL(url, location.href), c = new URL(location.href);
+        const strip = (u) => { const p = new URLSearchParams(u.search); p.delete("loaded"); return `${u.pathname}?${p}`; };
+        if (n.origin === c.origin && strip(n) === strip(c)) return rs(st, t);
+      }
+    } catch {}
+    return rs(st, t, url);
+  };
+} catch {}
 const fadeIn = (e) => { e.classList.add("ct-in"); e.addEventListener("animationend", () => e.classList.remove("ct-in"), { once: true }); return e; };
 // The tab row ends where the search bar ends (Tools sits under the bar's → button, in the same column as results)
 const tabsEdge = () => {
@@ -127,7 +143,7 @@ const cleanTitle = (raw, href) => {
 // else's filter). Web: shown when the search asks for that kind of thing, or when the result is about the search
 // itself (every word of the search in its title or address). Specialised tabs (News, Science, Forums, Images,
 // Videos) are meant to be about one kind of thing, so there they show only when the search asks for it.
-const ADULT_HOST = /(porn|xvideos|xnxx|xhamster|redtube|youporn|spankbang|eporner|onlyfans|fansly|chaturbate|stripchat|camsoda|bongacams|livejasmin|rule34|hentai|motherless|txxx|brazzers|bangbros|realitykings|erome|thothub|fapello|nudostar|xxx)|(^|[.-])(sex|nsfw|nudes?|escorts?)([.-]|$)/i;
+const ADULT_HOST = /(porn|xvideos|xnxx|xhamster|redtube|youporn|spankbang|eporner|onlyfans|fansly|chaturbate|stripchat|camsoda|bongacams|livejasmin|rule34|r34|paheal|scrollx|gelbooru|danbooru|e621|nhentai|hentai|motherless|txxx|brazzers|bangbros|realitykings|erome|thothub|fapello|nudostar|xxx)|(^|[.-])(sex|nsfw|nudes?|escorts?)([.-]|$)/i;
 const ADULT_TEXT = /\b(xxx|nsfw|hentai|milfs?|blowjobs?|cumshots?|creampies?|gangbangs?|deepthroat|(?:free|hd|amateur) porn|porn (?:videos?|clips?|pics?|tube|stars?)|sex (?:videos?|tapes?|cams?|chat)|camgirls?|onlyfans leaks?|nudes? leak(?:ed|s)?)\b/i;
 const WANTS_ADULT = /\b(porn\w*|sex\w*|nude\w*|naked|nsfw|xxx|hentai|onlyfans|erotic\w*|milfs?|boobs?|tits?|pussy|dick|cock|fap\w*|r34|rule ?34|lewd)\b/i;
 let href = "", wantsAdult = false, webTab = true, wantsDict = true, qWords = [];
@@ -152,7 +168,9 @@ const junk = (el) => {
   if (!a) return false;
   let h = "";
   try { h = new URL(a.href).hostname; } catch {}
-  return adult(h, a.textContent || "") || (!wantsDict && DICT.test(h.replace(/^www\./, "")));
+  // Adult subreddits count like adult sites (reddit.com/r/rule34 is reddit.com by host)
+  const sub = (/(?:^|\.)reddit\.com$/.test(h) && (/^\/r\/([\w-]+)/.exec((() => { try { return new URL(a.href).pathname; } catch { return ""; } })()) || [])[1]) || "";
+  return adult(/^(?:rule34|nsfw\w*|gonewild\w*|hentai\w*|porn\w*|r34\w*|nsfw_gif|realgirls|holdthemoan)$/i.test(sub) ? `${h} rule34` : h, a.textContent || "") || (!wantsDict && DICT.test(h.replace(/^www\./, "")));
 };
 
 // ===== List pass (Web tab): dedupe -> site prefs -> 2 per site with folds, planned by core.js before paint =====
