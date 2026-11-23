@@ -149,7 +149,16 @@ const SITES_KEY = "ct-sites";
 let SITES = {};
 try { const c = JSON.parse(localStorage.getItem(SITES_KEY) || "null"); if (c && typeof c === "object") SITES = c; } catch {}
 const saveSites = () => { try { localStorage.setItem(SITES_KEY, JSON.stringify(SITES)); } catch {} };
-bridge("sites", {}).then((j) => { if (j && j.sites && typeof j.sites === "object") { SITES = j.sites; saveSites(); } }).catch(() => {});
+// Sites lowered by the anti-SEO checks ("auto" in the menu), and whether those checks are on (Settings)
+let SITES_AUTO = [], SEO_ON = false;
+try { const c = JSON.parse(localStorage.getItem("ct-sites-auto") || "null"); if (c && Array.isArray(c.auto)) { SITES_AUTO = c.auto; SEO_ON = !!c.seo; } } catch {}
+const takeSites = (j) => {
+  if (!j || !j.sites || typeof j.sites !== "object") return;
+  SITES = j.sites; saveSites();
+  SITES_AUTO = Array.isArray(j.auto) ? j.auto : []; SEO_ON = !!j.seo;
+  try { localStorage.setItem("ct-sites-auto", JSON.stringify({ auto: SITES_AUTO, seo: SEO_ON })); } catch {}
+};
+bridge("sites", {}).then(takeSites).catch(() => {});
 // Only whole-site entries count here (a line for one subdomain is left to degoog's own filter)
 const sitePrefs = () => { const o = {}; for (const [d, v] of Object.entries(SITES)) if (siteOf(d) === d) o[d] = v; return o; };
 const planned = new WeakSet();
@@ -174,6 +183,14 @@ const listPass = () => {
     if (junk(el)) continue;
     const a = el.querySelector("a.result-title");
     if (a) items.push({ el, url: el.dataset.resultUrl || a.href, title: a.textContent || "" });
+  }
+  // Anti-SEO: the first page's results (as degoog ranked them) go to the server, which adds the signs up per site.
+  // Worked out after this pass, so it never holds up drawing.
+  if (SEO_ON && !LP.seo && fresh[0] === LP.first && !/[?&]page=[2-9]/.test(key)) {
+    LP.seo = true;
+    const q = (() => { try { return new URL(key).searchParams.get("q") || ""; } catch { return ""; } })();
+    const seoItems = items.map((x) => ({ url: x.url, title: x.title, snippet: x.el.querySelector(".result-snippet")?.textContent || "" }));
+    if (q && !q.startsWith("!") && seoItems.length >= 5) setTimeout(() => { try { const r = CT.seoSigns(seoItems, PSL()); bridge("seo", {}, JSON.stringify(r)).catch(() => {}); } catch {} }, 0);
   }
   const p = CT.planPage(items, LP.ctx);
   const hide = (r, flag) => { r.el.style.display = "none"; r.el.dataset[flag] = "1"; };
@@ -616,6 +633,7 @@ const siteItems = (el) => {
     seg.append(b);
   }
   menu.prepend(seg);
+  if (cur === "lower" && SITES_AUTO.includes(siteOf(host))) seg.after(mk("div", "ct-seg-note", "Lowered automatically (SEO signs). Your choice here wins."));
 };
 const settingsFetch = (path, body) => {
   let tok = null;
@@ -659,7 +677,7 @@ document.addEventListener("click", async (e) => {
   if (pref === "normal") delete SITES[site]; else SITES[site] = pref;
   saveSites();
   // The server reads the lists again, so the Settings list shows this choice too
-  bridge("sites", {}).catch(() => {});
+  bridge("sites", {}).then(takeSites).catch(() => {});
   if (menu) menu.hidden = true;
   const tg = wrap && wrap.querySelector(".result-actions-toggle");
   if (tg) tg.setAttribute("aria-expanded", "false");

@@ -230,6 +230,61 @@ export const unblockText = (block, domain) => {
   return String(block || "").split("\n").filter((l) => { const t = l.trim().toLowerCase(); return t !== d && t !== `www.${d}`; }).join("\n");
 };
 
+// ===== Anti-SEO: signs on one search's web results (the server adds them up per site) =====
+// Essay-writing services (contract cheating). From well-known names, not a fetched list.
+export const CHEAT_SITES = new Set(["ukessays.com", "essaypro.com", "edubirdie.com", "papersowl.com", "studybay.com", "99papers.com", "grademiners.com", "essayshark.com", "writemypaper4me.org", "myassignmenthelp.com", "paperhelp.org", "speedypaper.com", "essaywriter.org", "ivoryresearch.com", "assignmentexpert.com"]);
+const SEO_BAIT = /\b(?:search volume|keyword difficulty|monthly searches|cpc (?:of|is)|related keywords|keyword ideas for|people also search for|searches per month)\b/i;
+// Phrases that mostly come from text generators; a strong one alone counts, else it takes two
+const AI_STRONG = /\b(?:as an ai(?: language model)?|i hope this helps|delve[sd]? into|in today'?s (?:fast-paced|digital|ever-(?:changing|evolving))|navigat(?:e|ing) the (?:complexities|intricacies)|a testament to)\b/i;
+const AI_WEAK = [/\bin conclusion\b/i, /\bit'?s (?:important|worth) (?:to note|noting)\b/i, /\btapestry\b/i, /\bgame[- ]changer\b/i, /\belevate your\b/i, /\bunlock(?:ing)? the (?:power|potential|secrets)\b/i, /\bwhether you'?re an? [^.]{2,40} or an?\b/i, /\bseamless(?:ly)?\b/i, /\bembark on\b/i, /\bever-evolving\b/i, /\bcomprehensive guide\b/i];
+const aiTell = (t) => AI_STRONG.test(t) || AI_WEAK.filter((r) => r.test(t)).length >= 2;
+// "Best ... 2023" when it's no longer 2023 (from March on, last year's list counts as stale too)
+const staleBest = (title, now) => {
+  if (!/\b(?:best|top \d+)\b/i.test(title)) return false;
+  const d = new Date(now), y = d.getFullYear();
+  const years = (title.match(/\b20\d\d\b/g) || []).map(Number);
+  return years.length > 0 && Math.max(...years) < (d.getMonth() >= 2 ? y : y - 1);
+};
+const PAPER_HOST = /(?:^|\.)(?:arxiv\.org|openreview\.net|acm\.org|ieee\.org|springer\.com|doi\.org|semanticscholar\.org|researchgate\.net|aclanthology\.org)$|^(?:papers|proceedings)\.|\.edu$|\.ac\.[a-z]{2}$/;
+// Snippet as 3-word runs (leading date dropped; the last, cut-off word too); overlap = shared share of the smaller set
+const snipWords = (t) => {
+  const w = cleanSnippet(t).text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((x) => x.length > 2).slice(0, 30);
+  w.pop();
+  const out = new Set();
+  for (let i = 0; i + 2 < w.length; i++) out.add(`${w[i]} ${w[i + 1]} ${w[i + 2]}`);
+  return out;
+};
+const overlap = (a, b) => { if (!a.size || !b.size) return 0; let n = 0; for (const x of a) if (b.has(x)) n++; return n / Math.min(a.size, b.size); };
+// People's own thread titles ("best keyboard 2023?") aren't SEO lists
+const FORUM_SITE = new Set(["reddit.com", "quora.com", "stackexchange.com", "stackoverflow.com", "youtube.com", "news.ycombinator.com", "ycombinator.com"]);
+// items: [{url, title, snippet}] in page order -> {seen: [site], hit: {site: [reason]}} (each site once)
+export const seoSigns = (items, psl, now = Date.now()) => {
+  const seen = new Set(), hit = {}, firstTitle = new Map();
+  const add = (d, why) => { (hit[d] ||= []).includes(why) || hit[d].push(why); };
+  for (const it of items) {
+    let h = "";
+    try { h = new URL(it.url).hostname.toLowerCase(); } catch { continue; }
+    const d = regDomain(h, psl), title = String(it.title || ""), text = `${title} ${it.snippet || ""}`;
+    seen.add(d);
+    if (CHEAT_SITES.has(d)) add(d, "cheat");
+    if (SEO_BAIT.test(text)) add(d, "bait");
+    if (!FORUM_SITE.has(d) && staleBest(title, now)) add(d, "stale");
+    if (aiTell(text)) add(d, "ai");
+    // Same long title and mostly the same snippet as a result already shown from another site: a copy (the first
+    // is taken as the original). Paper hosts are left out: the same paper is often on several of them, all genuine.
+    const k = titleKey(title), w = snipWords(it.snippet);
+    if (k.split(" ").length >= 5 && !PAPER_HOST.test(h)) {
+      const o = firstTitle.get(k);
+      if (!o) firstTitle.set(k, { d, w });
+      else if (o.d !== d && overlap(o.w, w) >= 0.4) add(d, "copy");
+    }
+  }
+  return { seen: [...seen], hit };
+};
+// A site is lowered when it showed signs on most searches it was in, after enough searches to tell
+export const SEO_MIN = 5;
+export const seoVerdict = (t) => !!t && t.seen >= SEO_MIN && t.hits * 2 > t.seen;
+
 // ===== Snippet cleanup =====
 const MON = "(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\\.?";
 const DATE_RE = new RegExp(`^\\s*(${MON} \\d{1,2},? \\d{4}|\\d{1,2} ${MON},? \\d{4}|\\d{4}-\\d{2}-\\d{2}|\\d{1,2}/\\d{1,2}/\\d{2,4}|\\d+ (?:sec|second|min|minute|hour|hr|day|week|month|year)s? ago|yesterday|today)\\s*(?:\\.\\.\\.|…|—|–|-|·|:)\\s*`, "i");

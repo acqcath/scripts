@@ -158,6 +158,56 @@ export const sitesFromSettings = (raw) => queueSites(async () => {
   if (!m || !rows || !sameSites(m, sites) || !sameSites(rows, sites)) await showSites(dg, sites);
 });
 export const _sitesIdle = () => _sitesQ;
+
+// ===== Anti-SEO auto-Lower =====
+// Each search's first page sends its signs (core seoSigns: copies, SEO-bait wording, stale "best 20XX" lists, AI
+// tells, essay-writing services). Per site: searches it was in, and how many of those showed a sign. A site with
+// signs on most of at least SEO_MIN searches is set to Lower in degoog's score list, marked auto. Only Lower, ever.
+// A site you've set yourself is never counted, and changing an auto one yourself stops auto for it for good.
+// Kept in sites-auto.json here: site names and two counts, nothing about the searches.
+const SEO_MIN = 5;
+let SEO_ON = true;
+const autoFile = () => `${DIR}/sites-auto.json`;
+let AUTO = null;
+const readAuto = () => { if (AUTO) return AUTO; try { const j = JSON.parse(fs.readFileSync(autoFile(), "utf8")); AUTO = j && typeof j === "object" && !Array.isArray(j) ? j : {}; } catch { AUTO = {}; } return AUTO; };
+const autoList = () => Object.keys(readAuto()).filter((d) => AUTO[d].auto && !AUTO[d].off).sort();
+let _seoHour = 0, _seoCount = 0;
+export const seoReport = (raw) => queueSites(async () => {
+  if (!SEO_ON) return;
+  // At most 300 reports an hour (the bridge needs no sign-in)
+  const hr = Math.floor(Date.now() / 3600000);
+  if (hr !== _seoHour) { _seoHour = hr; _seoCount = 0; }
+  if (++_seoCount > 300) return;
+  let j = {};
+  try { j = JSON.parse(raw); } catch { return; }
+  const seen = (Array.isArray(j.seen) ? j.seen : []).map((d) => String(d).toLowerCase()).filter((d) => plainHost(d) && d.length < 100).slice(0, 60);
+  const hit = j.hit && typeof j.hit === "object" ? j.hit : {};
+  const dg = await degoog();
+  let lists = null;
+  try { lists = dg ? await dg.readDomainLists() : null; } catch {}
+  const mine = lists ? sitesFromLists(lists.domainBlockList, lists.domainScoreList) : {};
+  const A = readAuto(), lower = [];
+  for (const d of new Set(seen)) {
+    const t = (A[d] ||= { seen: 0, hits: 0 });
+    if (t.off) continue;
+    if (t.auto) { if (lists && mine[d] !== "lower") t.off = true; continue; } // you changed it: auto stops
+    if (mine[d]) continue; // your own choice: not counted
+    t.seen++;
+    if (Array.isArray(hit[d]) && hit[d].length) t.hits++;
+    if (t.seen >= SEO_MIN && t.hits * 2 > t.seen) lower.push(d);
+  }
+  if (lower.length && dg && lists) {
+    const delta = Object.fromEntries(lower.map((d) => [d, "lower"]));
+    const next = applySites(lists.domainBlockList, lists.domainScoreList, delta);
+    await dg.writeDomainList("domainScoreList", next.score);
+    for (const d of lower) A[d].auto = true;
+  }
+  // Sites seen once and clean are dropped after 5,000 entries, so the file stays small
+  const keys = Object.keys(A);
+  if (keys.length > 5000) for (const d of keys) if (!A[d].auto && !A[d].off && A[d].hits === 0 && A[d].seen <= 1) delete A[d];
+  fs.writeFileSync(autoFile(), JSON.stringify(A));
+  if (lower.length) { const now = await dg.readDomainLists(); await showSites(dg, sitesFromLists(now.domainBlockList, now.domainScoreList)); }
+});
 const WORDS = new Map();
 let TOTAL = 0, PTOTAL = 0; // all word / word-pair counts added up: how common one is = its count / total
 // How well two words go together compared with chance (above 0: English puts them side by side, like "open a";
@@ -616,7 +666,18 @@ export const routes = [
       }
       const sites = sitesFromLists(block, score);
       mirrorTo(sites);
-      return new Response(JSON.stringify({ sites }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+      return new Response(JSON.stringify({ sites, auto: autoList().filter((d) => sites[d] === "lower"), seo: SEO_ON }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+    },
+  },
+  {
+    // Anti-SEO signs from one search (see seoReport); answers at once, the counting happens after
+    method: "post",
+    path: "/seo",
+    async handler(req) {
+      let t = "";
+      try { t = await req.text(); } catch {}
+      if (t.length < 20000) seoReport(t);
+      return new Response(null, { status: 204 });
     },
   },
   {
@@ -673,10 +734,12 @@ export default {
     { key: "showVideos", label: "Videos", type: "toggle", default: true, description: "Video results as a row of cards." },
     { key: "showTopStories", label: "Top stories", type: "toggle", default: true, description: "Fresh news cards when your results look like news (one extra News search)." },
     { key: "sites", label: "Sites", type: "list", addLabel: "Add a site", description: "Prefer: moved up, no 2-per-site limit. Lower: moved down. Hide: never shown. Same list as Prefer / Normal / Lower / Hide in each result's menu, kept in degoog's own block and score lists.", itemSchema: [{ key: "site", label: "Site", type: "text", placeholder: "example.com" }, { key: "choice", label: "Choice", type: "select", options: ["prefer", "normal", "lower", "hide"], optionLabels: ["Prefer", "Normal", "Lower", "Hide"], default: "prefer" }] },
-    { key: "learnFromResults", label: "Learn from my search results", type: "toggle", description: "Off: nothing about your searches is stored or used. On: the typo fixer remembers words and names from your result titles, plus the Did you mean fixes you tap or turn down (kept on this server only)." },
+    { key: "autoLower", label: "Lower SEO junk automatically", type: "toggle", default: true, description: "Sites that show copy, SEO-bait, stale \"best 20XX\" or AI-written signs on most searches they're in (at least 5) are set to Lower, marked auto in the result menu. Only Lower, never Hide, and your own choice for a site always wins. Keeps only site names and two counts." },
+    { key: "learnFromResults", label: "Learn from my search results", type: "toggle", description: "Off: the typo fixer stores and uses nothing about your searches. On: it remembers words and names from your result titles, plus the Did you mean fixes you tap or turn down (kept on this server only)." },
   ],
   configure(s) {
     sitesFromSettings(s ? s.sites : undefined);
+    SEO_ON = !(s && (s.autoLower === false || s.autoLower === "false"));
     const off = (k) => !!s && (s[k] === false || s[k] === "false");
     SHOW = { sl: !off("showSitelinks"), forum: !off("showDiscussions"), video: !off("showVideos"), news: !off("showTopStories") };
     const on = !!s && (s.learnFromResults === true || s.learnFromResults === "true");
@@ -950,6 +1013,61 @@ const unblockText = (block, domain) => {
   return String(block || "").split("\n").filter((l) => { const t = l.trim().toLowerCase(); return t !== d && t !== `www.${d}`; }).join("\n");
 };
 
+// ===== Anti-SEO: signs on one search's web results (the server adds them up per site) =====
+// Essay-writing services (contract cheating). From well-known names, not a fetched list.
+const CHEAT_SITES = new Set(["ukessays.com", "essaypro.com", "edubirdie.com", "papersowl.com", "studybay.com", "99papers.com", "grademiners.com", "essayshark.com", "writemypaper4me.org", "myassignmenthelp.com", "paperhelp.org", "speedypaper.com", "essaywriter.org", "ivoryresearch.com", "assignmentexpert.com"]);
+const SEO_BAIT = /\b(?:search volume|keyword difficulty|monthly searches|cpc (?:of|is)|related keywords|keyword ideas for|people also search for|searches per month)\b/i;
+// Phrases that mostly come from text generators; a strong one alone counts, else it takes two
+const AI_STRONG = /\b(?:as an ai(?: language model)?|i hope this helps|delve[sd]? into|in today'?s (?:fast-paced|digital|ever-(?:changing|evolving))|navigat(?:e|ing) the (?:complexities|intricacies)|a testament to)\b/i;
+const AI_WEAK = [/\bin conclusion\b/i, /\bit'?s (?:important|worth) (?:to note|noting)\b/i, /\btapestry\b/i, /\bgame[- ]changer\b/i, /\belevate your\b/i, /\bunlock(?:ing)? the (?:power|potential|secrets)\b/i, /\bwhether you'?re an? [^.]{2,40} or an?\b/i, /\bseamless(?:ly)?\b/i, /\bembark on\b/i, /\bever-evolving\b/i, /\bcomprehensive guide\b/i];
+const aiTell = (t) => AI_STRONG.test(t) || AI_WEAK.filter((r) => r.test(t)).length >= 2;
+// "Best ... 2023" when it's no longer 2023 (from March on, last year's list counts as stale too)
+const staleBest = (title, now) => {
+  if (!/\b(?:best|top \d+)\b/i.test(title)) return false;
+  const d = new Date(now), y = d.getFullYear();
+  const years = (title.match(/\b20\d\d\b/g) || []).map(Number);
+  return years.length > 0 && Math.max(...years) < (d.getMonth() >= 2 ? y : y - 1);
+};
+const PAPER_HOST = /(?:^|\.)(?:arxiv\.org|openreview\.net|acm\.org|ieee\.org|springer\.com|doi\.org|semanticscholar\.org|researchgate\.net|aclanthology\.org)$|^(?:papers|proceedings)\.|\.edu$|\.ac\.[a-z]{2}$/;
+// Snippet as 3-word runs (leading date dropped; the last, cut-off word too); overlap = shared share of the smaller set
+const snipWords = (t) => {
+  const w = cleanSnippet(t).text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((x) => x.length > 2).slice(0, 30);
+  w.pop();
+  const out = new Set();
+  for (let i = 0; i + 2 < w.length; i++) out.add(`${w[i]} ${w[i + 1]} ${w[i + 2]}`);
+  return out;
+};
+const overlap = (a, b) => { if (!a.size || !b.size) return 0; let n = 0; for (const x of a) if (b.has(x)) n++; return n / Math.min(a.size, b.size); };
+// People's own thread titles ("best keyboard 2023?") aren't SEO lists
+const FORUM_SITE = new Set(["reddit.com", "quora.com", "stackexchange.com", "stackoverflow.com", "youtube.com", "news.ycombinator.com", "ycombinator.com"]);
+// items: [{url, title, snippet}] in page order -> {seen: [site], hit: {site: [reason]}} (each site once)
+const seoSigns = (items, psl, now = Date.now()) => {
+  const seen = new Set(), hit = {}, firstTitle = new Map();
+  const add = (d, why) => { (hit[d] ||= []).includes(why) || hit[d].push(why); };
+  for (const it of items) {
+    let h = "";
+    try { h = new URL(it.url).hostname.toLowerCase(); } catch { continue; }
+    const d = regDomain(h, psl), title = String(it.title || ""), text = `${title} ${it.snippet || ""}`;
+    seen.add(d);
+    if (CHEAT_SITES.has(d)) add(d, "cheat");
+    if (SEO_BAIT.test(text)) add(d, "bait");
+    if (!FORUM_SITE.has(d) && staleBest(title, now)) add(d, "stale");
+    if (aiTell(text)) add(d, "ai");
+    // Same long title and mostly the same snippet as a result already shown from another site: a copy (the first
+    // is taken as the original). Paper hosts are left out: the same paper is often on several of them, all genuine.
+    const k = titleKey(title), w = snipWords(it.snippet);
+    if (k.split(" ").length >= 5 && !PAPER_HOST.test(h)) {
+      const o = firstTitle.get(k);
+      if (!o) firstTitle.set(k, { d, w });
+      else if (o.d !== d && overlap(o.w, w) >= 0.4) add(d, "copy");
+    }
+  }
+  return { seen: [...seen], hit };
+};
+// A site is lowered when it showed signs on most searches it was in, after enough searches to tell
+const SEO_MIN = 5;
+const seoVerdict = (t) => !!t && t.seen >= SEO_MIN && t.hits * 2 > t.seen;
+
 // ===== Snippet cleanup =====
 const MON = "(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\\.?";
 const DATE_RE = new RegExp(`^\\s*(${MON} \\d{1,2},? \\d{4}|\\d{1,2} ${MON},? \\d{4}|\\d{4}-\\d{2}-\\d{2}|\\d{1,2}/\\d{1,2}/\\d{2,4}|\\d+ (?:sec|second|min|minute|hour|hr|day|week|month|year)s? ago|yesterday|today)\\s*(?:\\.\\.\\.|…|—|–|-|·|:)\\s*`, "i");
@@ -1010,7 +1128,7 @@ const cmuCourse = (q, courses) => {
   return { id, level, prof: /prof|instructor|teacher/.test(rest) };
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, planPage, SITE_SCORE, sitesFromLists, unblockText, cleanSnippet, dateLabel, relDate, upsValid, isbnValid, cmuCourse };
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, cleanSnippet, dateLabel, relDate, upsValid, isbnValid, cmuCourse };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -1163,7 +1281,16 @@ const SITES_KEY = "ct-sites";
 let SITES = {};
 try { const c = JSON.parse(localStorage.getItem(SITES_KEY) || "null"); if (c && typeof c === "object") SITES = c; } catch {}
 const saveSites = () => { try { localStorage.setItem(SITES_KEY, JSON.stringify(SITES)); } catch {} };
-bridge("sites", {}).then((j) => { if (j && j.sites && typeof j.sites === "object") { SITES = j.sites; saveSites(); } }).catch(() => {});
+// Sites lowered by the anti-SEO checks ("auto" in the menu), and whether those checks are on (Settings)
+let SITES_AUTO = [], SEO_ON = false;
+try { const c = JSON.parse(localStorage.getItem("ct-sites-auto") || "null"); if (c && Array.isArray(c.auto)) { SITES_AUTO = c.auto; SEO_ON = !!c.seo; } } catch {}
+const takeSites = (j) => {
+  if (!j || !j.sites || typeof j.sites !== "object") return;
+  SITES = j.sites; saveSites();
+  SITES_AUTO = Array.isArray(j.auto) ? j.auto : []; SEO_ON = !!j.seo;
+  try { localStorage.setItem("ct-sites-auto", JSON.stringify({ auto: SITES_AUTO, seo: SEO_ON })); } catch {}
+};
+bridge("sites", {}).then(takeSites).catch(() => {});
 // Only whole-site entries count here (a line for one subdomain is left to degoog's own filter)
 const sitePrefs = () => { const o = {}; for (const [d, v] of Object.entries(SITES)) if (siteOf(d) === d) o[d] = v; return o; };
 const planned = new WeakSet();
@@ -1188,6 +1315,14 @@ const listPass = () => {
     if (junk(el)) continue;
     const a = el.querySelector("a.result-title");
     if (a) items.push({ el, url: el.dataset.resultUrl || a.href, title: a.textContent || "" });
+  }
+  // Anti-SEO: the first page's results (as degoog ranked them) go to the server, which adds the signs up per site.
+  // Worked out after this pass, so it never holds up drawing.
+  if (SEO_ON && !LP.seo && fresh[0] === LP.first && !/[?&]page=[2-9]/.test(key)) {
+    LP.seo = true;
+    const q = (() => { try { return new URL(key).searchParams.get("q") || ""; } catch { return ""; } })();
+    const seoItems = items.map((x) => ({ url: x.url, title: x.title, snippet: x.el.querySelector(".result-snippet")?.textContent || "" }));
+    if (q && !q.startsWith("!") && seoItems.length >= 5) setTimeout(() => { try { const r = CT.seoSigns(seoItems, PSL()); bridge("seo", {}, JSON.stringify(r)).catch(() => {}); } catch {} }, 0);
   }
   const p = CT.planPage(items, LP.ctx);
   const hide = (r, flag) => { r.el.style.display = "none"; r.el.dataset[flag] = "1"; };
@@ -1630,6 +1765,7 @@ const siteItems = (el) => {
     seg.append(b);
   }
   menu.prepend(seg);
+  if (cur === "lower" && SITES_AUTO.includes(siteOf(host))) seg.after(mk("div", "ct-seg-note", "Lowered automatically (SEO signs). Your choice here wins."));
 };
 const settingsFetch = (path, body) => {
   let tok = null;
@@ -1673,7 +1809,7 @@ document.addEventListener("click", async (e) => {
   if (pref === "normal") delete SITES[site]; else SITES[site] = pref;
   saveSites();
   // The server reads the lists again, so the Settings list shows this choice too
-  bridge("sites", {}).catch(() => {});
+  bridge("sites", {}).then(takeSites).catch(() => {});
   if (menu) menu.hidden = true;
   const tg = wrap && wrap.querySelector(".result-actions-toggle");
   if (tg) tg.setAttribute("aria-expanded", "false");

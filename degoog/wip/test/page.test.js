@@ -39,6 +39,7 @@ const run = async (q, opts = {}) => {
       await new Promise((r) => setTimeout(r, opts.command.delay || 0));
       return new win.Response(JSON.stringify({ html: opts.command.html }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
+    if (m && opts.calls) opts.calls.push({ route: m[1], params: new URLSearchParams(query.replace(/^!cleantitles bridge \w+ ?/, "")) });
     const a = m && opts.bridge && opts.bridge[m[1]];
     if (!a) return new win.Response("{}", { status: 404 });
     await new Promise((r) => setTimeout(r, a.delay || 0));
@@ -258,4 +259,24 @@ test("page: un-hiding never writes back a block list degoog left out for being t
   await new Promise((r) => setTimeout(r, 20));
   expect(calls).toEqual(["/api/settings/general"]);
   expect(seg.parentElement.querySelector(".ct-seg-note").textContent).toMatch(/too long/);
+});
+
+test("page: anti-SEO signs go to the server once per search, after the pass; auto-lowered sites say so in the menu", async () => {
+  const calls = [];
+  const { document, errors } = await run("mdn array map", { calls, store: { "ct-sites-auto": JSON.stringify({ auto: ["w3schools.com"], seo: true }) }, sites: { "w3schools.com": "lower" } });
+  expect(calls.filter((c) => c.route === "seo").length).toBe(0); // not inside the pass
+  await new Promise((r) => setTimeout(r, 10));
+  const seo = calls.filter((c) => c.route === "seo");
+  expect(seo.length).toBe(1);
+  const body = JSON.parse(seo[0].params.get("__body"));
+  expect(body.hit["mdn2.netlify.app"]).toEqual(["copy"]);
+  expect(body.seen).toContain("mozilla.org");
+  const w3 = [...document.querySelectorAll(".result-item")].find((el) => (el.querySelector(".result-actions")?.dataset.host || "").includes("w3schools"));
+  expect(w3 && w3.querySelector(".ct-seg-note")?.textContent).toBe("Lowered automatically (SEO signs). Your choice here wins.");
+  expect(errors).toEqual([]);
+  // Checks off in Settings: nothing sent
+  const c2 = [];
+  await run("mdn array map", { calls: c2, store: { "ct-sites-auto": JSON.stringify({ auto: [], seo: false }) } });
+  await new Promise((r) => setTimeout(r, 10));
+  expect(c2.filter((c) => c.route === "seo").length).toBe(0);
 });
