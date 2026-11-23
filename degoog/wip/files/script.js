@@ -47,7 +47,7 @@ addEventListener("resize", () => requestAnimationFrame(lineUp), { passive: true 
 // Which search a page address is, ignoring what endless scroll adds while you scroll (&loaded=2) and any #
 const searchId = (h) => { try { const u = new URL(h); u.hash = ""; u.searchParams.delete("loaded"); return u.toString(); } catch { return String(h).split("#")[0]; } };
 const sameSearch = (k) => searchId(location.href) === searchId(k);
-// clean-titles v49
+
 
 // clean-titles: ONE pass per new result, run before the browser draws it (no timers, no re-scans).
 // Network work (HD thumbnails, missing video descriptions) only starts for results near the screen.

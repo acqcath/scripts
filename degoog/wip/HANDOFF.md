@@ -56,6 +56,10 @@ The spec is the user's handoff text (they paste it into each new chat). These no
   - Real News answers have no dates (recorded steelers + nvidia: 0 of 55 results dated), so v49's "fresh stories only" filter dropped every story: Top stories could never show. Now undated stories count as current and keep degoog's order; dated-old ones are still left out.
   - Bug fixed: after the date moved to the source line (previous run), `info()` no longer found it, so forum/video/news boxes saw no dates. The moved `span.ct-date` keeps the raw text in data-raw and info() reads it.
   - News tab ct-lowres decided before paint (`lowres` in row cleanup, News tab only): upgradable host (hdImg crossfades a sharp copy into the same box) or a size hint >= 480px (Bing th?w=, Brave rs:fit:W) keeps the banner; anything else gets the 92px thumbnail. Nothing adds ct-lowres after load any more. Recorded News pictures: steelers 55 (5 bing.com w=234, 50 Brave fit:200), nvidia 48 + 10 without one; all upgradable, so all keep the banner. If an upgrade fails the banner stays (blurry) rather than re-laying out.
+  - PSL as a static file (M1 item 3): files/inline.js (run by the installer as root) writes /app/src/public/ct/psl.<sha256 12>.js (`window.CT_PSL="…"`), removes older psl.*.js, and puts `<script defer src="/public/ct/psl.<hash>.js" id="ct-psl">` right before the ct-inline module (replaced in place on reinstall; tested twice on a copy: idempotent). Verified in degoog e006d50 src/server/index.ts: /public/*.js gets `Cache-Control: public, max-age=31536000, immutable`, served from src/; CSP script-src allows 'self'.
+  - Preview installer (M1 item 4): `python3 build.py && python3 build_installer.py preview` -> install-preview.ps1. It takes main's install.ps1 (git show main:…) as the skeleton and swaps in files/* (script.js = ct-page.js); asserts every here-string is placed and none contains a line starting with '@. Checks added: version (grep first `clean-titles v…`, should be v50-preview), the psl file, progressive results off. `build_installer.py release` writes ../install.ps1 at v50 (only at READY TO SHIP). Round-trip verified: every embedded file equals its source. Not run through PowerShell here (no pwsh in this sandbox).
+  - ct-page.js starts with `// clean-titles <version>` (build.py, CT_VERSION, default v50-preview); the stray "v49" comment and core's "v50" header are gone so the installer's version check reads the right one.
+  - PREVIEW.md written (M1 item 6).
   - Story card picture that fails to load: hidden with visibility (keeps its box) instead of removed (the card changed shape after paint).
 
 ## Verified this run
@@ -69,6 +73,8 @@ The spec is the user's handoff text (they paste it into each new chat). These no
 - PLAN.md (pushed by another session at 05:16–05:18 UTC, while this run held LOCK) is followed: this run's work is M1 item 1 plus part of item 2 (HD crossfade; groups no longer wait for the prefs bridge).
 
 ## Assumptions (this run)
+- Rollback: main's v49 installer replaces only the ct-inline module, so the psl defer tag and file stay. Harmless (v49 doesn't read CT_PSL); not cleaned up.
+- The PSL file and layout block live in /app/src (image files): a degoog image update wipes both, same as v49's inline block. Todo before ship: the server plugin restores them at startup if missing (index.js has the files in /app/data).
 - Prefer/Lower reorder only within one endless-scroll page; a fold is only made under a result on the same page (one above would move what's on screen). Later-page extras are just hidden.
 - Site prefs come from `window.CT_DATA.sites` ({domain: "prefer"|"lower"|"hide"}), compiled into the inline block by the server. Not built yet: until then every site is Normal.
 - PSL is read from `window.CT_PSL` (string), set by /public/ct/psl.<hash>.js loaded with defer before the module (defer and module scripts run in document order).

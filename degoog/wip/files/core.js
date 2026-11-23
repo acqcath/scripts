@@ -1,4 +1,4 @@
-// clean-titles v50 core: pure functions (no DOM), shared by the page script and the tests.
+// clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
 
 // ===== Sites: registrable domain via the public suffix list =====
