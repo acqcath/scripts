@@ -149,3 +149,28 @@ test("server: AI-image list: every list format parsed; downloaded again only whe
   expect(calls).toEqual([[a.url, '"e1"']]); // unchanged: one small request, nothing downloaded
   for (mode of ["down", "tiny"]) { await srv.aiRefresh(); expect(JSON.parse(fs.readFileSync(path.join(dir, "ai-images.json"), "utf8")).list.length).toBe(1116); }
 });
+
+test("installer: ai-summary's 2-minute cache line becomes degoog's TTL_MS (exactly one match; 0 or many -> untouched + notice)", () => {
+  const { execFileSync } = require("node:child_process");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ct-ai-ttl-"));
+  const plug = path.join(dir, "degoog-org-official-extensions-ai-summary");
+  fs.mkdirSync(plug);
+  // The three lines recorded from the user's server (rec: plugins[...ai-summary].ttl), in a file around them
+  const real = "const A = 1;\nconst SHORT_TTL_MS = 2 * 60 * 1000;\nfunction x(ctx) {\n    return ctx.useCache(SUMMARY_NAMESPACE, SHORT_TTL_MS);\n    const sync = ctx.createCache(SHORT_TTL_MS);\n}\n";
+  fs.writeFileSync(path.join(plug, "index.js"), real);
+  const run = (env = {}) => execFileSync("bun", [path.join(import.meta.dir, "../files/aittl.js")], { env: { ...process.env, DEGOOG_PLUGINS_DIR: dir, ...env } }).toString();
+  expect(run()).toContain("now keeps answers as long as search results");
+  const out = fs.readFileSync(path.join(plug, "index.js"), "utf8");
+  expect(out.split("\n")[1]).toContain("DEGOOG_CACHE_TTL_MS");
+  expect(out.replace(out.split("\n")[1], "")).toBe(real.replace(real.split("\n")[1], ""));
+  // The patched line evaluates to 12 h, or to DEGOOG_CACHE_TTL_MS when set
+  const val = (env) => execFileSync("bun", ["-e", `${out.split("\n")[1]}; console.log(SHORT_TTL_MS)`], { env: { ...process.env, ...env } }).toString().trim();
+  expect(val({ DEGOOG_CACHE_TTL_MS: "" })).toBe(String(12 * 3600 * 1000));
+  expect(val({ DEGOOG_CACHE_TTL_MS: "60000" })).toBe("60000");
+  expect(run()).toContain("already");
+  fs.writeFileSync(path.join(plug, "index.js"), real + real);
+  expect(run()).toContain("found 2 copies");
+  expect(fs.readFileSync(path.join(plug, "index.js"), "utf8")).toBe(real + real);
+  fs.writeFileSync(path.join(plug, "index.js"), "const SHORT_TTL_MS = 5 * 60 * 1000;\n");
+  expect(run()).toContain("found 0 copies");
+});
