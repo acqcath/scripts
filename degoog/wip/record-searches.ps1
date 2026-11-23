@@ -4,7 +4,7 @@ $c = docker ps -q | Where-Object { (docker inspect $_ --format '{{range .Mounts}
 if (-not $c) { Write-Host "degoog container not found (is it running?)"; return }
 $c = @($c)[0]
 $js = @'
-const qs = ["how to tie a noose", "where is the capital of assyria", "how much wood can a woodchuck chuck", "how many pages is the entire harry potter series", "how long is a footlong sandwich", "when is dad coming home with the milk", "why does no one love me", "how long to microwave shin ramen red", "how many ways are there to skin a cat", "who are you who do you work for"];
+const qs = (process.env.CT_QS || "").split("|").filter(Boolean); // the searches to record, passed in when run
 const PORT = process.env.DEGOOG_PORT || 4444;
 const out = { at: new Date().toISOString(), searches: [] };
 for (const q of qs) {
