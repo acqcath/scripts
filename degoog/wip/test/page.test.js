@@ -280,3 +280,14 @@ test("page: anti-SEO signs go to the server once per search, after the pass; aut
   await new Promise((r) => setTimeout(r, 10));
   expect(c2.filter((c) => c.route === "seo").length).toBe(0);
 });
+
+test("page: real '$AAPL' results from wsj.com carry the Paywall word on the source line, others don't", async () => {
+  const { items, errors } = await run("$AAPL");
+  const host = (el) => { try { return new URL(el.querySelector("a.result-title").href).hostname; } catch { return ""; } };
+  const tagged = items.filter((el) => el.querySelector(".result-url-row .ct-paywall"));
+  expect(tagged.length).toBeGreaterThan(0);
+  for (const el of tagged) expect(/(^|\.)(wsj|marketwatch)\.com$/.test(host(el))).toBe(true);
+  expect(tagged[0].querySelector(".ct-paywall").textContent).toBe("Paywall");
+  expect(items.filter((el) => el.style.display !== "none" && /(^|\.)wsj\.com$/.test(host(el))).every((el) => el.querySelector(".ct-paywall"))).toBe(true);
+  expect(errors).toEqual([]);
+});

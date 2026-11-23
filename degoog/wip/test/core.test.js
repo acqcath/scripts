@@ -163,3 +163,11 @@ test("anti-SEO signs: copies, bait, stale lists, AI tells, essay sites; not pape
   expect(C.seoVerdict({ seen: 4, hits: 4 })).toBe(false);
   expect(C.seoVerdict({ seen: 6, hits: 3 })).toBe(false);
 });
+
+test("paywall sites: whole site by registrable domain, no look-alikes", () => {
+  expect(C.paywalled("www.wsj.com", psl)).toBe(true);
+  expect(C.paywalled("cooking.nytimes.com", psl)).toBe(true);
+  expect(C.paywalled("www.ft.com", psl)).toBe(true);
+  expect(C.paywalled("nytimes.com.example.io", psl)).toBe(false);
+  expect(C.paywalled("en.wikipedia.org", psl)).toBe(false);
+});
