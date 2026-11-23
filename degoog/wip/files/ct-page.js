@@ -1341,9 +1341,11 @@ const lineUp = () => {
   const main = document.getElementById("results-main");
   const c = main && [...main.querySelectorAll("#results-list .result-item .result-title, #results-list .image-card, #results-list .video-card")].find((e) => e.offsetParent);
   if (!c) return;
-  // Measured from the inside of main's own padding (the lines above already start there; v50-preview added it twice)
-  const x = Math.round(c.getBoundingClientRect().left - main.getBoundingClientRect().left - (parseFloat(getComputedStyle(main).paddingLeft) || 0));
-  if (Number.isFinite(x) && x >= 0 && x < 80) main.style.setProperty("--ct-x", `${x}px`);
+  // Measured from the box's own left edge, so whatever wraps it (main's padding, theme margins) can't add to it
+  const fix = document.getElementById("ct-fix");
+  if (!fix) return;
+  const x = Math.round(c.getBoundingClientRect().left - fix.getBoundingClientRect().left);
+  if (Number.isFinite(x) && x >= 0 && x < 80) fix.style.setProperty("--ct-x", `${x}px`);
 };
 addEventListener("resize", () => requestAnimationFrame(lineUp), { passive: true });
 // Same search even if degoog tidied the address (e.g. dropped a #) meanwhile
