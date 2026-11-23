@@ -184,6 +184,37 @@ bridge("sites", {}).then(takeSites).catch(() => {});
 const sitePrefs = () => { const o = {}; for (const [d, v] of Object.entries(SITES)) if (siteOf(d) === d) o[d] = v; return o; };
 const planned = new WeakSet();
 let LP = null;
+// News / Science / Forums: off-kind results (core tabLow) move to the end of the batch degoog just inserted, before
+// paint; the same title twice from one site shows once. Web keeps everything (listPass does its own ordering).
+const tabPlanned = new WeakSet();
+let TP = { key: "", seen: new Map(), titles: new Set() };
+const tabPass = () => {
+  if (webTab) return;
+  let tab = "";
+  try { const t = new URL(location.href).searchParams.get("type") || ""; tab = /news/.test(t) ? "news" : /science/.test(t) ? "science" : /forum/.test(t) ? "forums" : ""; } catch {}
+  if (!tab) return;
+  const list = document.getElementById("results-list");
+  if (!list) return;
+  const fresh = [...list.querySelectorAll(":scope > .result-item")].filter((el) => !tabPlanned.has(el));
+  if (!fresh.length) return;
+  const key = searchId(location.href);
+  if (TP.key !== key) TP = { key, seen: new Map(), titles: new Set() };
+  const low = [];
+  for (const el of fresh) {
+    tabPlanned.add(el);
+    if (el.style.display === "none") continue;
+    const a = el.querySelector("a.result-title");
+    if (!a) continue;
+    let h = "";
+    try { h = new URL(el.dataset.resultUrl || a.href).hostname.replace(/^www\./, ""); } catch {}
+    const t = (a.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
+    if (TP.titles.has(`${h}|${t}`)) { el.style.display = "none"; el.dataset.ctDup = "1"; continue; }
+    TP.titles.add(`${h}|${t}`);
+    if (CT.tabLow(tab, h, a.textContent, TP.seen)) low.push(el);
+  }
+  const last = fresh[fresh.length - 1];
+  if (low.length && low.length < fresh.length) { let at = last; for (const el of low) { if (el !== at) at.after(el); at = el; } }
+};
 const listPass = () => {
   if (!webTab) return;
   const list = document.getElementById("results-list");
@@ -1731,6 +1762,7 @@ const init = () => {
   safe("card", glance);
   safe("answer", ansPass);
   safe("list", listPass);
+  safe("tabs", tabPass);
   safe("scan", () => scan(document.body));
   safe("skeleton", () => skel(document.body));
   safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools);
@@ -1742,6 +1774,7 @@ const init = () => {
     safe("early", earlyStart);
     safe("answer", ansPass);
     safe("list", listPass);
+    safe("tabs", tabPass);
     for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { safe("scan", () => scan(n)); safe("skeleton", () => skel(n)); safe("usage", () => noUsage(n)); }
     safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("card", glance);
     safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass);

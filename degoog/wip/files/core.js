@@ -417,3 +417,24 @@ export const cmuCourse = (q, courses) => {
   const level = !rest || /^(?:cmu\s*)?(?:course|class|workload|hours?|units?|fces?|reviews?|ratings?|professors?|profs?|instructors?|teachers?|syllabus|prereqs?|prerequisites?|difficulty|hard|easy|worth it)\s*\??$/.test(rest);
   return { id, level, prof: /prof|instructor|teacher/.test(rest) };
 };
+
+// ===== News / Science / Forums tabs: each favours its own kind (user, 2026-11-23), from 64 recorded tab searches =====
+// Nothing is hidden for being off-kind: it moves to the end of the batch it came in (before paint). Recorded cases:
+// Science "best mechanical keyboard" -> 10 shopping posts (computerstationnation.com) ahead of the papers; News
+// "something" -> crossword-clue answer pages and X posts; News "best mechanical keyboard" -> 6 rtings.com pages.
+const SCHOLAR = /(?:^|\.)(?:doi\.org|ncbi\.nlm\.nih\.gov|nih\.gov|europepmc\.org|jstor\.org|springer\.com|springeropen\.com|tandfonline\.com|taylorfrancis\.com|oup\.com|cambridge\.org|semanticscholar\.org|ieee\.org|acm\.org|arxiv\.org|sciencedirect\.com|elsevier\.com|wiley\.com|nature\.com|science\.org|plos\.org|frontiersin\.org|mdpi\.com|biorxiv\.org|medrxiv\.org|ssrn\.com|researchgate\.net|degruyter\.com|degruyterbrill\.com|brill\.com|sagepub\.com|bmj\.com|thelancet\.com|nejm\.org|jamanetwork\.com|oed\.com|oxford[a-z]*\.com|britannica\.com|bsigroup\.com|openalex\.org|researchhub\.com|hal\.science|osf\.io|zenodo\.org|theconversation\.com|palgraveconnect\.com|jhu\.edu|annualreviews\.org|apa\.org|pnas\.org|cell\.com|acs\.org|rsc\.org|aps\.org|iop\.org|aip\.org|royalsocietypublishing\.org|biomedcentral\.com|hindawi\.com|karger\.com|thieme-connect\.com|mit\.edu|nii\.ac\.jp|cnrs\.fr|scielo\.[a-z.]+|core\.ac\.uk|dramaonlinelibrary\.com|[a-z0-9-]+\.edu|[a-z0-9-]+\.ac\.[a-z]{2})$/i;
+const SHOP = /(?:^|\.)(?:amazon\.[a-z.]+|ebay\.[a-z.]+|walmart\.com|bestbuy\.com|aliexpress\.com|etsy\.com|newegg\.com|target\.com|temu\.com)$/i;
+const COMMERCE = /^(?:the )?(?:\d+ )?(?:best|top \d+|cheapest)\b|\b(?:buying guide|deals?|coupons?|price comparison|reviews? \d{4}|for sale|shop now|buy now)\b/i;
+const PUZZLE = /\b(?:crossword clue|clue answers?|wordle|quordle|connections (?:hints?|answers?)|strands (?:hints?|answers?)|krillion answers)\b/i;
+const SOCIAL = /(?:^|\.)(?:x\.com|twitter\.com|facebook\.com|instagram\.com|tiktok\.com|threads\.net|bsky\.app)$/i;
+// tab: "news" | "science" | "forums" | ""; seen: Map host -> count so far in this search (updated here)
+export const tabLow = (tab, host, title, seen) => {
+  const h = String(host || "").toLowerCase().replace(/^www\./, "");
+  const n = (seen.get(h) || 0) + 1;
+  seen.set(h, n);
+  // Science: only what is clearly shopping or buying advice from a non-scholarly site moves down (libraries,
+  // repositories and small journals the list doesn't know stay where the engines put them)
+  if (tab === "science") return !SCHOLAR.test(h) && (SHOP.test(h) || COMMERCE.test(String(title || "")));
+  if (tab === "news") return PUZZLE.test(String(title || "")) || SOCIAL.test(h) || n > 2;
+  return false;
+};

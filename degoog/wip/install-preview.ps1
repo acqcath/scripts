@@ -2005,6 +2005,27 @@ const cmuCourse = (q, courses) => {
   return { id, level, prof: /prof|instructor|teacher/.test(rest) };
 };
 
+// ===== News / Science / Forums tabs: each favours its own kind (user, 2026-11-23), from 64 recorded tab searches =====
+// Nothing is hidden for being off-kind: it moves to the end of the batch it came in (before paint). Recorded cases:
+// Science "best mechanical keyboard" -> 10 shopping posts (computerstationnation.com) ahead of the papers; News
+// "something" -> crossword-clue answer pages and X posts; News "best mechanical keyboard" -> 6 rtings.com pages.
+const SCHOLAR = /(?:^|\.)(?:doi\.org|ncbi\.nlm\.nih\.gov|nih\.gov|europepmc\.org|jstor\.org|springer\.com|springeropen\.com|tandfonline\.com|taylorfrancis\.com|oup\.com|cambridge\.org|semanticscholar\.org|ieee\.org|acm\.org|arxiv\.org|sciencedirect\.com|elsevier\.com|wiley\.com|nature\.com|science\.org|plos\.org|frontiersin\.org|mdpi\.com|biorxiv\.org|medrxiv\.org|ssrn\.com|researchgate\.net|degruyter\.com|degruyterbrill\.com|brill\.com|sagepub\.com|bmj\.com|thelancet\.com|nejm\.org|jamanetwork\.com|oed\.com|oxford[a-z]*\.com|britannica\.com|bsigroup\.com|openalex\.org|researchhub\.com|hal\.science|osf\.io|zenodo\.org|theconversation\.com|palgraveconnect\.com|jhu\.edu|annualreviews\.org|apa\.org|pnas\.org|cell\.com|acs\.org|rsc\.org|aps\.org|iop\.org|aip\.org|royalsocietypublishing\.org|biomedcentral\.com|hindawi\.com|karger\.com|thieme-connect\.com|mit\.edu|nii\.ac\.jp|cnrs\.fr|scielo\.[a-z.]+|core\.ac\.uk|dramaonlinelibrary\.com|[a-z0-9-]+\.edu|[a-z0-9-]+\.ac\.[a-z]{2})$/i;
+const SHOP = /(?:^|\.)(?:amazon\.[a-z.]+|ebay\.[a-z.]+|walmart\.com|bestbuy\.com|aliexpress\.com|etsy\.com|newegg\.com|target\.com|temu\.com)$/i;
+const COMMERCE = /^(?:the )?(?:\d+ )?(?:best|top \d+|cheapest)\b|\b(?:buying guide|deals?|coupons?|price comparison|reviews? \d{4}|for sale|shop now|buy now)\b/i;
+const PUZZLE = /\b(?:crossword clue|clue answers?|wordle|quordle|connections (?:hints?|answers?)|strands (?:hints?|answers?)|krillion answers)\b/i;
+const SOCIAL = /(?:^|\.)(?:x\.com|twitter\.com|facebook\.com|instagram\.com|tiktok\.com|threads\.net|bsky\.app)$/i;
+// tab: "news" | "science" | "forums" | ""; seen: Map host -> count so far in this search (updated here)
+const tabLow = (tab, host, title, seen) => {
+  const h = String(host || "").toLowerCase().replace(/^www\./, "");
+  const n = (seen.get(h) || 0) + 1;
+  seen.set(h, n);
+  // Science: only what is clearly shopping or buying advice from a non-scholarly site moves down (libraries,
+  // repositories and small journals the list doesn't know stay where the engines put them)
+  if (tab === "science") return !SCHOLAR.test(h) && (SHOP.test(h) || COMMERCE.test(String(title || "")));
+  if (tab === "news") return PUZZLE.test(String(title || "")) || SOCIAL.test(h) || n > 2;
+  return false;
+};
+
 // ===== Answer card, local part (no network): math, units incl. cooking, tip / percent, date math, patterns =====
 // answer(q, now) -> null, or { kind, label, value | title + href, detail, copy, swatch? }. Pure: the page draws it in
 // the same pass that starts the search, so it never arrives late and needs no reserved space.
@@ -2791,7 +2812,7 @@ const featuredSnippet = (q, results) => {
   return null;
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippet };
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippet };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -2979,6 +3000,37 @@ bridge("sites", {}).then(takeSites).catch(() => {});
 const sitePrefs = () => { const o = {}; for (const [d, v] of Object.entries(SITES)) if (siteOf(d) === d) o[d] = v; return o; };
 const planned = new WeakSet();
 let LP = null;
+// News / Science / Forums: off-kind results (core tabLow) move to the end of the batch degoog just inserted, before
+// paint; the same title twice from one site shows once. Web keeps everything (listPass does its own ordering).
+const tabPlanned = new WeakSet();
+let TP = { key: "", seen: new Map(), titles: new Set() };
+const tabPass = () => {
+  if (webTab) return;
+  let tab = "";
+  try { const t = new URL(location.href).searchParams.get("type") || ""; tab = /news/.test(t) ? "news" : /science/.test(t) ? "science" : /forum/.test(t) ? "forums" : ""; } catch {}
+  if (!tab) return;
+  const list = document.getElementById("results-list");
+  if (!list) return;
+  const fresh = [...list.querySelectorAll(":scope > .result-item")].filter((el) => !tabPlanned.has(el));
+  if (!fresh.length) return;
+  const key = searchId(location.href);
+  if (TP.key !== key) TP = { key, seen: new Map(), titles: new Set() };
+  const low = [];
+  for (const el of fresh) {
+    tabPlanned.add(el);
+    if (el.style.display === "none") continue;
+    const a = el.querySelector("a.result-title");
+    if (!a) continue;
+    let h = "";
+    try { h = new URL(el.dataset.resultUrl || a.href).hostname.replace(/^www\./, ""); } catch {}
+    const t = (a.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
+    if (TP.titles.has(`${h}|${t}`)) { el.style.display = "none"; el.dataset.ctDup = "1"; continue; }
+    TP.titles.add(`${h}|${t}`);
+    if (CT.tabLow(tab, h, a.textContent, TP.seen)) low.push(el);
+  }
+  const last = fresh[fresh.length - 1];
+  if (low.length && low.length < fresh.length) { let at = last; for (const el of low) { if (el !== at) at.after(el); at = el; } }
+};
 const listPass = () => {
   if (!webTab) return;
   const list = document.getElementById("results-list");
@@ -4526,6 +4578,7 @@ const init = () => {
   safe("card", glance);
   safe("answer", ansPass);
   safe("list", listPass);
+  safe("tabs", tabPass);
   safe("scan", () => scan(document.body));
   safe("skeleton", () => skel(document.body));
   safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools);
@@ -4537,6 +4590,7 @@ const init = () => {
     safe("early", earlyStart);
     safe("answer", ansPass);
     safe("list", listPass);
+    safe("tabs", tabPass);
     for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { safe("scan", () => scan(n)); safe("skeleton", () => skel(n)); safe("usage", () => noUsage(n)); }
     safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("card", glance);
     safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass);

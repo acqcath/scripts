@@ -114,3 +114,9 @@ For fact and how-to wording (what / who / where / when / how many / how long / h
 - **News:** the same picture twice means the same story twice (one site's two write-ups or a syndicated copy): only the first shows.
 - **Science:** doi.org links show the publisher ("Elsevier", "Springer", "Nature"…), the source line has the Web tab's colour and size, and long paper titles get 2 lines instead of "…".
 - **Adult results by relevance (your rule):** on Web they show whenever they're actually about your search (the search asks for that kind of thing, or every word of your search is in the result's title or address); off-topic porn spam on an unrelated search stays out. On News, Science, Forums, Images and Videos they show only when the search asks for it, since those tabs are about one kind of thing.
+
+## News / Science / Forums favour their own kind (from your 24 recorded tab searches)
+Nothing is hidden for being off-topic for a tab; it just moves below the rest of that batch of results, before anything is drawn.
+- **Science:** shopping and buying-advice pages from non-scholarly sites go down (`best mechanical keyboard`: 10 "Best … Keyboard" shop-blog posts no longer lead; `python`: an Amazon listing). Libraries, repositories and small journals stay where they were. The same title twice from one site shows once.
+- **News:** crossword/puzzle-answer pages, X/social posts, and a 3rd+ article from the same site go below the rest (`something`: 10 puzzle/X results; `best mechanical keyboard`: rtings.com's 4 extra pages).
+- **Forums:** your recordings are all Reddit threads already: nothing changes.
