@@ -182,7 +182,39 @@ export const capSites = (items, q, psl, cap = 2) => {
 // ===== One page of results, planned before paint =====
 // The page script applies the plan; it keeps no logic of its own. ctx lives for one search (endless scroll pages
 // reuse it): listCtx(q, psl, prefs) with prefs = {site: "prefer" | "lower" | "hide"} (missing = normal).
-export const listCtx = (q, psl, prefs = {}) => ({ add: deduper(psl), named: namedSites(q, psl), count: new Map(), prefs, cap: 2 });
+export const listCtx = (q, psl, prefs = {}) => ({ add: deduper(psl), named: namedSites(q, psl), count: new Map(), prefs, cap: 2, docs: docsFor(q), docsDone: false });
+
+// ===== Same-shape results (spec 8) =====
+// A search that names a type of result gets a plain list of that type: no boxes, rows, panels or AI on top.
+const SHAPE_WORDS = [["pdf", /\b(?:pdf|pdfs)\b/], ["paper", /\b(?:paper|papers|arxiv|preprint)\b/], ["forum", /\b(?:reddit|forum|forums|thread|stackoverflow|stack overflow)\b/], ["docs", /\b(?:docs|documentation|api reference|reference manual)\b/], ["recipe", /\b(?:recipe|recipes)\b/], ["code", /\b(?:github|gitlab|repo|repository)\b/], ["lab", /\blab\b/], ["lecture", /\b(?:lecture|lectures|lecture notes)\b/], ["slides", /\b(?:slides|slide deck|ppt|pptx)\b/], ["video", /\b(?:video|videos|youtube)\b/]];
+export const shapeOf = (q) => { const s = String(q || "").toLowerCase(); const t = SHAPE_WORDS.find(([, re]) => re.test(s)); return t ? t[0] : ""; };
+// A site named to filter by ("… reddit", "mdn …"): only well-known destination words, and only with other words
+// beside it (a search that is just "reddit" or "steelers" is a navigation, not a filter). Returns the domain or "".
+const FILTER_SITE = { reddit: "reddit.com", stackoverflow: "stackoverflow.com", github: "github.com", youtube: "youtube.com", wikipedia: "wikipedia.org", wiki: "wikipedia.org", quora: "quora.com", mdn: "mozilla.org", npm: "npmjs.com", pypi: "pypi.org", imdb: "imdb.com", amazon: "amazon.com", ebay: "ebay.com", etsy: "etsy.com", twitter: "x.com", hackernews: "ycombinator.com", arxiv: "arxiv.org", goodreads: "goodreads.com", letterboxd: "letterboxd.com", yelp: "yelp.com", tripadvisor: "tripadvisor.com" };
+export const filterSite = (q) => {
+  const s = String(q || "").toLowerCase();
+  if (/(?:^|\s)site:/.test(s)) return "";
+  const words = s.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  if (words.length < 2) return "";
+  const w = words.find((x) => FILTER_SITE[x]);
+  return w ? FILTER_SITE[w] : "";
+};
+// "Only reddit.com results ›" line: the named site has fewer than 3 of the first 10 results
+export const onlyLine = (q, sites) => { const d = filterSite(q); return d && sites.slice(0, 10).filter((x) => x === d).length < 3 ? d : ""; };
+// The site: search the line runs when tapped: the named word is replaced by the operator
+export const onlyQuery = (q, d) => { const w = Object.keys(FILTER_SITE).find((k) => FILTER_SITE[k] === d && new RegExp(`\\b${k}\\b`, "i").test(q)); return `${String(q).replace(w ? new RegExp(`\\s*\\b${w}\\b\\s*`, "i") : /$^/, " ").trim()} site:${d}`; };
+// Programming searches: the official docs result goes first. Keys are words of the search, values host suffixes.
+const DOCS = { react: ["react.dev"], reactjs: ["react.dev"], javascript: ["developer.mozilla.org"], js: ["developer.mozilla.org"], css: ["developer.mozilla.org"], html: ["developer.mozilla.org"], dom: ["developer.mozilla.org"], python: ["docs.python.org"], typescript: ["typescriptlang.org"], ts: ["typescriptlang.org"], rust: ["doc.rust-lang.org", "docs.rs"], golang: ["go.dev", "pkg.go.dev"], nodejs: ["nodejs.org"], node: ["nodejs.org"], kotlin: ["kotlinlang.org"], django: ["docs.djangoproject.com"], flask: ["flask.palletsprojects.com"], vue: ["vuejs.org"], vuejs: ["vuejs.org"], angular: ["angular.dev"], svelte: ["svelte.dev"], nextjs: ["nextjs.org"], tailwind: ["tailwindcss.com"], numpy: ["numpy.org"], pandas: ["pandas.pydata.org"], git: ["git-scm.com"], docker: ["docs.docker.com"], kubernetes: ["kubernetes.io"], postgres: ["postgresql.org"], postgresql: ["postgresql.org"], sqlite: ["sqlite.org"], php: ["php.net"], csharp: ["learn.microsoft.com"], dotnet: ["learn.microsoft.com"], powershell: ["learn.microsoft.com"], bun: ["bun.sh", "bun.com"], deno: ["docs.deno.com"] };
+// Only searches that also look like code (a known API-ish word or camelCase), so "python snake" or "rust removal" don't
+const CODEY = /\p{Ll}\p{Lu}|\b(?:function|method|class|array|map|filter|reduce|string|list|dict|object|async|await|promise|hook|hooks|use\w+|component|props|state|import|export|module|install|syntax|error|exception|loop|for loop|while|lambda|regex|json|api|query|selector|flexbox|grid|type|types|interface|enum|struct|trait|macro|decorator|generator|iterator|cleanup|effect|ref|context|router|config|cli|command|tutorial|docs?|example)\b/u;
+export const docsFor = (q) => {
+  const s = String(q || "");
+  const words = s.toLowerCase().split(/[^a-z0-9#]+/).filter(Boolean);
+  const k = words.find((w) => DOCS[w]);
+  if (!k || words.length < 2 || !CODEY.test(s)) return null; // a bare "python" wants python.org, not its docs
+  return DOCS[k];
+};
+const hostOf = (u) => { try { return new URL(u).hostname.toLowerCase(); } catch { return ""; } };
 const WEIGHT = { prefer: 0, lower: 2 };
 // items: [{url, title, ...}] in page order. Returns {shown, dups, hidden (Hide pref), capped (past the cap with no
 // result of that site on this page), folds: Map(site -> {after, items})}.
@@ -194,6 +226,12 @@ export const planPage = (items, ctx) => {
   const kept = recs.filter((r) => (ctx.prefs[r.site] === "hide" ? (hidden.push(r), false) : true));
   const w = (r) => WEIGHT[ctx.prefs[r.site]] ?? 1;
   kept.sort((a, b) => w(a) - w(b)); // stable: rank order kept inside each group
+  // Programming search: the official docs result goes first (first page only: later pages never move what's above)
+  if (ctx.docs && !ctx.docsDone) {
+    ctx.docsDone = true;
+    const i = kept.findIndex((r) => { const h = hostOf(r.url); return ctx.docs.some((d) => h === d || h.endsWith(`.${d}`)); });
+    if (i > 0 && ctx.prefs[kept[i].site] !== "lower") kept.unshift(kept.splice(i, 1)[0]);
+  }
   const shown = [], folds = new Map();
   for (const r of kept) {
     const c = ctx.count.get(r.site) || 0;

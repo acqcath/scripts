@@ -171,3 +171,24 @@ test("paywall sites: whole site by registrable domain, no look-alikes", () => {
   expect(C.paywalled("nytimes.com.example.io", psl)).toBe(false);
   expect(C.paywalled("en.wikipedia.org", psl)).toBe(false);
 });
+
+test("same-shape results: type words, filter sites, the Only line, docs first", () => {
+  expect(["attention is all you need pdf", "best mechanical keyboard reddit", "pasta carbonara recipe", "react docs", "lofi video", "15-213 malloc lab", "how to reset airpods"].map(C.shapeOf)).toEqual(["pdf", "forum", "recipe", "docs", "video", "lab", ""]);
+  expect(C.filterSite("best mechanical keyboard reddit")).toBe("reddit.com");
+  expect(C.filterSite("reddit")).toBe(""); // navigation, not a filter
+  expect(C.filterSite("site:reddit.com keyboards")).toBe("");
+  expect(C.onlyLine("best mechanical keyboard reddit", ["reddit.com", "reddit.com", "reddit.com", "rtings.com"])).toBe("");
+  expect(C.onlyLine("best mechanical keyboard reddit", ["rtings.com", "reddit.com", "nytimes.com", "pcmag.com"])).toBe("reddit.com");
+  expect(C.onlyQuery("best mechanical keyboard reddit", "reddit.com")).toBe("best mechanical keyboard site:reddit.com");
+  expect(C.onlyQuery("mdn array map", "mozilla.org")).toBe("array map site:mozilla.org");
+  expect(C.docsFor("react useEffect cleanup")).toEqual(["react.dev"]);
+  expect(C.docsFor("python list comprehension")).toEqual(["docs.python.org"]);
+  for (const q of ["python", "python snake", "rust removal", "go", "node"]) expect([q, C.docsFor(q)]).toEqual([q, null]);
+  // planPage: react.dev's page goes first on the first page only, after dedupe
+  const items = ["https://www.reddit.com/r/reactjs/a", "https://stackoverflow.com/q/1", "https://react.dev/reference/react/useEffect", "https://react.dev/learn"].map((url) => ({ url, title: url }));
+  const ctx = C.listCtx("react useEffect cleanup", null, {});
+  expect(C.planPage(items, ctx).shown.map((r) => r.url)[0]).toBe("https://react.dev/reference/react/useEffect");
+  expect(C.planPage([{ url: "https://x.com/a", title: "a" }, { url: "https://react.dev/blog", title: "b" }], ctx).shown[0].url).toBe("https://x.com/a");
+  // Lower wins over docs-first
+  expect(C.planPage(items, C.listCtx("react useEffect cleanup", null, { "react.dev": "lower" })).shown[0].url).toBe("https://www.reddit.com/r/reactjs/a");
+});
