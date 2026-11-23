@@ -46,8 +46,11 @@ for (const code of sx) {
 //   specialist's best hit lands at #17 at 0.25 (#12 at 0.5, #2 at 1): on the first page, under the general answers.
 //   The knowledge panel already brings Wikipedia's summary to the top for things and people, so the article itself
 //   doesn't need to be high, and for other searches a specialist's loose match is mostly noise.
-// - timeout 3000 ms: the slowest official engine measured was 1,029 ms (Brave News; Bing max 674, Startpage max 625),
-//   so 3 s is about 3x the worst case, and no search waits on a dead engine for degoog's default 10 s.
+// - timeout 2000 ms. It only matters when an engine misbehaves (hangs, rate-limits, serves a captcha): then every
+//   search waits the full timeout and shows the other engines' results. So it should be as short as possible without
+//   cutting a healthy answer. Measured worst cases on this server: Bing 674 ms, Startpage 625 ms (60 searches each),
+//   Brave News 1,029 ms. A blocked first try retried with curl ("curl-fallback") takes about two normal requests,
+//   ~1.3 s for the web engines, so 2 s keeps those and caps a bad case at 2 s instead of degoog's default 10 s.
 // - outgoing client "curl-fallback" (plain fetch, retried with curl when a site answers 403/429/5xx)
 const SPECIAL = /(?:^|-)(?:wikipedia|reddit|hacker-news|lemmy|the-guardian|internet-archive|wikimedia-commons|openverse|nasa-images|immich)$/i;
 const tuned = [];
@@ -55,7 +58,7 @@ for (const d of dirs) {
   const id = d.toLowerCase().endsWith("-engine") ? d.toLowerCase() : `${d.toLowerCase()}-engine`;
   const key = Object.keys(store).find((k) => k.toLowerCase() === id) || id;
   const cur = store[key] && typeof store[key] === "object" ? store[key] : {};
-  const want = { score: SPECIAL.test(d) ? "0.25" : "1", timeoutMs: "3000", outgoingTransport: "curl-fallback" };
+  const want = { score: SPECIAL.test(d) ? "0.25" : "1", timeoutMs: "2000", outgoingTransport: "curl-fallback" };
   const diff = Object.entries(want).filter(([k, v]) => String(cur[k] ?? "") !== v);
   if (!diff.length) continue;
   store[key] = { ...cur, ...want };
