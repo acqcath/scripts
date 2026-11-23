@@ -51,59 +51,6 @@ const upgrade = (raw, W) => {
   return null;
 };
 
-// YouTube search often gives no description for a video. The video's own page has it, so fetch that
-// (from this server, so the visitor's IP never reaches YouTube) and keep each answer for a day.
-const _desc = new Map();
-const ytText = (html) => {
-  let m = /"shortDescription":"((?:[^"\\]|\\.)*)"/.exec(html);
-  let s = "";
-  if (m) { try { s = JSON.parse(`"${m[1]}"`); } catch {} }
-  if (!s) {
-    m = /<meta\s+(?:name|property)="(?:og:)?description"\s+content="([^"]*)"/i.exec(html);
-    if (m) s = m[1].replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
-  }
-  // Drop link/affiliate lines ("AirPods Pro: $179 https://...") and keep the real text
-  s = s.split("\n").filter((l) => !/https?:\/\/|www\./i.test(l)).join(" ").trim() || s;
-  s = s.replace(/https?:\/\/\S+/g, "").replace(/\s+/g, " ").trim();
-  return s.length > 320 ? `${s.slice(0, 317).trim()}…` : s;
-};
-const ytDesc = async (id) => {
-  const hit = _desc.get(id);
-  if (hit && Date.now() - hit.t < 86400000) return hit.s;
-  const f = _fetch || fetch;
-  let s = "";
-  try {
-    const r = await f(`https://www.youtube.com/watch?v=${id}&hl=en`, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9",
-        Cookie: "CONSENT=YES+1; SOCS=CAI",
-      },
-      signal: AbortSignal.timeout(4000),
-    });
-    if (r.ok) {
-      // Stop downloading as soon as the description has arrived (the rest of the ~1 MB page is not needed)
-      let html = "";
-      const rd = r.body && r.body.getReader ? r.body.getReader() : null;
-      if (!rd) html = await r.text();
-      else {
-        const dec = new TextDecoder();
-        let at = -1;
-        for (;;) {
-          const { done, value } = await rd.read();
-          if (done) break;
-          html += dec.decode(value, { stream: true });
-          if (at < 0) at = html.indexOf('"shortDescription":"');
-          if (at >= 0 && /^"shortDescription":"(?:[^"\\]|\\.)*"/.test(html.slice(at))) { rd.cancel().catch(() => {}); break; }
-        }
-      }
-      s = ytText(html);
-    }
-  } catch {}
-  if (_desc.size > 1000) _desc.clear();
-  _desc.set(id, { s, t: Date.now() });
-  return s;
-};
 
 // ===== Typo fixing and related searches, without Google =====
 // Typo fixes are worked out on your PC: an English word list (82,765 words with how common each is) plus words
@@ -556,16 +503,6 @@ export const routes = [
         if (Array.isArray(j.t)) learn(j.t.filter((x) => typeof x === "string").map((x) => x.slice(0, 300)));
       } catch {}
       return new Response(null, { status: 204 });
-    },
-  },
-  {
-    method: "get",
-    path: "/ytdesc",
-    async handler(req) {
-      const id = new URL(req.url).searchParams.get("v") || "";
-      if (!/^[\w-]{11}$/.test(id)) return new Response("bad id", { status: 400 });
-      const d = await ytDesc(id);
-      return new Response(JSON.stringify({ d }), { headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=86400" } });
     },
   },
   {

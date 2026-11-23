@@ -79,3 +79,54 @@ test("snippet date cleanup", () => {
   expect(C.relDate("2026-11-18T08:00:00", now)).toBe("4 days ago");
   expect(C.relDate("2026-11-01T08:00:00", now)).toBe("Nov 1, 2026");
 });
+
+// ===== Page plan, on real recorded searches from the user's server =====
+import zlib from "node:zlib";
+const REC = JSON.parse(zlib.gunzipSync(fs.readFileSync(new URL("../rec/ct-recordings.json.gz", import.meta.url))));
+const rec = (q) => REC.searches.find((x) => x.q === q && (!x.type || x.type === "web")).results;
+test("page plan: real 'how to reset airpods' merges copies and folds the 3rd+ per site", () => {
+  const items = rec("how to reset airpods"), ctx = C.listCtx("how to reset airpods", psl);
+  const p = C.planPage(items, ctx);
+  // Locale copy, m. copy, and a same-title re-upload of the same video on one site
+  expect(p.dups.map((x) => x.url).sort()).toEqual(["https://m.youtube.com/watch?v=D0LZz3Zxk00", "https://support.apple.com/en-gb/118531", "https://www.youtube.com/watch?v=8lnlUrHBqOE"]);
+  expect(p.shown.length + p.dups.length + p.hidden.length + p.capped.length + [...p.folds.values()].reduce((n, f) => n + f.items.length, 0)).toBe(items.length);
+  for (const [site, f] of p.folds) { expect(p.shown.filter((r) => r.site === site).length).toBe(2); expect(f.after.site).toBe(site); }
+  expect(p.folds.get("youtube.com").items.length).toBe(3);
+});
+test("page plan: the search naming a site lifts its cap (mdn, npm, pip, site:)", () => {
+  for (const q of ["mdn array map", "npm lodash"]) {
+    const p = C.planPage(rec(q), C.listCtx(q, psl));
+    const site = q.startsWith("mdn") ? "mozilla.org" : "npmjs.com";
+    expect([q, p.folds.has(site)]).toEqual([q, false]);
+    expect(p.shown.filter((r) => r.site === site).length).toBeGreaterThan(2);
+  }
+  const p = C.planPage(rec("mdn array map"), C.listCtx("array map site:developer.mozilla.org", psl));
+  expect(p.folds.has("mozilla.org")).toBe(false);
+});
+test("page plan: site prefs hide, prefer (no cap, moved up), lower (moved down)", () => {
+  const q = "how to reset airpods";
+  const p = C.planPage(rec(q), C.listCtx(q, psl, { "youtube.com": "hide", "wikihow.com": "prefer", "apple.com": "lower" }));
+  expect(p.shown.some((r) => r.site === "youtube.com")).toBe(false);
+  expect(p.shown[0].site).toBe("wikihow.com");
+  const sites = p.shown.map((r) => r.site);
+  expect(sites.slice(-2)).toEqual(["apple.com", "apple.com"]);
+});
+test("page plan: endless-scroll pages share one search (copies on page 2 drop, no folds above)", () => {
+  const items = rec("how to reset airpods"), ctx = C.listCtx("how to reset airpods", psl);
+  C.planPage(items.slice(0, 10), ctx);
+  const p2 = C.planPage(items.slice(10), ctx);
+  expect(p2.dups.map((x) => x.url)).toContain("https://m.youtube.com/watch?v=D0LZz3Zxk00");
+  for (const f of p2.folds.values()) expect(p2.shown).toContain(f.after);
+});
+test("no public suffix list: host minus www, never a bare suffix", () => {
+  expect(C.regDomain("www.bbc.co.uk", null)).toBe("bbc.co.uk");
+  expect(C.regDomain("news.bbc.co.uk", null)).toBe("news.bbc.co.uk");
+});
+test("date labels: relative kept, absolute within a week relative, else exact", () => {
+  const now = Date.parse("2026-11-23T12:00:00");
+  expect(C.dateLabel("3 days ago", now)).toBe("3 days ago");
+  expect(C.dateLabel("Nov 22, 2026", now)).toBe("yesterday");
+  expect(C.dateLabel("2026-11-20", now)).toBe("3 days ago");
+  expect(C.dateLabel("Feb 1, 2022", now)).toBe("Feb 1, 2022");
+  expect(C.dateLabel("", now)).toBe("");
+});

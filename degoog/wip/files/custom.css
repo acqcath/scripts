@@ -21,13 +21,33 @@ html:root {
 
 /* DESCRIPTION SIZE: change these two numbers to resize the descriptions on every tab (PC, then iPhone) */
 html:root { --ct-desc-pc: 15px; --ct-desc-phone: 13.5px; }
-/* Dates at the start of a description: dimmer, so they read as a label */
-.result-snippet .ct-date { color: var(--text-cite) !important; }
+/* v50: dates moved out of the description onto the source line, after the site name ("site · yesterday"):
+   one line, never wrapped, same 13px/18px as the site name so the line height never changes */
+.result-url-row .ct-date { flex: none; margin-left: -4px; font-size: 13px; line-height: 18px; white-space: nowrap; color: var(--text-cite); font-variant-numeric: tabular-nums; }
+.result-url-row .ct-date::before { content: "·"; margin-right: 4px; }
+@media (max-width: 767px) { .result-url-row .ct-date { color: var(--text-secondary); } }
+/* "N more from site.com ⌄": blue = tappable, underline on hover only; tucked under the site's 2nd result
+   (results carry 12px top/bottom padding, so -8px leaves 4px between) */
+.ct-fold { margin: -8px 0 4px; }
+.ct-fold-b { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0; border: 0; background: none; font: inherit; font-size: 14px; line-height: 20px; color: var(--text-link); cursor: pointer; }
+.ct-fold-b:hover { text-decoration: underline; }
+.ct-fold-b:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 4px; }
+.ct-chev { color: var(--text-secondary); }
+@media (max-width: 767px) { .ct-fold-b { min-height: 44px; } }
+/* Other versions of one paper ("PDF · HTML · v7 latest"): small gray line, the links blue */
+.ct-alts { margin-top: 4px; font-size: 13px; line-height: 18px; color: var(--text-cite); white-space: nowrap; overflow: hidden; }
+.ct-alts a { color: var(--text-link); text-decoration: none; }
+.ct-alts a:visited { color: var(--text-link-visited); }
+.ct-alts a:hover { text-decoration: underline; }
 /* Typo fix line above results (Google's "Showing results for") */
 #ct-fix { margin: 0 0 16px; padding-left: var(--ct-x, 0px); font-size: 14px; line-height: 21px; color: var(--text-secondary); }
 /* Everything the plugin adds enters with degoog's own result fade-in */
 .ct-in { animation: resultFadeIn .3s ease-out both; }
-@media (prefers-reduced-motion: reduce) { .ct-in { animation: none; } }
+/* Sharp thumbnail laid over the small one: same box, opacity only (resultFadeIn also slides, which a picture
+   swap must not do), same .3s as the result fade */
+.result-thumbnail-wrap img.ct-hd { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; animation: ctXfade .3s ease-out both; }
+@keyframes ctXfade { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .ct-in, .result-thumbnail-wrap img.ct-hd { animation: none; } }
 #ct-fix a, #ct-fix a :is(b, i) { color: var(--text-link) !important; font-weight: 400; }
 #ct-fix a b { font-weight: 600; }
 #ct-fix .ct-fix-alt { font-size: 13px; color: var(--text-cite); }

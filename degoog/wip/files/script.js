@@ -117,11 +117,9 @@ const WANTS_ADULT = /\b(porn\w*|sex\w*|nude\w*|naked|nsfw|xxx|hentai|onlyfans|er
 let href = "", wantsAdult = false, webTab = true, wantsDict = true;
 // Dictionary pages only when the search is about a word (Bing adds them for words like "under" or "fix")
 const DICT = /(^|\.)(merriam-webster\.com|thefreedictionary\.com|dictionary\.cambridge\.org|dictionary\.com|collinsdictionary\.com|oxfordlearnersdictionaries\.com|vocabulary\.com|wordreference\.com|yourdictionary\.com|wiktionary\.org|urbandictionary\.com)$/i;
-const perSite = new Map();
 const readQuery = () => {
   if (location.href === href) return;
   href = location.href;
-  perSite.clear();
   try { wantsAdult = WANTS_ADULT.test(new URL(href).searchParams.get("q") || ""); } catch { wantsAdult = false; }
   try { webTab = !new URL(href).searchParams.get("type"); } catch { webTab = true; }
   try {
@@ -130,6 +128,90 @@ const readQuery = () => {
   } catch { wantsDict = true; }
 };
 const adult = (host, text) => !wantsAdult && (ADULT_HOST.test(host) || ADULT_TEXT.test(text));
+// Results the page never shows: adult ones the search didn't ask for, dictionary pages for non-word searches
+const junk = (el) => {
+  const a = el.querySelector("a.result-title");
+  if (!a) return false;
+  let h = "";
+  try { h = new URL(a.href).hostname; } catch {}
+  return adult(h, a.textContent || "") || (!wantsDict && DICT.test(h.replace(/^www\./, "")));
+};
+
+// ===== List pass (Web tab): dedupe -> site prefs -> 2 per site with folds, planned by core.js before paint =====
+// Public suffix list: /public/ct/psl.<hash>.js, loaded with defer before this module, sets window.CT_PSL.
+// If it failed to load, sites are whole host names (never a guessed suffix).
+let PSL0;
+const PSL = () => (PSL0 !== undefined ? PSL0 : (PSL0 = typeof window.CT_PSL === "string" && window.CT_PSL ? CT.pslParse(window.CT_PSL) : null));
+// Prefer / Lower / Hide per site, compiled into the page by the server (none yet = every site Normal)
+const SITE_PREFS = (window.CT_DATA && window.CT_DATA.sites) || {};
+const planned = new WeakSet();
+let LP = null;
+const listPass = () => {
+  if (!webTab) return;
+  const list = document.getElementById("results-list");
+  if (!list) return;
+  const fresh = [...list.querySelectorAll(".result-item")].filter((el) => !planned.has(el));
+  if (!fresh.length) return;
+  fresh.forEach((el) => planned.add(el));
+  const key = searchId(location.href);
+  // New search, or degoog redrew the whole list: start over
+  if (!LP || LP.key !== key || !LP.first.isConnected) {
+    list.querySelectorAll(".ct-fold").forEach((x) => x.remove());
+    let q = "";
+    try { q = new URL(location.href).searchParams.get("q") || ""; } catch {}
+    LP = { key, first: fresh[0], ctx: CT.listCtx(q, PSL(), SITE_PREFS), pend: [] };
+  }
+  const items = [];
+  for (const el of fresh) {
+    if (junk(el)) continue;
+    const a = el.querySelector("a.result-title");
+    if (a) items.push({ el, url: el.dataset.resultUrl || a.href, title: a.textContent || "" });
+  }
+  const p = CT.planPage(items, LP.ctx);
+  const hide = (r, flag) => { r.el.style.display = "none"; r.el.dataset[flag] = "1"; };
+  p.dups.forEach((r) => hide(r, "ctDup"));
+  p.hidden.forEach((r) => hide(r, "ctHide"));
+  p.capped.forEach((r) => hide(r, "ctCap")); // still usable as sitelinks, like v49
+  for (const f of p.folds.values()) f.items.forEach((r) => hide(r, "ctCap"));
+  // Prefer / Lower changed the order: put this page's shown results in the planned order (hidden ones stay put)
+  const dom = items.map((x) => x.el).filter((el) => el.style.display !== "none");
+  if (p.shown.some((r, i) => r.el !== dom[i])) {
+    const mark = document.createComment("");
+    dom[0].before(mark);
+    for (const r of p.shown) mark.before(r.el);
+    mark.remove();
+  }
+  // Other versions of the one shown copy (papers): "PDF · HTML · v7 latest", drawn with the result
+  for (const r of p.shown) if (r.alts.length) {
+    const box = mk("div", "ct-alts");
+    r.alts.forEach((x, i) => { if (i) box.append(" · "); const l = mk("a", "", x.label); l.href = x.url; box.append(l); });
+    (r.el.querySelector(".result-snippet") || r.el.querySelector("a.result-title"))?.after(box);
+  }
+  for (const [site, f] of p.folds) { LP.pend.push({ site, after: f.after.el, els: f.items.map((r) => r.el) }); }
+};
+// Folds go in after the boxes (sitelinks, Discussions) took what they use, in the same pass, so counts are final
+const foldPass = () => {
+  if (!LP || !LP.pend.length) return;
+  const pend = LP.pend;
+  LP.pend = [];
+  for (const f of pend) {
+    const els = f.els.filter((el) => el.isConnected && !el.classList.contains("ct-grouped"));
+    if (!els.length || !f.after.isConnected || f.after.classList.contains("ct-grouped")) continue;
+    const row = mk("div", "ct-fold");
+    const b = mk("button", "ct-fold-b", `${els.length} more from ${f.site}`);
+    b.type = "button";
+    b.setAttribute("aria-expanded", "false");
+    b.append(mk("span", "ct-chev", "⌄"));
+    row.append(b);
+    f.after.after(row);
+    row.after(...els);
+    // Tap: the folded results open in place, where the line was
+    b.addEventListener("click", () => {
+      for (const el of els) { el.style.display = ""; delete el.dataset.ctCap; fadeIn(el); }
+      row.remove();
+    }, { once: true });
+  }
+};
 
 // HD thumbnails: only for hosts the plugin can upgrade, swapped in only once the sharp copy has loaded
 const HD_HOST = /(^|\.)(ytimg\.com|bing\.com|mm\.bing\.net|imgs\.search\.brave\.com)$/i;
@@ -154,12 +236,18 @@ const hdImg = (img) => {
   if (!canHD(orig)) { low(img, nw, need); return; } // no bigger copy exists anywhere
   const probe = new Image();
   probe.onload = () => {
-    if (probe.naturalWidth > nw && img.getAttribute("src") === orig) {
-      img.src = probe.src;
-      const wrap = img.parentElement; // degoog hides the frame if the small picture failed: the sharp one works
-      if (wrap && wrap.style.display === "none") wrap.style.display = "";
-    }
-    low(img, Math.max(nw, probe.naturalWidth), need);
+    const wrap = img.parentElement;
+    // A frame degoog hid (small picture failed) stays hidden: showing it now would push the text over
+    if (!(probe.naturalWidth > nw) || img.getAttribute("src") !== orig || !wrap || wrap.style.display === "none" || !img.isConnected) { low(img, Math.max(nw, probe.naturalWidth), need); return; }
+    // Same-size crossfade: the sharp copy, decoded first, lies exactly over the small one (same box, same
+    // object-fit) and fades in with opacity only, so nothing moves or blinks
+    (probe.decode ? probe.decode() : Promise.resolve()).catch(() => {}).then(() => {
+      if (!img.isConnected) return;
+      probe.alt = "";
+      probe.className = `${img.className} ct-hd`;
+      wrap.append(probe);
+      low(img, probe.naturalWidth, need);
+    });
   };
   probe.onerror = () => low(img, nw, need);
   bridge("hd", { w: Math.min(1280, Math.max(160, need)), src: orig })
@@ -167,29 +255,9 @@ const hdImg = (img) => {
     .catch(() => low(img, nw, need));
 };
 
-// Missing YouTube description: fetched from the video page by the plugin, then faded in
-const ytId = (u) => {
-  const h = u.hostname.replace(/^(www\.|m\.)/, "");
-  const id = h === "youtube.com" && u.pathname === "/watch" ? u.searchParams.get("v") || ""
-    : h === "youtu.be" ? u.pathname.slice(1)
-    : h === "youtube.com" && u.pathname.startsWith("/shorts/") ? u.pathname.split("/")[2] || "" : "";
-  return /^[\w-]{11}$/.test(id) ? id : "";
-};
-// Your CSS hides video descriptions on phones (like Google mobile), so phones never fetch them
 const PHONE = matchMedia("(max-width: 767px)");
-const getDesc = (p, id) => {
-  bridge("ytdesc", { v: id })
-    .then((j) => {
-      if (!j || !j.d || !p.isConnected) return;
-      const s = document.createElement("span");
-      s.textContent = j.d;
-      s.style.opacity = "0";
-      s.style.transition = "opacity .3s ease";
-      p.append(s);
-      requestAnimationFrame(() => requestAnimationFrame(() => { s.style.opacity = "1"; }));
-    })
-    .catch(() => {});
-};
+// v50 cut: v49 fetched missing YouTube descriptions and appended them after the result was on screen. That
+// grows the result (text changes, everything below moves) and it isn't sure to arrive, so no space can be kept for it.
 
 // One shared watcher: runs a result's network work once it comes within ~1.5 screens
 const work = new WeakMap();
@@ -206,14 +274,11 @@ const near = new IntersectionObserver((list) => {
 const row = (el) => {
   const a = el.querySelector("a.result-title");
   if (!a) return;
+  if (junk(el)) { el.style.display = "none"; return; }
+  if (el.dataset.ctDup || el.dataset.ctHide) return; // never shown: no cleanup, no network work
   const text = a.textContent || "";
   let u = null;
   try { u = new URL(a.href); } catch {}
-  if (adult(u ? u.hostname : "", text)) { el.style.display = "none"; return; }
-  // Variety like Google: at most 2 results from one site per search (Web tab only)
-  const h0 = (u ? u.hostname : "").replace(/^www\./, "");
-  if (!wantsDict && DICT.test(h0)) { el.style.display = "none"; return; }
-  if (webTab && h0) { const k = perSite.get(h0) || 0; perSite.set(h0, k + 1); if (k >= 2) { el.style.display = "none"; el.dataset.ctCap = "1"; return; } }
   const out = cleanTitle(text, a.href);
   if (out && out !== text.replace(/\s+/g, " ").trim()) { a.title = text.trim(); a.textContent = out; }
   // Link line: just the site name, like Google on phones (the full address shows on hover)
@@ -231,26 +296,21 @@ const row = (el) => {
     if (sp) for (const n of sp.childNodes) if (n.nodeType === 3) n.data = n.data.replace(/\s*Archived post\.\s*New comments (cannot be posted|\.\.\.)[^.]*\.?(\s*and votes cannot be cast\.?)?/gi, " ").replace(/\s{2,}/g, " ");
   }
   if (cite && site && cite.textContent.trim() !== site) { cite.title = cite.textContent.trim(); cite.textContent = site; }
-  // Date at the start of a description ("Feb 1, 2022 ... text"): dimmed, with a tidy dot instead of the dots/dash
+  // Snippet: a leading date ("Feb 1, 2022 ... text", "3 days ago —") and junk ellipses go (core cleanSnippet);
+  // the date (degoog's own first, else the one from the text) moves to the source line, after the site name
   const p0 = el.querySelector(".result-snippet");
-  const n0 = p0 && p0.firstChild && p0.firstChild.nodeType === 3 ? p0.firstChild : null;
-  const dm = n0 && /^\s*((?:[A-Z][a-z]{2,8}\.? \d{1,2}, \d{4})|(?:\d{1,2} [A-Z][a-z]{2,8}\.? \d{4})|(?:\d+ (?:minutes?|hours?|days?|weeks?|months?) ago))\s*(?:\.\.\.|…|—|–|-|·)\s*/.exec(n0.data);
-  if (dm && n0.data.length > dm[0].length) { n0.data = n0.data.slice(dm[0].length); const ds = document.createElement("span"); ds.className = "ct-date"; ds.textContent = `${dm[1]} · `; p0.prepend(ds); }
-  // degoog already shows the date: drop the same date repeated at the start of the description
-  const rd = p0 && p0.querySelector(".result-date");
-  let tn = rd && rd.nextSibling;
-  while (tn && tn.nodeType === 3 && !tn.data.trim()) tn = tn.nextSibling;
-  const dup = tn && tn.nodeType === 3 ? /^\s*(?:·\s*)?(?:[A-Z][a-z]{2,8}\.? \d{1,2}, \d{4}|\d{1,2} [A-Z][a-z]{2,8}\.? \d{4}|\d+ (?:minutes?|hours?|days?|weeks?|months?) ago)\s*(?:\.\.\.|…|—|–|-|·)\s*/.exec(tn.data) : null;
-  if (dup && tn.data.length > dup[0].length) tn.data = (/^\s*·/.test(tn.data) ? " · " : "") + tn.data.slice(dup[0].length);
-  const img = el.querySelector(".result-thumbnail-wrap img");
-  const hd = !!img;
-  const p = el.querySelector(".result-snippet");
-  const date = p && p.querySelector(".result-date");
-  const id = u && p && !(p.textContent || "").replace(date ? date.textContent || "" : "", "").trim() ? ytId(u) : "";
-  if (hd || id) {
-    work.set(el, () => { if (hd) hdImg(img); if (id && !(PHONE.matches && el.querySelector(".degoog-result--thumb--video"))) getDesc(p, id); });
-    near.observe(el);
+  if (p0) {
+    let dRaw = "";
+    const rd = p0.querySelector(".result-date");
+    if (rd) { dRaw = (rd.textContent || "").trim(); rd.remove(); }
+    let n0 = p0.firstChild;
+    while (n0 && n0.nodeType === 3 && !n0.data.trim()) n0 = n0.nextSibling;
+    if (n0 && n0.nodeType === 3) { const c = CT.cleanSnippet(n0.data); if (!dRaw) dRaw = c.date; n0.data = c.text; }
+    const label = dRaw ? CT.dateLabel(dRaw) : "";
+    if (label && cite) cite.after(mk("span", "ct-date", label));
   }
+  const img = el.querySelector(".result-thumbnail-wrap img");
+  if (img) { work.set(el, () => hdImg(img)); near.observe(el); }
 };
 
 const card = (el, isImage) => {
@@ -838,11 +898,13 @@ const storyCard = (r) => {
 };
 
 let G = { key: "" };
-// Your Settings switches for these boxes, asked once per page load; nothing is built until the answer arrives,
-// so a switched-off box never flashes
-let SHOW = null;
-bridge("prefs", {}).then((j) => { SHOW = { sl: true, forum: true, video: true, news: true, ...(j && typeof j === "object" ? j : {}) }; safe("groups", groups); })
-  .catch(() => { SHOW = { sl: true, forum: true, video: true, news: true }; safe("groups", groups); });
+// Your Settings switches for these boxes. Known before results arrive, so the boxes are built in the same pass as
+// the results (v49 waited for the server, which could rebuild the list after it was on screen): the last answer is
+// kept in this browser (switch values only), and a change applies from the next page load. Missing = on.
+const SHOW_KEY = "ct-show";
+let SHOW = { sl: true, forum: true, video: true, news: true };
+try { const c = JSON.parse(localStorage.getItem(SHOW_KEY) || "null"); if (c && typeof c === "object") SHOW = { ...SHOW, ...c }; } catch {}
+bridge("prefs", {}).then((j) => { if (j && typeof j === "object") try { localStorage.setItem(SHOW_KEY, JSON.stringify(j)); } catch {} }).catch(() => {});
 const used = (el) => el.classList.contains("ct-grouped");
 const shown = (el) => el.style.display !== "none" && !used(el);
 const groups = () => {
@@ -940,14 +1002,16 @@ const init = () => {
   safe("query", readQuery);
   safe("usage", () => noUsage(document.body));
   safe("card", glance);
+  safe("list", listPass);
   safe("scan", () => scan(document.body));
   safe("skeleton", () => skel(document.body));
-  safe("extras", extras); safe("groups", groups); safe("ask", paa); safe("tools", tools);
+  safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools);
   // Runs right after degoog inserts results and before the screen updates; only looks inside what was added
   new MutationObserver((muts) => {
     safe("query", readQuery);
+    safe("list", listPass);
     for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { safe("scan", () => scan(n)); safe("skeleton", () => skel(n)); safe("usage", () => noUsage(n)); }
-    safe("extras", extras); safe("groups", groups); safe("ask", paa); safe("tools", tools); safe("card", glance);
+    safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("card", glance);
   }).observe(document.body, { childList: true, subtree: true });
 };
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
