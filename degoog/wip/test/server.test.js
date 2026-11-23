@@ -471,3 +471,12 @@ test("self-check fixes: subclass type (suspension bridge), Wikidata next item wh
   expect(await srv.wdFor("population", "nowhere y")).toBe(null);
   expect(srv.WHY.wd).toContain("http 403");
 });
+
+test("video still for YouTube cards: only an 11-character id, signed for degoog's image proxy", async () => {
+  const srv = await import("../files/index.js");
+  srv.default.init({ id: "clean-titles", signProxyUrl: (u) => `/api/proxy/image?url=${encodeURIComponent(u)}&sig=s` });
+  const r = await srv.default.execute("bridge yt id=8lnlUrHBqOE");
+  expect(JSON.parse(r.html.replace(/&amp;/g, "&")).to).toBe("/api/proxy/image?url=https%3A%2F%2Fi.ytimg.com%2Fvi%2F8lnlUrHBqOE%2Fhqdefault.jpg&sig=s");
+  const bad = await srv.default.execute("bridge yt id=..%2Fetc");
+  expect(JSON.parse(bad.html).status).toBe(400);
+});
