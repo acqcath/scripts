@@ -1145,7 +1145,7 @@ const sameSearch = (k) => searchId(location.href) === searchId(k);
 // Same-shape results (spec 8): the search names a type of result (pdf, reddit, docs, recipe, video…) or a site to
 // filter by: a plain list of that type, with no boxes, rows, panels, People also ask or AI on top.
 const curQ = () => { try { return (new URL(location.href).searchParams.get("q") || "").trim(); } catch { return ""; } };
-const shaped = (q = curQ()) => !!(CT.shapeOf(q) || CT.filterSite(q) || /(?:^|\s)site:\S/i.test(q));
+const shaped = (q = curQ()) => SHOW.plain !== false && !!(CT.shapeOf(q) || CT.filterSite(q) || /(?:^|\s)site:\S/i.test(q));
 
 
 // clean-titles: ONE pass per new result, run before the browser draws it (no timers, no re-scans).
@@ -1279,6 +1279,7 @@ const listPass = () => {
     let q = "";
     try { q = new URL(location.href).searchParams.get("q") || ""; } catch {}
     LP = { key, first: fresh[0], ctx: CT.listCtx(q, PSL(), sitePrefs()), pend: [] };
+    if (SHOW.plain === false) LP.ctx.docs = null; // "official docs first" is part of the plain-lists switch
   }
   const items = [];
   for (const el of fresh) {
@@ -1446,7 +1447,7 @@ const row = (el) => {
     if (label && cite) { const d = mk("span", "ct-date", label); d.dataset.raw = dRaw; cite.after(d); }
   }
   // "Paywall": a word on the source line, drawn with the result (core PAYWALL_SITES)
-  if (cite && u && CT.paywalled(u.hostname, PSL())) { const t = mk("span", "ct-paywall", "Paywall"); (el.querySelector(".result-url-row .ct-date") || cite).after(t); }
+  if (cite && u && SHOW.pw !== false && CT.paywalled(u.hostname, PSL())) { const t = mk("span", "ct-paywall", "Paywall"); (el.querySelector(".result-url-row .ct-date") || cite).after(t); }
   // "PDF" on the source line for PDF files (any search), like the Paywall word
   if (cite && u && (/\.pdf$/i.test(u.pathname) || /(^|\.)arxiv\.org$/.test(u.hostname) && /^\/pdf\//.test(u.pathname))) { const t = mk("span", "ct-paywall ct-pdf", "PDF"); (el.querySelector(".result-url-row .ct-paywall, .result-url-row .ct-date") || cite).after(t); }
   const img = el.querySelector(".result-thumbnail-wrap img");
@@ -1593,21 +1594,21 @@ const earlyStart = () => {
   if (webTab && Number(u.searchParams.get("page") || 1) <= 1 && !q.startsWith("!")) {
     ask("qs", key, { q });
     // Versions / support (endoflife.date): only the product name is sent; drawn with the results if in hand by then
-    const eq = CT.eolQuery(q);
+    const eq = SHOW.ans !== false && CT.eolQuery(q);
     if (eq) ask("eol", key, { p: eq.slug });
     // Facts (Wikidata): only the fact asked and the subject's name are sent
-    const wq = !eq && !CT.answer(q, Date.now(), { fx: FX }) && CT.wdQuery(q);
+    const wq = SHOW.ans !== false && !eq && !CT.answer(q, Date.now(), { fx: FX }) && CT.wdQuery(q);
     if (wq) ask("wd", key, { f: wq.fact, s: wq.s, ...(wq.s2 ? { s2: wq.s2 } : {}) });
     // CMU course card: "15-213" (and "15213", which the server answers only if that course exists: it's also a ZIP)
-    const cq = cmuQ(q);
+    const cq = SHOW.ans !== false && cmuQ(q);
     if (cq && cq.level) ask("cmu", key, { id: cq.id });
     // A team's game (ESPN): short searches made of words only go to this server, which knows the team names
-    if (!eq && !wq && !cq && /^[a-z][a-z .'&-]*$/i.test(q) && q.split(/\s+/).length <= 6 && !CT.answer(q, Date.now(), { fx: FX })) ask("sports", key, { q });
+    if (SHOW.ans !== false && !eq && !wq && !cq && /^[a-z][a-z .'&-]*$/i.test(q) && q.split(/\s+/).length <= 6 && !CT.answer(q, Date.now(), { fx: FX })) ask("sports", key, { q });
     // Knowledge panel: only the name is sent (this server asks Wikidata/Wikipedia); shown only if the results agree
-    if (!eq && !wq && !cq && kpWanted(q)) ask("kp", key, { q: CT.kpQuery(q) });
+    if (!eq && !wq && !cq && (SHOW.kp !== false || SHOW.mean !== false) && kpWanted(q)) ask("kp", key, { q: CT.kpQuery(q) });
     // Images row (spec 12): the image search starts now, in parallel, for clearly visual searches: picture words, or
     // a search you opened the Images tab for in the last 12 h (degoog still has that image search cached)
-    if (!shaped(q) && (CT.visualQ(q) || visualSeen.has(qHash(q)))) {
+    if (SHOW.img !== false && !shaped(q) && (CT.visualQ(q) || visualSeen.has(qHash(q)))) {
       const e = { key, data: undefined };
       early.set("img", e);
       fetch(`/api/search?q=${encodeURIComponent(q)}&type=images`).then((x) => (x.ok ? x.json() : null))
@@ -1776,14 +1777,18 @@ const siteItems = (el) => {
   menu.prepend(seg);
   if (cur === "lower" && SITES_AUTO.includes(siteOf(host))) seg.after(mk("div", "ct-seg-note", "Lowered automatically (SEO signs). Your choice here wins."));
   // Quick view (spec 11) and archived copy (spec 10): nothing is asked until you tap them
-  const qv = mk("button", "degoog-menu-item ct-arch ct-qv-b", "Quick view");
-  qv.type = "button";
-  qv.setAttribute("role", "menuitem");
-  menu.append(qv);
-  const ar = mk("button", "degoog-menu-item ct-arch", "Open archived copy");
-  ar.type = "button";
-  ar.setAttribute("role", "menuitem");
-  menu.append(ar);
+  if (SHOW.qv !== false) {
+    const qv = mk("button", "degoog-menu-item ct-arch ct-qv-b", "Quick view");
+    qv.type = "button";
+    qv.setAttribute("role", "menuitem");
+    menu.append(qv);
+  }
+  if (SHOW.arch !== false) {
+    const ar = mk("button", "degoog-menu-item ct-arch", "Open archived copy");
+    ar.type = "button";
+    ar.setAttribute("role", "menuitem");
+    menu.append(ar);
+  }
 };
 // Tap: a new tab opens at once (so the browser allows it) and goes to the copy the server found: archive.today first
 // for paywalled sites, else the Wayback Machine, else Ghostarchive; none -> archive.today's save page
@@ -2206,7 +2211,7 @@ let G = { key: "" };
 // the results (v49 waited for the server, which could rebuild the list after it was on screen): the last answer is
 // kept in this browser (switch values only), and a change applies from the next page load. Missing = on.
 const SHOW_KEY = "ct-show";
-let SHOW = { sl: true, forum: true, video: true, news: true };
+let SHOW = { sl: true, forum: true, video: true, news: true, ans: true, kp: true, img: true, qv: true, arch: true, mean: true, stars: true, plain: true, pw: true };
 try { const c = JSON.parse(localStorage.getItem(SHOW_KEY) || "null"); if (c && typeof c === "object") SHOW = { ...SHOW, ...c }; } catch {}
 bridge("prefs", {}).then((j) => { if (j && typeof j === "object") try { localStorage.setItem(SHOW_KEY, JSON.stringify(j)); } catch {} }).catch(() => {});
 const used = (el) => el.classList.contains("ct-grouped");
@@ -2482,7 +2487,7 @@ const ansPass = () => {
     ansFor = key;
     let q = "", page = 1;
     try { const u = new URL(key); q = (u.searchParams.get("q") || "").trim(); page = Number(u.searchParams.get("page") || 1); } catch {}
-    ansVal = webTab && page <= 1 ? CT.answer(q, Date.now(), { fx: FX }) : null;
+    ansVal = webTab && page <= 1 && SHOW.ans !== false ? CT.answer(q, Date.now(), { fx: FX }) : null;
     aiVal = webTab && page <= 1 && !ansVal && aiWanted(q);
     g.querySelectorAll(".ct-ans, .ct-ai").forEach((x) => x.remove());
   }
@@ -2606,7 +2611,7 @@ const starsWanted = (q) => CT.shapeOf(q) === "recipe" || /\b(?:reviews?|rating|r
 let starsKey = "";
 const starsPass = () => {
   const key = searchId(location.href), list = document.getElementById("results-list");
-  if (!webTab || !list || starsKey === key || drawnFor === key) return;
+  if (!webTab || !list || SHOW.stars === false || starsKey === key || drawnFor === key) return;
   const rows = [...list.querySelectorAll(".result-item")].filter((x) => x.style.display !== "none" && !x.classList.contains("ct-grouped")).slice(0, 6);
   if (!rows.length) return;
   starsKey = key;
@@ -2633,7 +2638,7 @@ const starsPass = () => {
 let meanKey = "";
 const meanPass = () => {
   const key = searchId(location.href), list = document.getElementById("results-list");
-  if (!webTab || !list || meanKey === key || drawnFor === key) return;
+  if (!webTab || !list || SHOW.mean === false || meanKey === key || drawnFor === key) return;
   const rows = [...list.querySelectorAll(".result-item")].filter((x) => x.style.display !== "none");
   if (!rows.length) return;
   meanKey = key;
@@ -2710,7 +2715,7 @@ document.addEventListener("click", (e) => {
 const kpPass = () => {
   const key = searchId(location.href), list = document.getElementById("results-list");
   if (kpKey !== key) { kpKey = key; document.querySelectorAll(".ct-kp").forEach((x) => x.remove()); }
-  if (!list || !webTab || [...list.children].find((x) => x.classList.contains("ct-kp"))) return;
+  if (!list || !webTab || SHOW.kp === false || [...list.children].find((x) => x.classList.contains("ct-kp"))) return;
   const d = ready("kp", key), kp = d && d.kp;
   if (!kp || !kp.title || !kp.name) return;
   const late = drawnFor === key, wide = !!(window.matchMedia && matchMedia(KP_WIDE).matches);

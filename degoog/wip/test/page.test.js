@@ -604,3 +604,14 @@ test("page: meaning line on real 'python' results (all about the language), none
   expect(m.document.querySelectorAll(".ct-mean").length).toBe(0);
   expect(a.errors.concat(m.errors)).toEqual([]);
 });
+
+test("page: each feature's Settings switch turns it off (instant answers, quick view, paywall word)", async () => {
+  const store = { "ct-show": JSON.stringify({ ans: false, qv: false, pw: false }) };
+  const a = await run("5 mi in km", { engines: 0, store });
+  expect(a.document.querySelectorAll(".ct-ans").length).toBe(0);
+  expect(a.document.querySelectorAll(".ct-qv-b").length).toBe(0);
+  expect(a.document.querySelectorAll(".ct-arch").length).toBeGreaterThan(0); // archive stays on
+  const p = await run("$AAPL", { engines: 0, store });
+  expect(p.document.querySelectorAll(".ct-paywall:not(.ct-pdf)").length).toBe(0);
+  expect(a.errors.concat(p.errors)).toEqual([]);
+});
