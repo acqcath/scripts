@@ -1,5 +1,7 @@
 // Local answer card (files/answers.js): every kind, plus things that must NOT get a card
 import { test, expect } from "bun:test";
+import { existsSync as __ex } from "node:fs";
+const HAS_RECS = __ex(new URL("../rec/ct-recordings.json.gz", import.meta.url)); // recordings are private: kept with the user, not in the repo
 import * as A from "../files/answers.js";
 const now = Date.parse("2026-11-23T10:00:00"); // a Monday
 const v = (q) => { const r = A.answer(q, now); return r && (r.value || r.title); };
@@ -155,7 +157,7 @@ test("images row: clearly visual searches from their words", () => {
   for (const q of ["golden gate bridge", "how to reset airpods", "image processing python", "resize photo", "logo generator", "!images cats", ""]) expect([q, A.visualQ(q)]).toEqual([q, false]);
 });
 
-test("meaning line: only when the results cover one meaning; tap adds the word", () => {
+(HAS_RECS ? test : test.skip)("meaning line: only when the results cover one meaning; tap adds the word", () => {
   const R = JSON.parse(require("node:zlib").gunzipSync(require("node:fs").readFileSync(new URL("../rec/ct-recordings.json.gz", import.meta.url))));
   const texts = (q) => R.searches.find((x) => x.q === q && !x.type).results.map((r) => `${r.title} ${r.snippet}`);
   // Descriptions written the way Wikidata writes them (not fetched here)
@@ -167,7 +169,7 @@ test("meaning line: only when the results cover one meaning; tap adds the word",
   expect(A.meaningLine("python", python, ["a", "b"])).toBeNull();
 });
 
-test("featured snippet on the user's 10 recorded searches (and none for jokes, 'why', per-model how-tos)", async () => {
+(HAS_RECS ? test : test.skip)("featured snippet on the user's 10 recorded searches (and none for jokes, 'why', per-model how-tos)", async () => {
   const A = await import("../files/answers.js");
   const fs = await import("fs");
   const zlib = await import("zlib");

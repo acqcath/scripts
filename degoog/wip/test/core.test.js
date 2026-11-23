@@ -1,4 +1,6 @@
 import { test, expect } from "bun:test";
+import { existsSync as __ex } from "node:fs";
+const HAS_RECS = __ex(new URL("../rec/ct-recordings.json.gz", import.meta.url)); // recordings are private: kept with the user, not in the repo
 import fs from "node:fs";
 import * as C from "../files/core.js";
 const psl = C.pslParse(fs.readFileSync(new URL("../psl.enc", import.meta.url), "utf8"));
@@ -69,7 +71,7 @@ test("CMU patterns incl. 15213 zip collision", () => {
   expect(C.cmuCourse("15-213 malloc lab", courses).level).toBe(false);
   expect(C.cmuCourse("152134", courses)).toBe(null);
 });
-test("snippet date cleanup", () => {
+(HAS_RECS ? test : test.skip)("snippet date cleanup", () => {
   expect(C.cleanSnippet("Mar 5, 2024 — The keyboard is great for typing.")).toEqual({ date: "Mar 5, 2024", text: "The keyboard is great for typing." });
   expect(C.cleanSnippet("3 days ago · New firmware fixes the bug for everyone.")).toEqual({ date: "3 days ago", text: "New firmware fixes the bug for everyone." });
   expect(C.cleanSnippet("... and then the result ... ...").text).toBe("and then the result …");
@@ -82,9 +84,11 @@ test("snippet date cleanup", () => {
 
 // ===== Page plan, on real recorded searches from the user's server =====
 import zlib from "node:zlib";
-const REC = JSON.parse(zlib.gunzipSync(fs.readFileSync(new URL("../rec/ct-recordings.json.gz", import.meta.url))));
+const REC_FILE = new URL("../rec/ct-recordings.json.gz", import.meta.url);
+const HAS_REC = fs.existsSync(REC_FILE); // recordings are private: kept with the user, not in the repo
+const REC = HAS_REC ? JSON.parse(zlib.gunzipSync(fs.readFileSync(REC_FILE))) : { searches: [], page: "", css: {} };
 const rec = (q) => REC.searches.find((x) => x.q === q && (!x.type || x.type === "web")).results;
-test("page plan: real 'how to reset airpods' merges copies and folds the 3rd+ per site", () => {
+(HAS_RECS ? test : test.skip)("page plan: real 'how to reset airpods' merges copies and folds the 3rd+ per site", () => {
   const items = rec("how to reset airpods"), ctx = C.listCtx("how to reset airpods", psl);
   const p = C.planPage(items, ctx);
   // Locale copy, m. copy, and a same-title re-upload of the same video on one site
@@ -93,7 +97,7 @@ test("page plan: real 'how to reset airpods' merges copies and folds the 3rd+ pe
   for (const [site, f] of p.folds) { expect(p.shown.filter((r) => r.site === site).length).toBe(2); expect(f.after.site).toBe(site); }
   expect(p.folds.get("youtube.com").items.length).toBe(3);
 });
-test("page plan: the search naming a site lifts its cap (mdn, npm, pip, site:)", () => {
+(HAS_RECS ? test : test.skip)("page plan: the search naming a site lifts its cap (mdn, npm, pip, site:)", () => {
   for (const q of ["mdn array map", "npm lodash"]) {
     const p = C.planPage(rec(q), C.listCtx(q, psl));
     const site = q.startsWith("mdn") ? "mozilla.org" : "npmjs.com";
@@ -103,7 +107,7 @@ test("page plan: the search naming a site lifts its cap (mdn, npm, pip, site:)",
   const p = C.planPage(rec("mdn array map"), C.listCtx("array map site:developer.mozilla.org", psl));
   expect(p.folds.has("mozilla.org")).toBe(false);
 });
-test("page plan: site prefs hide, prefer (no cap, moved up), lower (moved down)", () => {
+(HAS_RECS ? test : test.skip)("page plan: site prefs hide, prefer (no cap, moved up), lower (moved down)", () => {
   const q = "how to reset airpods";
   const p = C.planPage(rec(q), C.listCtx(q, psl, { "youtube.com": "hide", "wikihow.com": "prefer", "apple.com": "lower" }));
   expect(p.shown.some((r) => r.site === "youtube.com")).toBe(false);
@@ -111,7 +115,7 @@ test("page plan: site prefs hide, prefer (no cap, moved up), lower (moved down)"
   const sites = p.shown.map((r) => r.site);
   expect(sites.slice(-2)).toEqual(["apple.com", "apple.com"]);
 });
-test("page plan: endless-scroll pages share one search (copies on page 2 drop, no folds above)", () => {
+(HAS_RECS ? test : test.skip)("page plan: endless-scroll pages share one search (copies on page 2 drop, no folds above)", () => {
   const items = rec("how to reset airpods"), ctx = C.listCtx("how to reset airpods", psl);
   C.planPage(items.slice(0, 10), ctx);
   const p2 = C.planPage(items.slice(10), ctx);
@@ -211,7 +215,7 @@ test("tidyText: the engines' stray spaces around bolded words go; inch marks, ti
   expect(doiPublisher("https://example.com/10.1016/x")).toBe("");
 });
 
-test("tab skew on the user's recorded News / Science / Forums searches", async () => {
+(HAS_RECS ? test : test.skip)("tab skew on the user's recorded News / Science / Forums searches", async () => {
   const { tabLow } = await import("../files/core.js");
   const fs = await import("fs");
   const d = JSON.parse(fs.readFileSync(new URL("../rec/tab-searches.json", import.meta.url), "utf8"));

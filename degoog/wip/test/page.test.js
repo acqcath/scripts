@@ -2,10 +2,14 @@
 // template (test/fixtures/result.html, degoog-org/degoog e006d50) into a DOM (happy-dom). Checks what the user sees
 // once the observer pass ran: copies merged, 2 per site with "N more" folds, dates on the source line.
 import { test, expect } from "bun:test";
+import { existsSync as __ex } from "node:fs";
+const HAS_RECS = __ex(new URL("../rec/ct-recordings.json.gz", import.meta.url)); // recordings are private: kept with the user, not in the repo
 import fs from "node:fs";
 import zlib from "node:zlib";
 import { Window } from "happy-dom";
-const REC = JSON.parse(zlib.gunzipSync(fs.readFileSync(new URL("../rec/ct-recordings.json.gz", import.meta.url))));
+const REC_FILE = new URL("../rec/ct-recordings.json.gz", import.meta.url);
+const HAS_REC = fs.existsSync(REC_FILE); // recordings are private: kept with the user, not in the repo
+const REC = HAS_REC ? JSON.parse(zlib.gunzipSync(fs.readFileSync(REC_FILE))) : { searches: [], page: "", css: {} };
 const TPL = fs.readFileSync(new URL("./fixtures/result.html", import.meta.url), "utf8");
 const IMG_TPL = fs.readFileSync(new URL("./fixtures/image-card.html", import.meta.url), "utf8");
 const PSL = fs.readFileSync(new URL("../psl.enc", import.meta.url), "utf8");
@@ -93,7 +97,7 @@ const run = async (q, opts = {}) => {
   return { win, document, res, items, visible, errors, fire, folds: [...document.querySelectorAll(".ct-fold")] };
 };
 
-test("page: real 'how to reset airpods' shows each document once and at most 2 per site", async () => {
+(HAS_RECS ? test : test.skip)("page: real 'how to reset airpods' shows each document once and at most 2 per site", async () => {
   const { visible, errors } = await run("how to reset airpods");
   expect(errors).toEqual([]);
   const urls = visible.map((el) => el.querySelector("a.result-title").href);
@@ -103,7 +107,7 @@ test("page: real 'how to reset airpods' shows each document once and at most 2 p
   for (const u of urls) { const h = new URL(u).hostname.split(".").slice(-2).join("."); per[h] = (per[h] || 0) + 1; }
   expect(Math.max(...Object.values(per))).toBeLessThanOrEqual(2);
 });
-test("page: real 'is windows 10 supported' folds the 3rd+ microsoft.com results under the 2nd; tap opens in place", async () => {
+(HAS_RECS ? test : test.skip)("page: real 'is windows 10 supported' folds the 3rd+ microsoft.com results under the 2nd; tap opens in place", async () => {
   const { folds, document } = await run("is windows 10 supported");
   expect(folds.length).toBe(1);
   const f = folds[0];
@@ -116,7 +120,7 @@ test("page: real 'is windows 10 supported' folds the 3rd+ microsoft.com results 
   const next6 = after.slice(i + 1, i + 7);
   expect(next6.every((el) => el.style.display === "" && /microsoft\.com/.test(new URL(el.querySelector("a.result-title").href).hostname))).toBe(true);
 });
-test("page: dates move from the snippet to the source line; snippet text keeps no leading date", async () => {
+(HAS_RECS ? test : test.skip)("page: dates move from the snippet to the source line; snippet text keeps no leading date", async () => {
   const { items, res } = await run("steelers");
   let moved = 0;
   items.forEach((el, i) => {
@@ -126,27 +130,27 @@ test("page: dates move from the snippet to the source line; snippet text keeps n
   });
   expect(moved).toBeGreaterThan(0);
 });
-test("page: a search naming the site keeps all its results (mdn array map)", async () => {
+(HAS_RECS ? test : test.skip)("page: a search naming the site keeps all its results (mdn array map)", async () => {
   const { visible, folds } = await run("mdn array map");
   expect(visible.filter((el) => /developer\.mozilla\.org/.test(el.querySelector("a.result-title").href)).length).toBeGreaterThan(2);
   expect(folds.some((f) => /mozilla/.test(f.textContent))).toBe(false);
 });
-test("page: site prefs from the server (Hide, Prefer) apply before paint", async () => {
+(HAS_RECS ? test : test.skip)("page: site prefs from the server (Hide, Prefer) apply before paint", async () => {
   const { visible } = await run("how to reset airpods", { sites: { "youtube.com": "hide", "wikihow.com": "prefer" } });
   expect(new URL(visible[0].querySelector("a.result-title").href).hostname).toBe("www.wikihow.com");
   expect(visible.some((el) => /youtube/.test(el.querySelector("a.result-title").href))).toBe(false);
 });
-test("page: public suffix file missing -> still works, sites = host names", async () => {
+(HAS_RECS ? test : test.skip)("page: public suffix file missing -> still works, sites = host names", async () => {
   const { visible } = await run("how to reset airpods", { noPsl: true });
   expect(visible.length).toBeGreaterThan(10);
 });
-test("page: arXiv copies merge into one result with version links", async () => {
+(HAS_RECS ? test : test.skip)("page: arXiv copies merge into one result with version links", async () => {
   const { visible, document } = await run("attention is all you need pdf");
   const ax = visible.filter((el) => /arxiv\.org/.test(el.querySelector("a.result-title").href));
   expect(ax.length).toBe(1);
   expect(document.querySelectorAll(".ct-alts").length).toBeGreaterThan(0);
 });
-test("page: all recorded web searches replay without a single page-script error; merges and folds counted", async () => {
+(HAS_RECS ? test : test.skip)("page: all recorded web searches replay without a single page-script error; merges and folds counted", async () => {
   const rows = [];
   for (const s of REC.searches.filter((x) => !x.type || x.type === "web")) {
     const { win, items, visible, folds, errors: errs } = await run(s.q);
@@ -163,14 +167,14 @@ test("page: all recorded web searches replay without a single page-script error;
 // Early answers: in hand when results arrive -> drawn in the same pass; late -> never drawn
 const FIX = { fix: null, words: [], dym: "pyhton tutorial", related: ["python download", "python tutorial"] };
 const QS = { q: ["What is Python used for?", "Is Python hard to learn?"] };
-test("page: typo line, related searches and People also ask drawn with the results when their answers came first", async () => {
+(HAS_RECS ? test : test.skip)("page: typo line, related searches and People also ask drawn with the results when their answers came first", async () => {
   const { document, win } = await run("python", { engines: 40, bridge: { fix: { data: FIX, delay: 5 }, qs: { data: QS, delay: 5 } } });
   expect(document.getElementById("ct-related")).not.toBeNull();
   expect(document.getElementById("ct-qa")).not.toBeNull();
   expect(document.getElementById("ct-qa").querySelectorAll("details").length).toBe(2);
   win.close();
 });
-test("page: the same answers arriving after the results are dropped (nothing inserted later)", async () => {
+(HAS_RECS ? test : test.skip)("page: the same answers arriving after the results are dropped (nothing inserted later)", async () => {
   const { document, win, fire } = await run("python", { engines: 0, bridge: { fix: { data: FIX, delay: 60 }, qs: { data: QS, delay: 60 } } });
   await new Promise((r) => setTimeout(r, 120));
   const d = document.createElement("div");
@@ -181,7 +185,7 @@ test("page: the same answers arriving after the results are dropped (nothing ins
   expect(document.getElementById("ct-fix")).toBeNull();
   win.close();
 });
-test("page: a command card (weather at the end of the search) goes in only before the results are drawn", async () => {
+(HAS_RECS ? test : test.skip)("page: a command card (weather at the end of the search) goes in only before the results are drawn", async () => {
   const card = { html: '<div class="wx">Pittsburgh 41°F</div>' };
   const a = await run("weather pittsburgh", { engines: 40, command: { ...card, delay: 5 } });
   expect(a.document.querySelector("#at-a-glance .ct-card")).not.toBeNull();
@@ -195,7 +199,7 @@ test("page: a command card (weather at the end of the search) goes in only befor
   b.win.close();
 });
 
-test("page: Top stories only for news-like results, drawn before paint, never inserted later", async () => {
+(HAS_RECS ? test : test.skip)("page: Top stories only for news-like results, drawn before paint, never inserted later", async () => {
   // Not news-like (v49's rule fired here): nothing remembered, no News search
   const calm = await run("time in tokyo", { news: {} });
   expect(calm.win.localStorage.getItem("ct-newsy")).toBeNull();
@@ -218,7 +222,7 @@ test("page: Top stories only for news-like results, drawn before paint, never in
   expect(!!c.document.querySelector(".ct-news")).toBe(false);
 });
 
-test("page: News tab layout is decided before paint; recorded News pictures (upgradable hosts) keep the banner", async () => {
+(HAS_RECS ? test : test.skip)("page: News tab layout is decided before paint; recorded News pictures (upgradable hosts) keep the banner", async () => {
   for (const q of ["steelers", "nvidia"]) {
     const { items, errors } = await run(q, { type: "news" });
     expect(errors).toEqual([]);
@@ -227,7 +231,7 @@ test("page: News tab layout is decided before paint; recorded News pictures (upg
   }
 });
 
-test("page: site choices in the result menu: one group of four, saved in degoog's lists, applied on the page", async () => {
+(HAS_RECS ? test : test.skip)("page: site choices in the result menu: one group of four, saved in degoog's lists, applied on the page", async () => {
   const calls = [];
   const lists = { domainBlockList: "example.org\nyoutube.com", domainScoreList: "" };
   const settings = (url, body, headers) => { calls.push([url, body, headers && headers["x-settings-token"]]); return url.endsWith("/general") ? { json: lists } : { json: { ok: true } }; };
@@ -260,7 +264,7 @@ test("page: site choices in the result menu: one group of four, saved in degoog'
   expect(s2.parentElement.querySelector(".ct-seg-note").textContent).toBe("Sign in to Settings first");
   expect(b.win.localStorage.getItem("ct-sites")).toBeNull();
 });
-test("page: un-hiding never writes back a block list degoog left out for being too long", async () => {
+(HAS_RECS ? test : test.skip)("page: un-hiding never writes back a block list degoog left out for being too long", async () => {
   const calls = [];
   const settings = (url, body) => { calls.push(url); return url.endsWith("/general") ? { json: { domainBlockList: "", degoogOversizedFields: { domainBlockList: { chars: 70000, lines: 5000 } } } } : { json: { ok: true } }; };
   const { document } = await run("how to reset airpods", { settings, sites: { "youtube.com": "hide" } });
@@ -273,7 +277,7 @@ test("page: un-hiding never writes back a block list degoog left out for being t
   expect(seg.parentElement.querySelector(".ct-seg-note").textContent).toMatch(/too long/);
 });
 
-test("page: anti-SEO signs go to the server once per search, after the pass; auto-lowered sites say so in the menu", async () => {
+(HAS_RECS ? test : test.skip)("page: anti-SEO signs go to the server once per search, after the pass; auto-lowered sites say so in the menu", async () => {
   const calls = [];
   const { document, errors } = await run("mdn array map", { calls, store: { "ct-sites-auto": JSON.stringify({ auto: ["w3schools.com"], seo: true }) }, sites: { "w3schools.com": "lower" } });
   expect(calls.filter((c) => c.route === "seo").length).toBe(0); // not inside the pass
@@ -293,7 +297,7 @@ test("page: anti-SEO signs go to the server once per search, after the pass; aut
   expect(c2.filter((c) => c.route === "seo").length).toBe(0);
 });
 
-test("page: real '$AAPL' results from wsj.com carry the Paywall word on the source line, others don't", async () => {
+(HAS_RECS ? test : test.skip)("page: real '$AAPL' results from wsj.com carry the Paywall word on the source line, others don't", async () => {
   const { items, errors } = await run("$AAPL");
   const host = (el) => { try { return new URL(el.querySelector("a.result-title").href).hostname; } catch { return ""; } };
   const tagged = items.filter((el) => el.querySelector(".result-url-row .ct-paywall"));
@@ -304,7 +308,7 @@ test("page: real '$AAPL' results from wsj.com carry the Paywall word on the sour
   expect(errors).toEqual([]);
 });
 
-test("page: Images tab hides AI-image sites from the server's list before paint; the Web tab never uses it", async () => {
+(HAS_RECS ? test : test.skip)("page: Images tab hides AI-image sites from the server's list before paint; the Web tab never uses it", async () => {
   const store = { "ct-aiimg": JSON.stringify({ v: "a1", list: ["canva.com", "magnific.com"] }) };
   const calls = [];
   const { document, errors } = await run("eiffel tower", { type: "images", store, calls });
@@ -318,7 +322,7 @@ test("page: Images tab hides AI-image sites from the server's list before paint;
   expect(w.errors).toEqual([]);
 });
 
-test("page: local answer card is in the panel area in the same pass as the results; back after degoog clears it; none on other searches", async () => {
+(HAS_RECS ? test : test.skip)("page: local answer card is in the panel area in the same pass as the results; back after degoog clears it; none on other searches", async () => {
   const { document, win, fire, errors } = await run("5 mi in km");
   const g = document.getElementById("at-a-glance");
   const card = g.querySelector(".ct-ans");
@@ -345,7 +349,7 @@ test("page: local answer card is in the panel area in the same pass as the resul
   expect(errors).toEqual([]);
 });
 
-test("page: AI spot kept at its final size before the results on AI-worded searches; ai-summary's panel laid over it; failure says so in place", async () => {
+(HAS_RECS ? test : test.skip)("page: AI spot kept at its final size before the results on AI-worded searches; ai-summary's panel laid over it; failure says so in place", async () => {
   const store = { "ct-sites-auto": JSON.stringify({ auto: [], seo: false, ai: { on: true } }) };
   const { document, fire, errors } = await run("why is the sky blue", { store });
   const g = document.getElementById("at-a-glance");
@@ -391,7 +395,7 @@ test("page: AI spot kept at its final size before the results on AI-worded searc
   expect(og.classList.contains("ct-ai-opened")).toBe(true);
 });
 
-test("page: endoflife.date answer drawn with the results when in hand; dropped when it comes later", async () => {
+(HAS_RECS ? test : test.skip)("page: endoflife.date answer drawn with the results when in hand; dropped when it comes later", async () => {
   const win = [{ cycle: "10-22h2-w", eol: "2025-10-14", latest: "10.0.19045" }];
   const calls = [];
   const a = await run("is windows 10 supported", { engines: 40, calls, bridge: { eol: { data: { cycles: win }, delay: 5 } } });
@@ -407,7 +411,7 @@ test("page: endoflife.date answer drawn with the results when in hand; dropped w
   expect(a.errors.concat(b.errors)).toEqual([]);
 });
 
-test("page: Wikidata fact drawn with the results when in hand (pittsburgh population)", async () => {
+(HAS_RECS ? test : test.skip)("page: Wikidata fact drawn with the results when in hand (pittsburgh population)", async () => {
   const calls = [];
   const d = { label: "Pittsburgh", desc: "city in Pennsylvania", v: [{ amount: "+302971", asOf: "+2020-04-01T00:00:00Z" }] };
   const a = await run("pittsburgh population", { engines: 40, calls, bridge: { wd: { data: { d }, delay: 5 } } });
@@ -418,7 +422,7 @@ test("page: Wikidata fact drawn with the results when in hand (pittsburgh popula
   expect(a.errors).toEqual([]);
 });
 
-test("page: CMU card for '15-213' and '15213' (server says the course exists), none for '15-213 malloc lab'", async () => {
+(HAS_RECS ? test : test.skip)("page: CMU card for '15-213' and '15213' (server says the course exists), none for '15-213 malloc lab'", async () => {
   const c = { course: { name: "Introduction to Computer Systems", units: "12", prereqs: "15-122" }, fces: [{ year: 2026, semester: "spring", instructor: "RAILING, BRIAN", numRespondents: 100, responseRate: "50%", hrsPerWeek: 14.3, rating: [0, 0, 0, 0, 0, 0, 0, 4.3, 4.0], location: "Pittsburgh" }] };
   for (const q of ["15-213", "15213"]) {
     const calls = [];
@@ -438,7 +442,7 @@ test("page: CMU card for '15-213' and '15213' (server says the course exists), n
   expect(!!m.document.querySelector(".ct-ans")).toBe(false);
 });
 
-test("page: sports card for 'steelers' drawn with the results when in hand: logos boxed, scores, winner, status", async () => {
+(HAS_RECS ? test : test.skip)("page: sports card for 'steelers' drawn with the results when in hand: logos boxed, scores, winner, status", async () => {
   const g = { state: "post", detail: "Final", date: "2026-11-22T18:00Z", league: "NFL", away: { abbr: "CLE", score: "17", record: "3-7", logo: "/api/proxy/image?url=x&sig=1" }, home: { abbr: "PIT", score: "24", winner: true, record: "7-3", logo: "/api/proxy/image?url=y&sig=2" } };
   const calls = [];
   const a = await run("steelers", { engines: 40, calls, bridge: { sports: { data: { g }, delay: 5 } } });
@@ -456,7 +460,7 @@ test("page: sports card for 'steelers' drawn with the results when in hand: logo
   expect(!!b.document.querySelector(".ct-ans")).toBe(false);
 });
 
-test("page: knowledge panel for real 'taylor swift' (Britannica article in the results), compact on narrow screens; dropped when late; none without the article", async () => {
+(HAS_RECS ? test : test.skip)("page: knowledge panel for real 'taylor swift' (Britannica article in the results), compact on narrow screens; dropped when late; none without the article", async () => {
   const kp = { qid: "Q26876", title: "Taylor Swift", name: "Taylor Swift", type: "person", desc: "American singer-songwriter (born 1989)", extract: "Taylor Alison Swift is an American singer-songwriter.", facts: [{ k: "Born", v: "Dec 13, 1989" }, { k: "Occupation", v: "singer-songwriter, record producer" }], photo: "/api/proxy/image?url=x&sig=1" };
   const calls = [];
   const a = await run("taylor swift", { engines: 40, calls, bridge: { kp: { data: { kp }, delay: 5 } } });
@@ -487,7 +491,7 @@ test("page: knowledge panel for real 'taylor swift' (Britannica article in the r
   expect(calls2.some((x) => x.route === "kp")).toBe(false);
 });
 
-test("page: same-shape results on real searches: reddit threads as plain results (no boxes, no PAA), PDF word, react.dev first", async () => {
+(HAS_RECS ? test : test.skip)("page: same-shape results on real searches: reddit threads as plain results (no boxes, no PAA), PDF word, react.dev first", async () => {
   const r = await run("best mechanical keyboard reddit", { engines: 0 });
   expect(r.document.querySelectorAll(".ct-grp").length).toBe(0); // no Discussions / Videos box
   expect(r.document.getElementById("ct-qa")).toBeNull();
@@ -506,7 +510,7 @@ test("page: same-shape results on real searches: reddit threads as plain results
   expect(p.errors.concat(d.errors, a.errors)).toEqual([]);
 });
 
-test("page: 'Open archived copy' in each result's menu asks the server only on tap and opens what it found", async () => {
+(HAS_RECS ? test : test.skip)("page: 'Open archived copy' in each result's menu asks the server only on tap and opens what it found", async () => {
   const calls = [];
   const r = await run("$AAPL", { engines: 0, calls, bridge: { arch: { data: { a: { url: "https://archive.ph/AbC12", src: "archive.today" } }, delay: 5 } } });
   const items = [...r.document.querySelectorAll("#results-list .result-item")];
@@ -524,7 +528,7 @@ test("page: 'Open archived copy' in each result's menu asks the server only on t
   expect(r.errors).toEqual([]);
 });
 
-test("page: images row for a search you opened the Images tab for (real 'golden gate bridge' pictures), drawn with the results or not at all", async () => {
+(HAS_RECS ? test : test.skip)("page: images row for a search you opened the Images tab for (real 'golden gate bridge' pictures), drawn with the results or not at all", async () => {
   const qh = (q) => { let h = 2166136261; for (const c of q) h = Math.imul(h ^ c.codePointAt(0), 16777619); return (h >>> 0).toString(36); };
   const store = { "ct-visual": JSON.stringify({ [qh("golden gate bridge")]: Date.now() }) };
   const imgCalls = [];
@@ -546,7 +550,7 @@ test("page: images row for a search you opened the Images tab for (real 'golden 
   expect(c.length).toBe(0);
 });
 
-test("page: Quick view opens under the result on tap (recipe: facts, 8 ingredients + 'N more', 3 steps), closes on a second tap", async () => {
+(HAS_RECS ? test : test.skip)("page: Quick view opens under the result on tap (recipe: facts, 8 ingredients + 'N more', 3 steps), closes on a second tap", async () => {
   const calls = [];
   const v = { kind: "recipe", title: "Cookies", facts: [["Rating", "4.9 ★ (3,120)"], ["Total time", "1 hr 15 min"], ["Serves", "24"]], lists: [{ label: "ingredients", items: Array.from({ length: 11 }, (_, i) => `item ${i + 1}`) }, { label: "steps", items: ["a", "b", "c", "d"], ordered: true }], text: [] };
   const r = await run("chocolate chip cookie recipe", { engines: 0, calls, bridge: { qv: { data: { v }, delay: 5 } } });
@@ -574,7 +578,7 @@ test("page: Quick view opens under the result on tap (recipe: facts, 8 ingredien
   expect(r.errors.concat(r2.errors)).toEqual([]);
 });
 
-test("page: recipe search: stars + time on the source line from this browser's copy before paint; others asked after and kept for next time", async () => {
+(HAS_RECS ? test : test.skip)("page: recipe search: stars + time on the source line from this browser's copy before paint; others asked after and kept for next time", async () => {
   const qh = (q) => { let h = 2166136261; for (const c of String(q).trim().toLowerCase()) h = Math.imul(h ^ c.codePointAt(0), 16777619); return (h >>> 0).toString(36); };
   const res = REC.searches.find((x) => x.q === "chocolate chip cookie recipe" && !x.type).results;
   const first = res[0].url;
@@ -596,7 +600,7 @@ test("page: recipe search: stars + time on the source line from this browser's c
   expect(r.errors).toEqual([]);
 });
 
-test("page: meaning line on real 'python' results (all about the language), none on real 'mercury'", async () => {
+(HAS_RECS ? test : test.skip)("page: meaning line on real 'python' results (all about the language), none on real 'mercury'", async () => {
   const alts = [{ label: "Python", desc: "general-purpose programming language" }, { label: "Pythonidae", desc: "family of snakes" }, { label: "Monty Python", desc: "British comedy troupe" }];
   const a = await run("python", { engines: 40, bridge: { kp: { data: { kp: { alts } }, delay: 5 } } });
   const line = a.document.querySelector("#results-list > .ct-mean");
@@ -608,7 +612,7 @@ test("page: meaning line on real 'python' results (all about the language), none
   expect(a.errors.concat(m.errors)).toEqual([]);
 });
 
-test("page: each feature's Settings switch turns it off (instant answers, quick view, paywall word)", async () => {
+(HAS_RECS ? test : test.skip)("page: each feature's Settings switch turns it off (instant answers, quick view, paywall word)", async () => {
   const store = { "ct-show": JSON.stringify({ ans: false, qv: false, pw: false }) };
   const a = await run("5 mi in km", { engines: 0, store });
   expect(a.document.querySelectorAll(".ct-ans").length).toBe(0);
