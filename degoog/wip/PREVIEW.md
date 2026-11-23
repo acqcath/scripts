@@ -40,5 +40,8 @@ Results from sites where most articles need a subscription (nytimes.com incl. Wi
 ## AI pictures on the Images tab (M2)
 The Images tab hides pictures from AI-image sites (laylavish's AI blocklist, checked by your server once a day and downloaded only when it changes). Web results never use it. It starts working from the second Images search after install (the first one fetches the list).
 
+## Instant answers (M3, first part)
+A small answer at the top for searches that are a sum, a conversion or a paste: `12 x 350`, `5 mi in km`, `2 cups flour in grams`, `20% tip on 85`, `days until christmas`, a UPS number, an ISBN, a DOI, `CVE-2021-44228`, `#ff8800`, `pip requests`, `facebook/react`, `UA 123`. Tap the answer to copy it ("Copied" shows in its label line). While it shows, other panels (AI summary, math-slot) stay hidden, so there's one answer per search. Once v50 ships you can turn math-slot off: this replaces it without calling api.mathjs.org.
+
 ## Not in this preview yet
 The Paywall tag's archive link (M5). Then answer cards (M3/M4) and the rest of the spec.

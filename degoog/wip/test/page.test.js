@@ -309,3 +309,30 @@ test("page: Images tab hides AI-image sites from the server's list before paint;
   const w = await run("how to reset airpods", { store, calls: [] });
   expect(w.errors).toEqual([]);
 });
+
+test("page: local answer card is in the panel area in the same pass as the results; back after degoog clears it; none on other searches", async () => {
+  const { document, win, fire, errors } = await run("5 mi in km");
+  const g = document.getElementById("at-a-glance");
+  const card = g.querySelector(".ct-ans");
+  expect(card && card.querySelector(".ct-ans-value").textContent).toBe("8.04672 km");
+  expect(card.querySelector(".ct-ans-label").textContent).toContain("Unit converter");
+  expect(card.dataset.copy).toBe("8.04672");
+  expect(g.firstElementChild).toBe(card);
+  // degoog clears the panel area at the start of each search: the card is put back in the same pass
+  g.innerHTML = "";
+  fire([]);
+  expect(g.querySelector(".ct-ans .ct-ans-value").textContent).toBe("8.04672 km");
+  // Pattern answer: a blue title link
+  const p = await run("CVE-2021-44228");
+  expect(p.document.querySelector("#at-a-glance .ct-ans a.ct-ans-title").getAttribute("href")).toBe("https://nvd.nist.gov/vuln/detail/CVE-2021-44228");
+  const n = await run("how to reset airpods");
+  expect(n.document.querySelector(".ct-ans")).toBeNull();
+  // Tap copies and says so in the label line
+  let copied = "";
+  win.navigator.clipboard.writeText = async (t) => { copied = t; };
+  g.querySelector(".ct-ans .ct-ans-value").dispatchEvent(new win.MouseEvent("click", { bubbles: true }));
+  await new Promise((r) => setTimeout(r, 5));
+  expect(copied).toBe("8.04672");
+  expect(g.querySelector(".ct-ans").classList.contains("ct-copied")).toBe(true);
+  expect(errors).toEqual([]);
+});
