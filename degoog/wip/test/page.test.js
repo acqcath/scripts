@@ -82,7 +82,7 @@ const run = async (q, opts = {}) => {
   });
   new Function("scope", `with (scope) {\nconst __PLUGIN_ID__="clean-titles";\n${CODE}\n}`)(scope);
   const fire = (nodes) => { for (const m of mos) m.cb([{ type: "childList", addedNodes: nodes }], m); };
-  const res = REC.searches.find((x) => x.q === q && (opts.type ? x.type === opts.type : !x.type || x.type === "web")).results;
+  const res = opts.res || REC.searches.find((x) => x.q === q && (opts.type ? x.type === opts.type : !x.type || x.type === "web")).results;
   // The page script starts at page load, before any results (as in degoog: results come from a later fetch)
   if (document.readyState === "loading") await new Promise((r) => document.addEventListener("DOMContentLoaded", r, { once: true }));
   await new Promise((r) => setTimeout(r, opts.engines || 0)); // the engines' time, while early answers arrive
@@ -320,6 +320,26 @@ const QS = { q: ["What is Python used for?", "Is Python hard to learn?"] };
   expect(errors).toEqual([]);
   const w = await run("how to reset airpods", { store, calls: [] });
   expect(w.errors).toEqual([]);
+});
+
+(HAS_RECS ? test : test.skip)("page: Images tab folds images with none of the search's words ('graphic' doesn't bring porn in); on-topic ones stay", async () => {
+  const R = (title, url) => ({ title, url, thumbnail: "" });
+  const res = [
+    R("Inductive Sensor Proximity Sensor", "https://favpng.com/a"), R("Photo computer graphic video card", "https://www.freepik.com/b"),
+    R("Researchers have created a bendable transparent display", "https://newatlas.com/c"), R("Proximity Sensor - Sensor Clipart", "https://flyclipart.com/d"),
+    R("Gigi Rivera Cum Drenched Bukkake", "https://ge.xhamster.desi/e"), R("Cum drenched Foto Porno", "https://es.eporner.com/f"),
+    R("A semi-transparent Sony camera", "https://petapixel.com/g"), R("Q26 Clear Object Detection Sensor", "https://www.bannerengineering.com/h"),
+  ];
+  const { document, errors } = await run("sensors graphic transparent", { type: "images", res });
+  const cards = [...document.querySelectorAll(".image-card")];
+  const hidden = cards.filter((c) => c.style.display === "none").map((c) => c.querySelector(".image-source").textContent).sort();
+  expect(hidden).toEqual(["es.eporner.com", "ge.xhamster.desi"]);
+  const b = document.querySelector(".ct-fold-img .ct-fold-b");
+  expect(b.textContent).toContain("2 unrelated images");
+  b.click();
+  expect(cards.every((c) => c.style.display !== "none")).toBe(true);
+  expect(document.querySelector(".ct-fold-img")).toBe(null);
+  expect(errors).toEqual([]);
 });
 
 (HAS_RECS ? test : test.skip)("page: local answer card is in the panel area in the same pass as the results; back after degoog clears it; none on other searches", async () => {
