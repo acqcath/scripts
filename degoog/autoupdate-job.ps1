@@ -24,8 +24,11 @@ try {
   try { $out = & ([scriptblock]::Create($code)) *>&1 | Out-String -Width 200 } catch { $out = "installer error: $($_.Exception.Message)" }
   "$(Get-Date -Format s) version $sha`n$out" | Set-Content -Path $log -Encoding UTF8
   if ($null -ne $clip) { try { Set-Clipboard -Value $clip } catch {} }   # the installer copies its table; keep yours
-  if ($out -match 'All PASS \(clean-titles self-check\)') { Set-Content -Path $mark -Value $sha }
-  elseif ($out -match '(\d+) FAIL \(clean-titles self-check\)') { Set-Content -Path $mark -Value $sha; Notify "$($Matches[1]) check(s) failed after updating. Paste $log into the chat." }
+  # The image/answer AI builds in the background on its first install: while the check says it isn't up yet, this
+  # version isn't marked done, so tomorrow's run installs it again and records the AI's real numbers
+  $aiPending = $out -match 'not answering yet|not active yet'
+  if ($out -match 'All PASS \(clean-titles self-check\)') { if (-not $aiPending) { Set-Content -Path $mark -Value $sha } }
+  elseif ($out -match '(\d+) FAIL \(clean-titles self-check\)') { if (-not $aiPending) { Set-Content -Path $mark -Value $sha }; Notify "$($Matches[1]) check(s) failed after updating. Paste $log into the chat." }
   else { Notify "The update didn't finish (it will try again tomorrow). Details: $log" }
 } catch {
   "update check failed $(Get-Date -Format s): $($_.Exception.Message)" | Add-Content -Path $log
