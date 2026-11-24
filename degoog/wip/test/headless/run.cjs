@@ -42,7 +42,7 @@ const page = (q) => {
   return h.replace("</body>", () => `${boot}${mod}</body>`);
 };
 (async () => {
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(process.env.CT_CHROME ? { executablePath: process.env.CT_CHROME, args: ["--no-sandbox"] } : {});
   const rows = [];
   for (const width of [390, 1280]) {
     for (const q of CASES) {
@@ -60,6 +60,8 @@ const page = (q) => {
         const body = r.request().postData() || "";
         const fx = { sports: { g: { state: "in", detail: "Q3 4:12", date: "2026-11-23T18:00Z", league: "NFL", away: { abbr: "CLE", score: "17", record: "3-7", logo: "/logo-cle.png" }, home: { abbr: "PIT", score: "24", winner: false, record: "7-3", logo: "/logo-pit.png" } } }, cmu: { c: { course: { name: "Introduction to Computer Systems", units: "12", prereqs: "15-122 and 21-127" }, fces: [["RAILING, BRIAN", 140, 4.3], ["GIBBONS, PHILLIP", 120, 4.2], ["O'HALLARON, DAVID", 90, 4.5], ["KESDEN, GREGORY", 60, 3.9]].map(([instructor, n, t]) => ({ year: 2026, semester: "spring", instructor, numRespondents: n, responseRate: "55%", hrsPerWeek: 14.3, rating: [0, 0, 0, 0, 0, 0, 0, t, 4.0], location: "Pittsburgh" })) } } };
         fx.kp = { kp: q === "golden gate bridge" ? { qid: "Q44440", title: "Golden Gate Bridge", name: "Golden Gate Bridge", type: "structure", desc: "suspension bridge in San Francisco, California, US", extract: "The Golden Gate Bridge is a suspension bridge spanning the Golden Gate, the one-mile-wide strait connecting San Francisco Bay and the Pacific Ocean.", facts: [{ k: "Location", v: "San Francisco" }, { k: "Height", v: "227 m (746 ft)" }, { k: "Opened", v: "May 27, 1937" }, { k: "Architect", v: "Irving Morrow" }], photo: "/kp-ggb.png" } : { qid: "Q26876", title: "Taylor Swift", name: "Taylor Swift", type: "person", desc: "American singer-songwriter (born 1989)", extract: "Taylor Alison Swift is an American singer-songwriter. Known for her autobiographical songwriting, artistic versatility and cultural impact, Swift is one of the best-selling music artists of all time.", facts: [{ k: "Born", v: "Dec 13, 1989" }, { k: "Occupation", v: "singer-songwriter, record producer" }], photo: "/kp-ts.png" } };
+        // CT_FIX=1: the server corrected the search ("Showing results for"), with related searches
+        if (process.env.CT_FIX) fx.fix = { fix: q, related: ["one related search", "another related search", "a third one"] };
         const m = /!cleantitles bridge (\w+)/.exec(body);
         if (u.pathname === "/api/command" && m && fx[m[1]]) return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ html: JSON.stringify(fx[m[1]]).replace(/&/g, "&amp;").replace(/</g, "&lt;") }) });
         return r.fulfill({ status: 404, body: "" }); // bridge, commands, fonts: unavailable
@@ -116,6 +118,29 @@ const page = (q) => {
       const r = await p.evaluate(() => ({ cls: window.__cls, shown: [...document.querySelectorAll("#results-list .result-item")].filter((e) => e.offsetParent).length, folds: document.querySelectorAll(".ct-fold").length, alts: document.querySelectorAll(".ct-alts").length, kp: (() => { const k = document.querySelector(".ct-kp"); if (!k || !k.offsetParent) return `none sw${document.documentElement.scrollWidth}`; const b = k.getBoundingClientRect(), f = document.querySelector("#results-list .result-item:not([style*=none])").getBoundingClientRect(); return `${Math.round(b.left)}-${Math.round(b.right)} top${Math.round(b.top - f.top)} vw${innerWidth} sw${document.documentElement.scrollWidth}`; })(), dates: document.querySelectorAll(".ct-date").length, shifts: window.__shifts }));
       if (process.env.CT_WIDE) console.log(q, width, await p.evaluate(() => [...document.querySelectorAll("body *")].filter((e) => { const b = e.getBoundingClientRect(); if (!(b.right > innerWidth + 0.5 && b.width > 0)) return false; for (let x = e.parentElement; x; x = x.parentElement) if (/auto|scroll|hidden|clip/.test(getComputedStyle(x).overflowX)) return false; return true; }).slice(0, 5).map((e) => `${e.tagName}.${e.className} ${Math.round(e.getBoundingClientRect().right)}`)));
       if (process.env.CT_HEADER) console.log(width, await p.evaluate(() => { const t0 = document.getElementById("ct-tools"); const t = t0; window.__d = t0 && [getComputedStyle(t0.parentElement).display, getComputedStyle(t0).display, t0.parentElement.id, getComputedStyle(t0).marginLeft]; console.log(JSON.stringify(window.__d)), tabs = document.getElementById("results-tabs"), bar = document.getElementById("results-search-bar"), g = document.getElementById("nav-settings-results"); const R = (e) => e ? (({ left, right, top, bottom }) => [left, right, top, bottom].map(Math.round))(e.getBoundingClientRect()) : null; return { tools: R(t), ml: t && getComputedStyle(t).marginLeft, tabs: R(tabs), tw: tabs && tabs.style.getPropertyValue("--ct-tabs-w"), d: window.__d, bar: R(bar), gear: R(g) }; }));
+      // CT_AUDIT=1: geometry of every block the page shows (left text edge vs the result titles, vertical gaps
+      // between neighbours, text wrapping where it shouldn't, anything past the right edge), for the design check
+      if (process.env.CT_AUDIT) console.log(JSON.stringify({ q, width, a: await p.evaluate(() => {
+        const vis = (e) => e && e.offsetParent && e.getBoundingClientRect().height > 0;
+        const tl = (e) => { const w = document.createTreeWalker(e, NodeFilter.SHOW_TEXT, { acceptNode: (n) => n.textContent.trim() && n.parentElement.offsetParent ? 1 : 3 }); const n = w.nextNode(); if (!n) return null; const r = document.createRange(); r.selectNodeContents(n); const b = r.getClientRects()[0]; return b ? Math.round(b.left) : null; };
+        const t0 = [...document.querySelectorAll("#results-list .result-item .result-title")].find(vis);
+        const X = t0 ? Math.round(t0.getBoundingClientRect().left) : null;
+        const nm = (e) => e.id ? "#" + e.id : (e.className && typeof e.className === "string" ? "." + e.className.trim().split(/\s+/).filter((c) => !/^(degoog|ct-in)/.test(c)).slice(0, 2).join(".") : e.tagName.toLowerCase());
+        const rows = [];
+        const seq = [...document.querySelectorAll("#results-main > *, #at-a-glance > *, #results-list > *")].filter(vis).filter((e) => e.id !== "results-list" && e.id !== "at-a-glance");
+        seq.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+        let prev = null;
+        for (const e of seq.slice(0, 16)) {
+          const b = e.getBoundingClientRect();
+          const t = e.classList.contains("result-item") ? (() => { const x = e.querySelector(".result-title"); return x ? Math.round(x.getBoundingClientRect().left) : tl(e); })() : tl(e);
+          rows.push([nm(e), Math.round(b.top), Math.round(b.height), prev ? Math.round(b.top - prev.bottom) : null, t != null && X != null ? t - X : null]);
+          prev = b;
+        }
+        const wrap = [...document.querySelectorAll("#results-main *")].filter((e) => vis(e) && getComputedStyle(e).whiteSpace === "nowrap" && getComputedStyle(e).display !== "inline" && e.getBoundingClientRect().height > parseFloat(getComputedStyle(e).lineHeight) * 1.5).map((e) => nm(e) + "<" + nm(e.parentElement) + " h" + Math.round(e.getBoundingClientRect().height) + " lh" + getComputedStyle(e).lineHeight).slice(0, 5);
+        const clipped = (e) => { for (let p = e.parentElement; p && p !== document.body; p = p.parentElement) { const o = getComputedStyle(p).overflowX; if (o !== "visible" && p.getBoundingClientRect().right <= innerWidth + 0.5) return true; } return false; };
+        const wide = [...document.querySelectorAll("#results-main *")].filter((e) => vis(e) && e.getBoundingClientRect().right > innerWidth + 0.5 && !clipped(e)).map((e) => nm(e) + "<" + nm(e.parentElement)).slice(0, 5);
+        return { X, rows, wrap, wide };
+      }) }));
       if (r.shifts.length) console.log(width, q, "\n  " + r.shifts.slice(0, 6).join("\n  "));
       delete r.shifts;
       const file = path.join(out, `${width}-${q.replace(/\W+/g, "_")}.png`);

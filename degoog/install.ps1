@@ -4903,7 +4903,7 @@ html:root { --ct-desc-pc: 15px; --ct-desc-phone: 13.5px; }
 .ct-alts a:visited { color: var(--text-link-visited); }
 .ct-alts a:hover { text-decoration: underline; }
 /* Typo fix line above results (Google's "Showing results for") */
-#ct-fix { margin: -12px 0 4px; padding-left: var(--ct-x, 0px); font-size: 14px; line-height: 21px; color: var(--text-secondary); }
+#ct-fix { margin: 0 0 4px; padding-left: var(--ct-x, 0px); font-size: 14px; line-height: 21px; color: var(--text-secondary); }
 /* Everything the plugin adds enters with degoog's own result fade-in */
 .ct-in { animation: resultFadeIn .3s ease-out both; }
 /* Sharp thumbnail laid over the small one: same box, opacity only (resultFadeIn also slides, which a picture
@@ -5049,6 +5049,8 @@ html:root { --ct-desc-pc: 15px; --ct-desc-phone: 13.5px; }
   #results-layout:not(.media-mode) #results-main { display: contents; }
   #results-layout:not(.media-mode) #results-main > * { grid-column: 1; order: 2; max-width: 44rem !important; }
   #results-layout:not(.media-mode) #at-a-glance { order: 1; }
+  /* "Showing results for" first, above the answer card too (as on phones and Google) */
+  #results-layout:not(.media-mode) #results-main > #ct-fix { order: 1; margin-bottom: 0; }
   #results-layout:not(.media-mode) #sidebar-col {
     grid-column: 1; order: 0; width: auto !important;
     margin: 16px 0 0 -16px !important; max-width: calc(44rem + 16px) !important;
@@ -5665,6 +5667,12 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
    hyphenate long words on narrow screens so lines stay even instead of ragged */
 .result-item :is(.result-title, .result-snippet), .ct-ct, .ct-ans-text, .ct-kp, .ct-ai-text { overflow-wrap: anywhere; }
 @media (max-width: 767px) { .result-snippet, .ct-ans-text, .ct-ai-text { hyphens: auto; } }
+/* Phones: the answer area (answer card, AI summary, knowledge panel) keeps the same 24px before what follows as on
+   PC (degoog's own 1rem made it 16 on phones only) */
+@media (max-width: 767px) {
+  #at-a-glance:not(:empty) { margin-bottom: 24px !important; }
+  .ct-kp { margin-bottom: 24px; }
+}
 
 '@)
 [IO.File]::WriteAllText("$t\setcss.js", @'
