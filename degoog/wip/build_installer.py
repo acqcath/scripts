@@ -60,6 +60,25 @@ assert m, 'self-check block changed on main'
 out = out[:m.start()] + ('# Self-check: every feature against the live sources from this server; feature names + status only\n'
     '[IO.File]::WriteAllText("$env:TEMP\\ct-check.js", @\'\n' + chk + "\n'@)\n"
     'docker cp "$env:TEMP\\ct-check.js" "${c}:/tmp/ct-check.js"; docker exec $c bun /tmp/ct-check.js; docker exec $c rm -f /tmp/ct-check.js; Remove-Item -Force "$env:TEMP\\ct-check.js"') + out[m.end():]
+# Image AI (files/vision): a ct-vision container next to degoog (SigLIP 2 on the GPU), built and started by a small
+# docker-cli container in the background, so the first build (PyTorch + model, a few GB) never holds up the installer
+import hashlib
+vfiles = {n: open(f'files/vision/{n}', encoding='utf-8').read() for n in ['Dockerfile', 'app.py', 'setup.sh']}
+for n, b in vfiles.items(): assert "\n'@" not in b and '\r' not in b, n
+vtag = hashlib.sha256(''.join(vfiles[n] for n in sorted(vfiles)).encode()).hexdigest()[:12]
+vblock = ('# Image AI (ct-vision): SigLIP 2 on the GPU next to degoog; built/started in the background by a docker-cli container\n'
+  '$vd = Join-Path $env:TEMP "ct-vision"; Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $vd; New-Item -ItemType Directory $vd | Out-Null\n'
+  + ''.join(f'[IO.File]::WriteAllText("$vd\\{n}", (@\'\n{b}\n\'@).Replace("`r", ""))\n' for n, b in vfiles.items())
+  + f'[IO.File]::WriteAllText("$vd\\tag", "{vtag}")\n'
+  'docker network inspect ct-net 2>&1 | Out-Null; if ($LASTEXITCODE -ne 0) { docker network create ct-net | Out-Null }\n'
+  'docker network connect ct-net $c 2>&1 | Out-Null\n'
+  'docker rm -f ct-vision-setup 2>&1 | Out-Null\n'
+  'docker create --name ct-vision-setup -v /var/run/docker.sock:/var/run/docker.sock docker:27-cli sh /src/setup.sh | Out-Null\n'
+  'docker cp "$vd\\." ct-vision-setup:/src | Out-Null; docker start ct-vision-setup | Out-Null\n'
+  'Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $vd\n')
+old = 'Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $t\ndocker restart $c | Out-Null'
+assert out.count(old) == 1
+out = out.replace(old, vblock + old)
 target = 'install-preview.ps1' if mode == 'preview' else '../install.ps1'
 open(target, 'w', encoding='utf-8', newline='\n').write(out)
 print(target, len(out), 'chars,', ver)

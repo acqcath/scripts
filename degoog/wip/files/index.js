@@ -1298,7 +1298,43 @@ export const interceptor = {
   },
 };
 
+// Image AI (ct-vision container next to degoog, SigLIP 2 on the GPU): how well each image shows the search, and which
+// images look alike. Down or missing -> null, and the page just keeps its word rule.
+const VIS = process.env.CT_VISION_URL || "http://ct-vision:8077";
+let visDownUntil = 0;
+const vis = async (path, body, ms) => {
+  if (Date.now() < visDownUntil) return null;
+  try {
+    const r = await fetch(VIS + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(ms) });
+    return r.ok ? await r.json() : null;
+  } catch (e) { if (!(e && e.name === "TimeoutError")) visDownUntil = Date.now() + 60000; return null; }
+};
+const jsonOut = (o) => new Response(JSON.stringify(o), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+
 export const routes = [
+  {
+    // Image AI: {q, u: [image addresses]} -> {p: [0..1 or null]} (how well each picture shows the search)
+    method: "post",
+    path: "/vis",
+    async handler(req) {
+      let b = {};
+      try { b = await req.json(); } catch {}
+      const q = String(b.q || "").slice(0, 200), urls = Array.isArray(b.u) ? b.u.slice(0, 300).map(String) : [];
+      const j = await vis("/score", { q, urls, budget: 1.6 }, 2500);
+      return jsonOut(j && Array.isArray(j.p) ? { p: j.p, ms: j.ms, d: j.device } : { p: null });
+    },
+  },
+  {
+    // Image AI: {u: opened image, us: others} -> {sim: [-1..1 or null]} (how alike they look)
+    method: "post",
+    path: "/near",
+    async handler(req) {
+      let b = {};
+      try { b = await req.json(); } catch {}
+      const j = await vis("/near", { url: String(b.u || ""), urls: Array.isArray(b.us) ? b.us.slice(0, 300).map(String) : [], budget: 1 }, 1800);
+      return jsonOut(j && Array.isArray(j.sim) ? { sim: j.sim } : { sim: null });
+    },
+  },
   {
     method: "get",
     path: "/fix",

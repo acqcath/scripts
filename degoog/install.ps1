@@ -1301,7 +1301,43 @@ export const interceptor = {
   },
 };
 
+// Image AI (ct-vision container next to degoog, SigLIP 2 on the GPU): how well each image shows the search, and which
+// images look alike. Down or missing -> null, and the page just keeps its word rule.
+const VIS = process.env.CT_VISION_URL || "http://ct-vision:8077";
+let visDownUntil = 0;
+const vis = async (path, body, ms) => {
+  if (Date.now() < visDownUntil) return null;
+  try {
+    const r = await fetch(VIS + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(ms) });
+    return r.ok ? await r.json() : null;
+  } catch (e) { if (!(e && e.name === "TimeoutError")) visDownUntil = Date.now() + 60000; return null; }
+};
+const jsonOut = (o) => new Response(JSON.stringify(o), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+
 export const routes = [
+  {
+    // Image AI: {q, u: [image addresses]} -> {p: [0..1 or null]} (how well each picture shows the search)
+    method: "post",
+    path: "/vis",
+    async handler(req) {
+      let b = {};
+      try { b = await req.json(); } catch {}
+      const q = String(b.q || "").slice(0, 200), urls = Array.isArray(b.u) ? b.u.slice(0, 300).map(String) : [];
+      const j = await vis("/score", { q, urls, budget: 1.6 }, 2500);
+      return jsonOut(j && Array.isArray(j.p) ? { p: j.p, ms: j.ms, d: j.device } : { p: null });
+    },
+  },
+  {
+    // Image AI: {u: opened image, us: others} -> {sim: [-1..1 or null]} (how alike they look)
+    method: "post",
+    path: "/near",
+    async handler(req) {
+      let b = {};
+      try { b = await req.json(); } catch {}
+      const j = await vis("/near", { url: String(b.u || ""), urls: Array.isArray(b.us) ? b.us.slice(0, 300).map(String) : [], budget: 1 }, 1800);
+      return jsonOut(j && Array.isArray(j.sim) ? { sim: j.sim } : { sim: null });
+    },
+  },
   {
     method: "get",
     path: "/fix",
@@ -3376,6 +3412,69 @@ const aiImg = (host) => { if (!AIIMG || !host) return false; for (let h = host; 
 // Relevance on the Images and Videos tabs too (same one rule as Web, on the title and site): an image or video with
 // none of the search's words and not on the topic the related ones share goes behind "N unrelated images ⌄" /
 // "N unrelated videos ⌄" at the end ("graphic" in a search doesn't bring porn in). Decided before paint, a batch at a time.
+// ===== Image AI (ct-vision on the PC's GPU, through this plugin's server) =====
+// Each picture gets a 0..1 "shows the search" score from SigLIP 2. Pictures far below this page's typical score fold
+// (a dick under "kalimba" folds even when its title says kalimba); pictures the words rule folded but the AI sees as
+// on-topic come back. Cards wait for their score (at most 0.9 s, pictures hidden, nothing moves) before they show.
+const origOf = (src) => { try { const u = new URL(src, location.href); return /\/proxy\/image$/.test(u.pathname) ? u.searchParams.get("url") || "" : u.href; } catch { return ""; } };
+// Off for this page when the AI doesn't answer, and for 10 min in this browser (no waiting on a missing AI)
+let VISON = (() => { try { return Date.now() - Number(localStorage.getItem("ct-visoff") || 0) > 600000; } catch { return true; } })();
+const VS = { key: "", p: new Map(), q: [], t: 0 };
+const visThr = () => {
+  const v = [...VS.p.values()].filter((x) => typeof x === "number").sort((a, b) => a - b);
+  if (v.length < 6) return null;
+  const med = v[Math.floor(v.length / 2)];
+  return { low: Math.min(0.02, med * 0.05), mid: med };
+};
+const visAsk = (q, urls) => bridge("vis", {}, JSON.stringify({ q, u: urls })).then((j) => {
+  if (!j || !Array.isArray(j.p)) { VISON = false; try { localStorage.setItem("ct-visoff", String(Date.now())); } catch {} return null; }
+  urls.forEach((u, i) => VS.p.set(u, j.p[i]));
+  return j;
+}).catch(() => { VISON = false; return null; });
+const visQueue = (el, kind) => {
+  if (!VISON) return;
+  visKey();
+  const u = origOf(el.querySelector("img")?.getAttribute("src") || "");
+  if (!u) return;
+  el.dataset.ctV = u;
+  el.classList.add("ct-vpend");
+  VS.q.push([el, kind]);
+  if (VS.q.length === 1) queueMicrotask(visFlush);
+};
+const visFlush = () => {
+  const batch = VS.q.splice(0);
+  if (!batch.length) return;
+  let q0 = "";
+  try { q0 = new URL(location.href).searchParams.get("q") || ""; } catch {}
+  const show = () => batch.forEach(([el]) => el.classList.remove("ct-vpend"));
+  const timer = setTimeout(show, 900);
+  visAsk(q0, [...new Set(batch.map(([el]) => el.dataset.ctV))]).then(() => { clearTimeout(timer); visApply(); show(); });
+};
+const visKey = () => { const key = searchId(location.href); if (VS.key !== key) { VS.key = key; VS.p.clear(); VS.q = []; } };
+// Web's Images row: pictures the AI sees as off-topic leave the row (also when the score comes after the row is drawn)
+const visRow = () => {
+  const th = visThr();
+  if (!th) return;
+  for (const a of document.querySelectorAll(".ct-imgs .ct-im[data-ct-v]")) { const p = VS.p.get(a.dataset.ctV); if (typeof p === "number" && p < th.low) a.remove(); }
+};
+const visApply = () => {
+  const th = visThr();
+  if (!th) return;
+  for (const kind of ["image", "video"]) {
+    const R = MR[kind];
+    const fold = [], back = [];
+    for (const el of document.querySelectorAll(`.${kind}-card[data-ct-v]`)) {
+      const p = VS.p.get(el.dataset.ctV);
+      if (typeof p !== "number" || el.dataset.ctAi) continue;
+      if (p < th.low && !el.dataset.ctUnrel) fold.push(el);
+      else if (p >= th.mid && el.dataset.ctUnrel && R && R.out.includes(el)) back.push(el);
+    }
+    for (const el of back) { R.out.splice(R.out.indexOf(el), 1); el.style.display = ""; delete el.dataset.ctUnrel; }
+    if (fold.length) { for (const el of fold) { el.style.display = "none"; el.dataset.ctUnrel = "1"; } mediaFoldAdd(kind, fold); }
+    else if (back.length && R) mediaFoldAdd(kind, []);
+  }
+  visRow();
+};
 const MR = {};
 const mediaRel = (el, kind, text, title) => {
   readQuery();
@@ -3397,9 +3496,17 @@ const mediaFold = (kind) => {
   const same = CT.topicOf(R.rel, qWords);
   const out = [];
   for (const [el, r] of R.q.splice(0)) { if (same(r)) { el.style.display = ""; delete el.dataset.ctUnrel; } else out.push(el); }
-  if (!out.length) return;
+  if (out.length) mediaFoldAdd(kind, out);
+};
+const mediaFoldAdd = (kind, out) => {
+  const key = searchId(location.href);
+  let R = MR[kind];
+  if (!R || R.key !== key) R = MR[kind] = { key, q: [], rel: [], btn: null, out: [] };
   R.out.push(...out);
-  const grid = out[0].closest(".image-grid, .video-grid") || out[0].parentElement;
+  const n = R.out.length;
+  const first = R.out[0];
+  if (!n) { R.btn?.closest(".ct-fold")?.remove(); R.btn = null; return; }
+  const grid = first.closest(".image-grid, .video-grid") || first.parentElement;
   if (!grid) return;
   let row = R.btn?.closest(".ct-fold");
   if (!row) {
@@ -3410,7 +3517,7 @@ const mediaFold = (kind) => {
     b.addEventListener("click", () => { for (const x of R.out.splice(0)) { x.style.display = ""; delete x.dataset.ctUnrel; fadeIn(x); } row.remove(); R.btn = null; });
     R.btn = b;
   }
-  const n = R.out.length, w = kind === "video" ? "video" : "image";
+  const w = kind === "video" ? "video" : "image";
   R.btn.replaceChildren(`${n} unrelated ${w}${n > 1 ? "s" : ""}`, mk("span", "ct-chev", "⌄"));
   grid.after(row); // after the grid, so it stays at the end as more load
 };
@@ -3452,17 +3559,35 @@ const relatedStrip = () => {
   const scored = pool.map((c, i) => {
     const t = `${title(c)} ${c.querySelector(`.${kind}-source`)?.textContent || ""}`;
     return { c, i, s: 2 * CT.matchShare(mine, t) * mine.length + (CT.matchShare(qWords, t) > 0 ? 1 : 0) };
-  }).sort((a, b) => b.s - a.s || a.i - b.i).slice(0, n);
+  }).sort((a, b) => b.s - a.s || a.i - b.i);
   const grid = mk("div", "media-preview-more-grid");
   grid.dataset.ct = "1";
-  for (const { c } of scored) {
-    const b = mk("button", "media-preview-more-item"); b.type = "button";
-    const im = mk("img", "media-preview-more-img"); im.loading = "lazy"; im.src = c.querySelector("img").getAttribute("src"); im.alt = title(c);
-    im.onerror = () => { b.style.display = "none"; };
-    b.append(im);
-    b.addEventListener("click", () => { c.click(); c.scrollIntoView({ block: "nearest", behavior: "smooth" }); });
-    grid.append(b);
-  }
+  const draw = (list) => {
+    grid.replaceChildren();
+    for (const c of list.slice(0, n)) {
+      const b = mk("button", "media-preview-more-item"); b.type = "button";
+      const im = mk("img", "media-preview-more-img"); im.loading = "lazy"; im.src = c.querySelector("img").getAttribute("src"); im.alt = title(c);
+      im.onerror = () => { b.style.display = "none"; };
+      b.append(im);
+      b.addEventListener("click", () => { c.click(); c.scrollIntoView({ block: "nearest", behavior: "smooth" }); });
+      grid.append(b);
+    }
+  };
+  const words = () => draw(scored.map((x) => x.c));
+  // Image AI: the ones that look most like the opened picture (waits at most 0.6 s, hidden meanwhile, so the strip
+  // never reshuffles in front of you); no AI answer -> the words order
+  const me = origOf(sel.querySelector("img")?.getAttribute("src") || "");
+  if (VISON && me && pool.length) {
+    grid.style.visibility = "hidden";
+    let done = false;
+    const fin = (list) => { if (done) return; done = true; if (list) draw(list); else words(); grid.style.visibility = ""; };
+    setTimeout(() => fin(null), 600);
+    const us = pool.map((c) => origOf(c.querySelector("img").getAttribute("src")));
+    bridge("near", {}, JSON.stringify({ u: me, us })).then((j) => {
+      if (!j || !Array.isArray(j.sim)) return fin(null);
+      fin(pool.map((c, i) => ({ c, v: typeof j.sim[i] === "number" ? j.sim[i] : -2, i })).sort((x, y) => y.v - x.v || x.i - y.i).map((x) => x.c));
+    }).catch(() => fin(null));
+  } else words();
   g.replaceWith(grid);
 };
 // Web's own rows (Images row, Videos box) use the same rule
@@ -3474,9 +3599,10 @@ const card = (el, isImage) => {
   const host = raw.toLowerCase().replace(/^www\./, "");
   const text = t && t.textContent || "";
   if (t && !t.dataset.ctTidy) { t.dataset.ctTidy = "1"; const x = CT.tidyTitle(text.replace(/\s+/g, " ").trim()); if (x !== text.trim()) t.textContent = x; }
-  if (!isImage) { mediaRel(el, "video", `https://${host}/ ${text}`, text); return; }
+  if (!isImage) { mediaRel(el, "video", `https://${host}/ ${text}`, text); visQueue(el, "video"); return; }
   if (aiImg(host)) { el.style.display = "none"; el.dataset.ctAi = "1"; return; }
   mediaRel(el, "image", `https://${host}/ ${text}`, text);
+  visQueue(el, "image");
   if (src && host !== raw) src.textContent = host;
   if (t && host) {
     const out = cleanTitle(text, `https://${host}/`);
@@ -3618,7 +3744,11 @@ const earlyStart = () => {
       const e = { key, data: undefined };
       early.set("img", e);
       fetch(`/api/search?q=${encodeURIComponent(q)}&type=images`).then((x) => (x.ok ? x.json() : null))
-        .then((j) => { e.data = j && Array.isArray(j.results) ? j : null; }, () => { e.data = null; });
+        .then((j) => {
+          e.data = j && Array.isArray(j.results) ? j : null;
+          // Image AI scores the row's pictures now, in parallel with the web results
+          if (e.data && VISON) { visKey(); visAsk(q, [...new Set(e.data.results.slice(0, 40).map((x) => origOf(x.thumbnail || "")).filter(Boolean))]).then(visRow); }
+        }, () => { e.data = null; });
     }
     // Top stories: the News search starts now, in parallel, only for a search that looked like news last time
     if (SHOW.news && !shaped(q) && newsy.has(qHash(q))) {
@@ -4317,12 +4447,13 @@ const groups = () => {
     G.img = true;
     const j = ready("img", key);
     const t = j && [...list.querySelectorAll(".result-item")].find(shown);
-    const pics = j ? (j.results || []).filter((x) => x && x.thumbnail && x.url && relOk(x.title, x.url) && !aiImg((() => { try { return new URL(x.url).hostname.replace(/^www\./, ""); } catch { return ""; } })())).slice(0, 12) : [];
+    const th = visThr();
+    const pics = j ? (j.results || []).filter((x) => x && x.thumbnail && x.url && relOk(x.title, x.url) && !(th && VS.p.get(origOf(x.thumbnail)) < th.low) && !aiImg((() => { try { return new URL(x.url).hostname.replace(/^www\./, ""); } catch { return ""; } })())).slice(0, 12) : [];
     if (t && pics.length >= 4) {
       const s = section("ct-imgs", "Images");
       const [wrap, row] = scroller();
       for (const x of pics) {
-        const a = mk("a", "ct-im"); a.href = x.url; a.rel = "noopener";
+        const a = mk("a", "ct-im"); a.href = x.url; a.rel = "noopener"; a.dataset.ctV = origOf(x.thumbnail);
         a.title = String(x.title || "");
         const i = mk("img"); i.alt = String(x.title || ""); i.decoding = "async"; i.loading = "lazy";
         i.onload = () => i.classList.add("ct-on"); i.onerror = () => { i.style.visibility = "hidden"; };
@@ -5788,6 +5919,9 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 #media-preview-info .media-preview-title a.ct-pv-t { color: inherit; text-decoration: none; }
 @media (hover: hover) { #media-preview-info .media-preview-title a.ct-pv-t:hover { text-decoration: underline; } }
 #media-preview-img { cursor: pointer !important; }
+/* Image AI: a card waits (picture hidden, its place kept) until the AI has scored it, at most 0.9 s */
+:is(.image-card, .video-card).ct-vpend img { opacity: 0 !important; }
+:is(.image-card, .video-card) img { transition: opacity .15s ease; }
 
 '@)
 [IO.File]::WriteAllText("$t\setcss.js", @'
@@ -5931,6 +6065,170 @@ if (changed.length) {
 
 '@)
 docker cp "$t\safeoff.js" "${c}:/tmp/safeoff.js"; docker exec $c bun /tmp/safeoff.js; docker exec $c rm -f /tmp/safeoff.js
+# Image AI (ct-vision): SigLIP 2 on the GPU next to degoog; built/started in the background by a docker-cli container
+$vd = Join-Path $env:TEMP "ct-vision"; Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $vd; New-Item -ItemType Directory $vd | Out-Null
+[IO.File]::WriteAllText("$vd\Dockerfile", (@'
+# ct-vision: image AI for clean-titles (SigLIP 2 on the GPU; CPU if no GPU). PyTorch from the CUDA 12.8 wheels, the
+# first builds with RTX 50 (Blackwell, sm_120) kernels.
+FROM python:3.12-slim
+ENV PIP_NO_CACHE_DIR=1 PYTHONUNBUFFERED=1 HF_HOME=/cache HF_HUB_DISABLE_TELEMETRY=1
+RUN pip install --index-url https://download.pytorch.org/whl/cu128 "torch>=2.7" && \
+    pip install "transformers>=4.51,<5" "sentencepiece" "protobuf" "pillow>=10" "fastapi>=0.110" "uvicorn>=0.29" "httpx>=0.27"
+COPY app.py /app/app.py
+WORKDIR /app
+EXPOSE 8077
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8077", "--workers", "1", "--log-level", "warning"]
+
+'@).Replace("`r", ""))
+[IO.File]::WriteAllText("$vd\app.py", (@'
+# ct-vision: SigLIP 2 image/text embeddings for clean-titles. Two questions, answered fast from a cache:
+#   POST /score {q, urls}  -> how well each image shows the search (0..1, SigLIP's own probability) + timing
+#   POST /near  {url, urls} -> the urls ordered by how alike they look to url
+# Images are fetched once, embedded once (fp16 on the GPU), kept by address (LRU), so the Images row, the Images tab
+# and the preview's related images all reuse the same work. Nothing is stored on disk except the model download.
+import asyncio, io, os, time
+from collections import OrderedDict
+import httpx, torch
+from PIL import Image
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+from transformers import AutoModel, AutoProcessor
+
+MODEL = os.environ.get("CT_VISION_MODEL", "google/siglip2-base-patch16-224")
+dev = "cuda" if torch.cuda.is_available() else "cpu"
+dtype = torch.float16 if dev == "cuda" else torch.float32
+torch.set_num_threads(max(1, min(4, os.cpu_count() or 1)))
+model = AutoModel.from_pretrained(MODEL, torch_dtype=dtype).to(dev).eval()
+proc = AutoProcessor.from_pretrained(MODEL)
+scale = model.logit_scale.exp().item()
+bias = model.logit_bias.item()
+gpu = torch.cuda.get_device_name(0) if dev == "cuda" else ""
+
+class LRU(OrderedDict):
+    def __init__(self, n): super().__init__(); self.n = n
+    def get1(self, k):
+        v = super().get(k)
+        if v is not None: self.move_to_end(k)
+        return v
+    def put(self, k, v):
+        self[k] = v; self.move_to_end(k)
+        while len(self) > self.n: self.popitem(last=False)
+
+IMG = LRU(40000)   # url -> unit embedding (cpu fp16), or False when the image can't be read
+TXT = LRU(4000)    # query -> unit embedding
+lock = asyncio.Lock()
+http = httpx.AsyncClient(timeout=httpx.Timeout(2.5, connect=1.5), follow_redirects=True, limits=httpx.Limits(max_connections=48),
+                         headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36", "Accept": "image/avif,image/webp,image/*,*/*;q=0.8"})
+app = FastAPI()
+
+async def fetch(url):
+    try:
+        r = await http.get(url)
+        if r.status_code != 200 or len(r.content) > 8_000_000: return None
+        im = Image.open(io.BytesIO(r.content)); im.draft("RGB", (448, 448))
+        return im.convert("RGB")
+    except Exception:
+        return None
+
+@torch.inference_mode()
+def embed_images(ims):
+    out = []
+    for i in range(0, len(ims), 64):
+        x = proc(images=ims[i:i + 64], return_tensors="pt")["pixel_values"].to(dev, dtype)
+        e = model.get_image_features(pixel_values=x)
+        out.append(torch.nn.functional.normalize(e.float(), dim=-1).half().cpu())
+    return torch.cat(out) if out else torch.empty(0)
+
+@torch.inference_mode()
+def embed_text(q):
+    t = TXT.get1(q)
+    if t is not None: return t
+    x = proc(text=[f"a photo of {q.lower()}."], padding="max_length", max_length=64, truncation=True, return_tensors="pt").to(dev)
+    e = torch.nn.functional.normalize(model.get_text_features(**x).float(), dim=-1)[0].half().cpu()
+    TXT.put(q, e)
+    return e
+
+async def ensure(urls, budget):
+    # Fetch what isn't cached (in parallel, within the time budget), then embed in one batch on the GPU
+    todo = list(dict.fromkeys(u for u in urls if IMG.get1(u) is None))
+    if todo:
+        tasks = [asyncio.create_task(fetch(u)) for u in todo]
+        done, pending = await asyncio.wait(tasks, timeout=budget)
+        for t in pending: t.cancel()
+        got = [(u, t.result()) for u, t in zip(todo, tasks) if t in done]
+        ok = [(u, im) for u, im in got if im is not None]
+        for u, im in got:
+            if im is None: IMG.put(u, False)
+        if ok:
+            async with lock:
+                embs = await asyncio.to_thread(embed_images, [im for _, im in ok])
+            for (u, _), e in zip(ok, embs): IMG.put(u, e)
+    return [IMG.get1(u) for u in urls]
+
+@app.get("/health")
+async def health():
+    return {"ok": True, "device": dev, "gpu": gpu, "model": MODEL, "cached": len(IMG)}
+
+@app.post("/score")
+async def score(body: dict):
+    t0 = time.perf_counter()
+    q = str(body.get("q") or "")[:200]
+    urls = [str(u)[:2000] for u in (body.get("urls") or [])][:300]
+    budget = min(4.0, max(0.3, float(body.get("budget") or 1.5)))
+    if not q or not urls: return {"p": [], "ms": 0, "device": dev}
+    embs = await ensure(urls, budget)
+    async with lock:
+        te = await asyncio.to_thread(embed_text, q)
+    p = []
+    for e in embs:
+        if e is None or e is False: p.append(None); continue
+        logit = float((e.float() @ te.float()).item()) * scale + bias
+        p.append(round(1 / (1 + pow(2.718281828, -logit)), 5))
+    return {"p": p, "ms": round((time.perf_counter() - t0) * 1000), "device": dev}
+
+@app.post("/near")
+async def near(body: dict):
+    t0 = time.perf_counter()
+    url = str(body.get("url") or "")[:2000]
+    urls = [str(u)[:2000] for u in (body.get("urls") or [])][:300]
+    if not url or not urls: return {"sim": [], "ms": 0}
+    embs = await ensure([url] + urls, float(body.get("budget") or 1.0))
+    a = embs[0]
+    sim = [None if (a is None or a is False or e is None or e is False) else round(float((a.float() @ e.float()).item()), 4) for e in embs[1:]]
+    return {"sim": sim, "ms": round((time.perf_counter() - t0) * 1000)}
+
+@app.exception_handler(Exception)
+async def err(_, e):
+    return JSONResponse({"error": type(e).__name__}, status_code=500)
+
+'@).Replace("`r", ""))
+[IO.File]::WriteAllText("$vd\setup.sh", (@'
+# Runs inside a small docker-cli container (so a long first build never holds up the installer): builds ct-vision
+# when its files changed, (re)starts it on the GPU next to degoog (CPU if Docker has no GPU), drops older builds.
+set -e
+cd /src
+TAG="ct-vision:$(cat tag)"
+docker image inspect "$TAG" >/dev/null 2>&1 || docker build -q -t "$TAG" . >/dev/null
+cur=$(docker inspect -f '{{.Config.Image}}' ct-vision 2>/dev/null || true)
+if [ "$cur" != "$TAG" ] || [ "$(docker inspect -f '{{.State.Running}}' ct-vision 2>/dev/null)" != "true" ]; then
+  docker rm -f ct-vision >/dev/null 2>&1 || true
+  # Caps so it can never crowd the PC: 4 GB RAM, 4 CPU cores; the GPU only works while you search
+  if ! docker run -d --name ct-vision --network ct-net --restart unless-stopped --gpus all --memory 4g --cpus 4 -v ct-vision-cache:/cache "$TAG" >/dev/null; then
+    docker rm -f ct-vision >/dev/null 2>&1 || true
+    docker run -d --name ct-vision --network ct-net --restart unless-stopped --memory 4g --cpus 4 -v ct-vision-cache:/cache "$TAG" >/dev/null
+  fi
+fi
+for i in $(docker images ct-vision --format '{{.Repository}}:{{.Tag}}'); do [ "$i" = "$TAG" ] || docker rmi "$i" >/dev/null 2>&1 || true; done
+echo "ct-vision ready: $TAG"
+
+'@).Replace("`r", ""))
+[IO.File]::WriteAllText("$vd\tag", "38a28dd0316e")
+docker network inspect ct-net 2>&1 | Out-Null; if ($LASTEXITCODE -ne 0) { docker network create ct-net | Out-Null }
+docker network connect ct-net $c 2>&1 | Out-Null
+docker rm -f ct-vision-setup 2>&1 | Out-Null
+docker create --name ct-vision-setup -v /var/run/docker.sock:/var/run/docker.sock docker:27-cli sh /src/setup.sh | Out-Null
+docker cp "$vd\." ct-vision-setup:/src | Out-Null; docker start ct-vision-setup | Out-Null
+Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $vd
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $t
 docker restart $c | Out-Null
 $null = docker exec $c sh -c 'for i in $(seq 1 40); do curl -fs -o /dev/null http://127.0.0.1:${DEGOOG_PORT:-4444}/readyz && exit 0; sleep 1; done'
@@ -6079,6 +6377,32 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
       note = `http ${r.status}, ${n >= 0 ? `${n} results` : `not JSON: ${txt.slice(0, 40).replace(/\s+/g, " ")}`}, ${Date.now() - t0} ms`;
     } catch (e) { note = `no answer: ${String(e && e.message || e).slice(0, 50)}`; }
     rows.push(["Wikipedia API from this server", ok ? "PASS" : "INFO", note]);
+  }
+  // Image AI (ct-vision next to degoog): running on the GPU?, how fast, and what it would fold on a test image search
+  {
+    const V = "http://ct-vision:8077";
+    let h = null;
+    try { h = await (await fetch(`${V}/health`, { signal: AbortSignal.timeout(5000) })).json(); } catch {}
+    if (!h) rows.push(["Image AI (ct-vision)", "INFO", "not answering yet: the first build downloads PyTorch + the model (a few GB, ~10 min) in the background"]);
+    else {
+      rows.push(["Image AI (ct-vision)", h.device === "cuda" ? "PASS" : "INFO", h.device === "cuda" ? `GPU: ${h.gpu}` : "running on the CPU (GPU not available to Docker): slower"]);
+      try {
+        const j = await (await fetch(`http://127.0.0.1:${PORT}/api/search?q=kalimba&type=images`, { signal: AbortSignal.timeout(20000) })).json();
+        const res = (j.results || []).filter((x) => x && x.thumbnail).slice(0, 60);
+        const orig = (t) => { try { const u = new URL(t, "http://x"); return /\/proxy\/image$/.test(u.pathname) ? u.searchParams.get("url") : u.href; } catch { return ""; } };
+        const urls = res.map((x) => orig(x.thumbnail));
+        const post = async (path, b) => { const t0 = Date.now(); const r = await (await fetch(V + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b), signal: AbortSignal.timeout(15000) })).json(); return [r, Date.now() - t0]; };
+        const [a, cold] = await post("/score", { q: "kalimba", urls, budget: 3 });
+        const [, warm] = await post("/score", { q: "kalimba", urls, budget: 3 });
+        const [nr, nearMs] = await post("/near", { url: urls[0], urls: urls.slice(1) });
+        const ps = (a.p || []).map((p, i) => [p, res[i].title || ""]).filter(([p]) => typeof p === "number").sort((x, y) => x[0] - y[0]);
+        const med = ps.length ? ps[Math.floor(ps.length / 2)][0] : 0, low = Math.min(0.02, med * 0.05);
+        const folded = ps.filter(([p]) => p < low);
+        rows.push(["Image AI speed (60 pictures)", cold <= 2500 && warm <= 300 ? "PASS" : "INFO", `first ${cold} ms (fetch + AI), again ${warm} ms, alike ${nearMs} ms; ${ps.length}/${urls.length} pictures read`]);
+        rows.push(["Image AI on 'kalimba'", folded.length <= ps.length / 3 ? "PASS" : "INFO", `median ${med.toFixed(4)}, folds ${folded.length}: ${folded.slice(0, 4).map(([p, t]) => `${p.toFixed(5)} ${t.slice(0, 32)}`).join(" | ") || "none"}; top ${ps.slice(-2).map(([p, t]) => `${p.toFixed(3)} ${t.slice(0, 24)}`).join(" | ")}`]);
+        if (!Array.isArray(nr.sim)) rows.push(["Image AI alike", "FAIL", "no answer"]);
+      } catch (e) { rows.push(["Image AI test search", "INFO", `could not run: ${String(e && e.message || e).slice(0, 60)}`]); }
+    }
   }
   // How degoog has been opening on each device (timings the page sent, last 60 loads): median and the slowest load,
   // split into where the time went
