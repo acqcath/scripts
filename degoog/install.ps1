@@ -6094,7 +6094,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from transformers import AutoModel, AutoProcessor
 
-MODEL = os.environ.get("CT_VISION_MODEL", "google/siglip2-base-patch16-224")
+MODEL = os.environ.get("CT_VISION_MODEL", "google/siglip2-so400m-patch14-384")  # strongest open image-text model
 dev = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float16 if dev == "cuda" else torch.float32
 torch.set_num_threads(max(1, min(4, os.cpu_count() or 1)))
@@ -6133,8 +6133,8 @@ async def fetch(url):
 @torch.inference_mode()
 def embed_images(ims):
     out = []
-    for i in range(0, len(ims), 64):
-        x = proc(images=ims[i:i + 64], return_tensors="pt")["pixel_values"].to(dev, dtype)
+    for i in range(0, len(ims), 32):
+        x = proc(images=ims[i:i + 32], return_tensors="pt")["pixel_values"].to(dev, dtype)
         e = model.get_image_features(pixel_values=x)
         out.append(torch.nn.functional.normalize(e.float(), dim=-1).half().cpu())
     return torch.cat(out) if out else torch.empty(0)
@@ -6212,17 +6212,17 @@ docker image inspect "$TAG" >/dev/null 2>&1 || docker build -q -t "$TAG" . >/dev
 cur=$(docker inspect -f '{{.Config.Image}}' ct-vision 2>/dev/null || true)
 if [ "$cur" != "$TAG" ] || [ "$(docker inspect -f '{{.State.Running}}' ct-vision 2>/dev/null)" != "true" ]; then
   docker rm -f ct-vision >/dev/null 2>&1 || true
-  # Caps so it can never crowd the PC: 4 GB RAM, 4 CPU cores; the GPU only works while you search
-  if ! docker run -d --name ct-vision --network ct-net --restart unless-stopped --gpus all --memory 4g --cpus 4 -v ct-vision-cache:/cache "$TAG" >/dev/null; then
+  # Caps so it can never crowd the PC: 6 GB RAM, 4 CPU cores; the GPU only works while you search
+  if ! docker run -d --name ct-vision --network ct-net --restart unless-stopped --gpus all --memory 6g --cpus 4 -v ct-vision-cache:/cache "$TAG" >/dev/null; then
     docker rm -f ct-vision >/dev/null 2>&1 || true
-    docker run -d --name ct-vision --network ct-net --restart unless-stopped --memory 4g --cpus 4 -v ct-vision-cache:/cache "$TAG" >/dev/null
+    docker run -d --name ct-vision --network ct-net --restart unless-stopped --memory 6g --cpus 4 -v ct-vision-cache:/cache "$TAG" >/dev/null
   fi
 fi
 for i in $(docker images ct-vision --format '{{.Repository}}:{{.Tag}}'); do [ "$i" = "$TAG" ] || docker rmi "$i" >/dev/null 2>&1 || true; done
 echo "ct-vision ready: $TAG"
 
 '@).Replace("`r", ""))
-[IO.File]::WriteAllText("$vd\tag", "38a28dd0316e")
+[IO.File]::WriteAllText("$vd\tag", "3d19dca065c5")
 docker network inspect ct-net 2>&1 | Out-Null; if ($LASTEXITCODE -ne 0) { docker network create ct-net | Out-Null }
 docker network connect ct-net $c 2>&1 | Out-Null
 docker rm -f ct-vision-setup 2>&1 | Out-Null

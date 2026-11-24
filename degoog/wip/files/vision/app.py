@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from transformers import AutoModel, AutoProcessor
 
-MODEL = os.environ.get("CT_VISION_MODEL", "google/siglip2-base-patch16-224")
+MODEL = os.environ.get("CT_VISION_MODEL", "google/siglip2-so400m-patch14-384")  # strongest open image-text model
 dev = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float16 if dev == "cuda" else torch.float32
 torch.set_num_threads(max(1, min(4, os.cpu_count() or 1)))
@@ -50,8 +50,8 @@ async def fetch(url):
 @torch.inference_mode()
 def embed_images(ims):
     out = []
-    for i in range(0, len(ims), 64):
-        x = proc(images=ims[i:i + 64], return_tensors="pt")["pixel_values"].to(dev, dtype)
+    for i in range(0, len(ims), 32):
+        x = proc(images=ims[i:i + 32], return_tensors="pt")["pixel_values"].to(dev, dtype)
         e = model.get_image_features(pixel_values=x)
         out.append(torch.nn.functional.normalize(e.float(), dim=-1).half().cpu())
     return torch.cat(out) if out else torch.empty(0)
