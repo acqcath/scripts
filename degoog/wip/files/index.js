@@ -1325,6 +1325,17 @@ export const routes = [
     },
   },
   {
+    // Answer AI: {q, d: [passages]} -> {s: [0..1 or null]} (how well each passage answers the question)
+    method: "post",
+    path: "/rank",
+    async handler(req) {
+      let b = {};
+      try { b = await req.json(); } catch {}
+      const j = await vis("/rank", { q: String(b.q || "").slice(0, 300), docs: Array.isArray(b.d) ? b.d.slice(0, 64).map(String) : [] }, 3000);
+      return jsonOut(j && Array.isArray(j.s) ? { s: j.s } : { s: null });
+    },
+  },
+  {
     // Image AI: {u: opened image, us: others} -> {sim: [-1..1 or null]} (how alike they look)
     method: "post",
     path: "/near",

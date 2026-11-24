@@ -1328,6 +1328,17 @@ export const routes = [
     },
   },
   {
+    // Answer AI: {q, d: [passages]} -> {s: [0..1 or null]} (how well each passage answers the question)
+    method: "post",
+    path: "/rank",
+    async handler(req) {
+      let b = {};
+      try { b = await req.json(); } catch {}
+      const j = await vis("/rank", { q: String(b.q || "").slice(0, 300), docs: Array.isArray(b.d) ? b.d.slice(0, 64).map(String) : [] }, 3000);
+      return jsonOut(j && Array.isArray(j.s) ? { s: j.s } : { s: null });
+    },
+  },
+  {
     // Image AI: {u: opened image, us: others} -> {sim: [-1..1 or null]} (how alike they look)
     method: "post",
     path: "/near",
@@ -4063,8 +4074,19 @@ const paa = () => {
       // Answers are fetched as the box comes near the screen, so a tap shows one at once; a question no page answers
       // is taken out before you get to it (no "Search for" stand-ins); fewer than 2 left: no box
       const ans = new Map();
+      // The answer: of the question's top 8 results, the passage the answer AI (a reranker on the PC's GPU) says answers it
+      // best; too weak an answer = no answer. Without the AI: the first result with a description.
       const get = (text) => ans.get(text) || ans.set(text, fetch(`/api/search?q=${encodeURIComponent(text)}`).then((r) => (r.ok ? r.json() : null))
-        .then((sj) => (sj && Array.isArray(sj.results) ? sj.results.find((x) => x && x.url && x.snippet) : null) || null).catch(() => null)).get(text);
+        .then(async (sj) => {
+          const c = (sj && Array.isArray(sj.results) ? sj.results : []).filter((x) => x && x.url && x.snippet).slice(0, 8);
+          if (!c.length) return null;
+          const strip = (t) => String(t || "").replace(/<[^>]+>/g, "").trim();
+          const j = await bridge("rank", {}, JSON.stringify({ q: text, d: c.map((x) => `${strip(x.title)}. ${strip(x.snippet)}`) })).catch(() => null);
+          if (!j || !Array.isArray(j.s)) return c[0];
+          let bi = -1;
+          j.s.forEach((v, i) => { if (typeof v === "number" && (bi < 0 || v > j.s[bi])) bi = i; });
+          return bi >= 0 && j.s[bi] >= 0.1 ? c[bi] : null;
+        }).catch(() => null)).get(text);
       const drop = (d) => { d.remove(); if (box.querySelectorAll("details").length < 2) box.remove(); };
       const items = [];
       for (const raw of j.q) {
@@ -6092,7 +6114,7 @@ import httpx, torch
 from PIL import Image
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-from transformers import AutoModel, AutoProcessor
+from transformers import AutoModel, AutoProcessor, AutoModelForSequenceClassification, AutoTokenizer
 
 MODEL = os.environ.get("CT_VISION_MODEL", "google/siglip2-so400m-patch14-384")  # strongest open image-text model
 dev = "cuda" if torch.cuda.is_available() else "cpu"
@@ -6103,6 +6125,19 @@ proc = AutoProcessor.from_pretrained(MODEL)
 scale = model.logit_scale.exp().item()
 bias = model.logit_bias.item()
 gpu = torch.cuda.get_device_name(0) if dev == "cuda" else ""
+# Text: a cross-encoder reranker reads the question and each passage together and says how well the passage answers it
+# (what "People also ask" needs: the passage that answers, not just the first snippet)
+RERANK = os.environ.get("CT_RERANK_MODEL", "BAAI/bge-reranker-v2-m3")
+rtok = AutoTokenizer.from_pretrained(RERANK)
+rmodel = AutoModelForSequenceClassification.from_pretrained(RERANK, torch_dtype=dtype).to(dev).eval()
+
+@torch.inference_mode()
+def rerank(q, docs):
+    out = []
+    for i in range(0, len(docs), 32):
+        x = rtok([[q, d] for d in docs[i:i + 32]], padding=True, truncation=True, max_length=384, return_tensors="pt").to(dev)
+        out += torch.sigmoid(rmodel(**x).logits.view(-1).float()).cpu().tolist()
+    return out
 
 class LRU(OrderedDict):
     def __init__(self, n): super().__init__(); self.n = n
@@ -6167,7 +6202,7 @@ async def ensure(urls, budget):
 
 @app.get("/health")
 async def health():
-    return {"ok": True, "device": dev, "gpu": gpu, "model": MODEL, "cached": len(IMG)}
+    return {"ok": True, "device": dev, "gpu": gpu, "model": MODEL, "rerank": RERANK, "cached": len(IMG)}
 
 @app.post("/score")
 async def score(body: dict):
@@ -6197,6 +6232,16 @@ async def near(body: dict):
     sim = [None if (a is None or a is False or e is None or e is False) else round(float((a.float() @ e.float()).item()), 4) for e in embs[1:]]
     return {"sim": sim, "ms": round((time.perf_counter() - t0) * 1000)}
 
+@app.post("/rank")
+async def rank(body: dict):
+    t0 = time.perf_counter()
+    q = str(body.get("q") or "")[:300]
+    docs = [str(d)[:1500] for d in (body.get("docs") or [])][:64]
+    if not q or not docs: return {"s": [], "ms": 0}
+    async with lock:
+        s = await asyncio.to_thread(rerank, q, docs)
+    return {"s": [round(x, 4) for x in s], "ms": round((time.perf_counter() - t0) * 1000)}
+
 @app.exception_handler(Exception)
 async def err(_, e):
     return JSONResponse({"error": type(e).__name__}, status_code=500)
@@ -6222,7 +6267,7 @@ for i in $(docker images ct-vision --format '{{.Repository}}:{{.Tag}}'); do [ "$
 echo "ct-vision ready: $TAG"
 
 '@).Replace("`r", ""))
-[IO.File]::WriteAllText("$vd\tag", "3d19dca065c5")
+[IO.File]::WriteAllText("$vd\tag", "ca31ff30c105")
 docker network inspect ct-net 2>&1 | Out-Null; if ($LASTEXITCODE -ne 0) { docker network create ct-net | Out-Null }
 docker network connect ct-net $c 2>&1 | Out-Null
 docker rm -f ct-vision-setup 2>&1 | Out-Null
