@@ -3373,6 +3373,45 @@ if (/[?&]type=images\b/.test(location.search)) bridge("aiimg", { v: AIV }).then(
   if (Array.isArray(j.list)) { AIIMG = new Set(j.list); try { localStorage.setItem("ct-aiimg", JSON.stringify({ v: j.v, list: j.list })); } catch {} }
 }).catch(() => {});
 const aiImg = (host) => { if (!AIIMG || !host) return false; for (let h = host; h.includes("."); h = h.slice(h.indexOf(".") + 1)) if (AIIMG.has(h)) return true; return false; };
+// Relevance on the Images tab too (same one rule as Web, on the image's title and site): an image with none of the
+// search's words and not on the topic the related images share goes behind "N unrelated images ⌄" at the end
+// ("graphic" in a search doesn't bring porn in). Decided before paint, a batch at a time.
+let IR = { key: "", q: [], rel: [], btn: null, out: [] };
+const imgRel = (el, text, title) => {
+  readQuery();
+  const key = searchId(location.href);
+  if (IR.key !== key) { IR.btn?.closest(".ct-fold")?.remove(); IR = { key, q: [], rel: [], btn: null, out: [] }; }
+  let q0 = "";
+  try { q0 = new URL(location.href).searchParams.get("q") || ""; } catch {}
+  if (!CT.relJudgeable(q0)) return;
+  const r = { title: text, snippet: "" };
+  if (CT.related(qWords, qIdent, text, 0, 99)) { IR.rel.push(r); return; }
+  if ((String(title || "").match(/[\p{L}\p{N}]+/gu) || []).length < 3) return; // no real title ("Pin", none): nothing to judge, stays
+  el.style.display = "none"; el.dataset.ctUnrel = "1";
+  if (!IR.q.length) queueMicrotask(imgFold);
+  IR.q.push([el, r]);
+};
+const imgFold = () => {
+  const same = CT.topicOf(IR.rel, qWords);
+  const out = [];
+  for (const [el, r] of IR.q.splice(0)) { if (same(r)) { el.style.display = ""; delete el.dataset.ctUnrel; } else out.push(el); }
+  if (!out.length) return;
+  IR.out.push(...out);
+  const grid = out[0].closest(".image-grid") || out[0].parentElement;
+  if (!grid) return;
+  let row = IR.btn?.closest(".ct-fold");
+  if (!row) {
+    row = mk("div", "ct-fold ct-fold-img");
+    const b = mk("button", "ct-fold-b", "");
+    b.type = "button"; b.setAttribute("aria-expanded", "false");
+    row.append(b);
+    b.addEventListener("click", () => { for (const x of IR.out.splice(0)) { x.style.display = ""; delete x.dataset.ctUnrel; fadeIn(x); } row.remove(); IR.btn = null; });
+    IR.btn = b;
+  }
+  const n = IR.out.length;
+  IR.btn.replaceChildren(`${n} unrelated image${n > 1 ? "s" : ""}`, mk("span", "ct-chev", "⌄"));
+  grid.after(row); // after the grid, so it stays at the end as more images load
+};
 const card = (el, isImage) => {
   const src = el.querySelector(isImage ? ".image-source" : ".video-source");
   const t = el.querySelector(isImage ? ".image-title" : ".video-title");
@@ -3382,6 +3421,7 @@ const card = (el, isImage) => {
   if (t && !t.dataset.ctTidy) { t.dataset.ctTidy = "1"; const x = CT.tidyTitle(text.replace(/\s+/g, " ").trim()); if (x !== text.trim()) t.textContent = x; }
   if (!isImage) return;
   if (aiImg(host)) { el.style.display = "none"; el.dataset.ctAi = "1"; return; }
+  imgRel(el, `https://${host}/ ${text}`, text);
   if (src && host !== raw) src.textContent = host;
   if (t && host) {
     const out = cleanTitle(text, `https://${host}/`);
@@ -4892,6 +4932,7 @@ html:root { --ct-desc-pc: 15px; --ct-desc-phone: 13.5px; }
 /* "N more from site.com ⌄": blue = tappable, underline on hover only; tucked under the site's 2nd result
    (results carry 12px top/bottom padding, so -8px leaves 4px between) */
 .ct-fold { margin: -8px 0 4px; }
+.ct-fold-img { margin: 4px 0 24px; } /* Images tab: under the grid, left edge with the images */
 .ct-fold-b { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0; border: 0; background: none; font: inherit; font-size: 14px; line-height: 20px; color: var(--text-link); cursor: pointer; }
 .ct-fold-b:hover { text-decoration: underline; }
 .ct-fold-b:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 4px; }

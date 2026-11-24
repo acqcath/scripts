@@ -31,6 +31,7 @@ html:root { --ct-desc-pc: 15px; --ct-desc-phone: 13.5px; }
 /* "N more from site.com ⌄": blue = tappable, underline on hover only; tucked under the site's 2nd result
    (results carry 12px top/bottom padding, so -8px leaves 4px between) */
 .ct-fold { margin: -8px 0 4px; }
+.ct-fold-img { margin: 4px 0 24px; } /* Images tab: under the grid, left edge with the images */
 .ct-fold-b { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0; border: 0; background: none; font: inherit; font-size: 14px; line-height: 20px; color: var(--text-link); cursor: pointer; }
 .ct-fold-b:hover { text-decoration: underline; }
 .ct-fold-b:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 4px; }
