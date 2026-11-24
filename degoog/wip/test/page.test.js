@@ -80,6 +80,7 @@ const run = async (q, opts = {}) => {
     },
     set: (t, k, v) => { t[k] = v; return true; },
   });
+  globalThis.__ctAIW = win.__ctAIW = opts.aiw ? new Map(opts.aiw) : new Map(); // the page reads globalThis (the window, in a browser)
   new Function("scope", `with (scope) {\nconst __PLUGIN_ID__="clean-titles";\n${CODE}\n}`)(scope);
   const fire = (nodes) => { for (const m of mos) m.cb([{ type: "childList", addedNodes: nodes }], m); };
   const res = opts.res || REC.searches.find((x) => x.q === q && (opts.type ? x.type === opts.type : !x.type || x.type === "web")).results;
@@ -405,6 +406,20 @@ const QS = { q: ["What is Python used for?", "Is Python hard to learn?"] };
   const strip = [...document.querySelectorAll("#media-preview-more .media-preview-more-img")].map((i) => i.getAttribute("src"));
   expect(strip.slice(0, 3)).toEqual(["/t/2", "/t/5", "/t/4"]); // most alike first (by the AI's similarity)
   expect(strip).not.toContain("/t/3");
+  expect(errors).toEqual([]);
+});
+
+const aiKeyT = (u) => { try { const x = new URL(u); return (x.host.replace(/^www\./, "") + x.pathname.replace(/\/$/, "") + x.search).toLowerCase(); } catch { return u; } };
+(HAS_RECS ? test : test.skip)("page: answer AI's verdicts (from the server, in degoog's search answer) decide relevance and the featured snippet", async () => {
+  const rec = REC.searches.find((x) => x.q === "how tall is the eiffel tower" && !x.type).results;
+  const off = rec[5].url;
+  const best = { s: "The Eiffel Tower is 330 metres (1,083 ft) tall, about the same height as an 81-storey building.", p: 0.93 };
+  const aiw = rec.map((r, i) => [aiKeyT(r.url), { p: r.url === off ? 0.001 : 0.6, best: i === 2 ? best : i === 0 ? { s: "Visit the tower every day of the year.", p: 0.2 } : null }]);
+  const { document, items, errors, win } = await run("how tall is the eiffel tower", { aiw, engines: 40 });
+  const hidden = items.filter((el) => el.dataset.ctUnrel).map((el) => el.dataset.resultUrl || el.querySelector("a.result-title").href);
+  expect(hidden.map(aiKeyT)).toEqual([aiKeyT(off)]); // only the one the AI scored as off-topic folds
+  const card = document.querySelector("#at-a-glance .ct-ans");
+  expect(card && card.textContent).toContain("330 metres"); // the AI's best-answering sentence, not the word rule's pick
   expect(errors).toEqual([]);
 });
 

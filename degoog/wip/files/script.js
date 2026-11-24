@@ -14,12 +14,28 @@ const bridge = (route, params = {}, body) => {
 };
 // Other plugins' requests (AI Summary...) that the iPhone's content blocker stops are sent again through the bridge
 const _fetch0 = window.fetch.bind(window);
+// The answer AI's verdicts ride along in degoog's own search answers (ctRel per result, ctBest = its best sentence):
+// read here, before degoog draws the results, so relevance and the featured snippet use them in the same pass
+const AIW = globalThis.__ctAIW || (globalThis.__ctAIW = new Map());
+const aiKey = (u) => { try { const x = new URL(u, location.href); return (x.host.replace(/^www\./, "") + x.pathname.replace(/\/$/, "") + x.search).toLowerCase(); } catch { return String(u || ""); } };
 window.fetch = async (input, init) => {
-  let path = "";
+  let path = "", search = false;
   try {
     const u = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.href);
     if (u.origin === location.origin && u.pathname.startsWith("/api/plugin/")) path = u.pathname + u.search;
+    if (u.origin === location.origin && u.pathname === "/api/search" && !/^(images|videos)$/.test(u.searchParams.get("type") || "")) search = true;
   } catch {}
+  if (search) {
+    const r = await _fetch0(input, init);
+    try {
+      if (r.ok) {
+        const j = await r.clone().json();
+        if (j && j.ctAi && Array.isArray(j.results)) for (const x of j.results) if (x && x.url && typeof x.ctRel === "number") AIW.set(aiKey(x.url), { p: x.ctRel, best: x.ctBest || null });
+        if (AIW.size > 3000) for (const k of [...AIW.keys()].slice(0, 1000)) AIW.delete(k);
+      }
+    } catch {}
+    return r;
+  }
   if (!path) return _fetch0(input, init);
   try { return await _fetch0(input, init); }
   catch (e) {
@@ -229,11 +245,12 @@ const tabPass = () => {
 // search (none of its words, one engine only, not an identifier lookup's top 3) goes to the end of the batch it came
 // in, folded under "N unrelated results ⌄" (one tap shows them). Decided before paint; nothing is filtered by topic.
 const relPlanned = new WeakSet();
+const AI_LOW = 0.02; // answer AI: below this a result isn't about the search (first result always stays)
 let RP = { key: "", n: 0, rel: [] };
 const relPass = () => {
   const list = document.getElementById("results-list");
   if (!list) return;
-  const fresh = [...list.querySelectorAll(":scope > .result-item")].filter((el) => !relPlanned.has(el));
+  const fresh = [...list.children].filter((el) => el.classList.contains("result-item") && !relPlanned.has(el));
   if (!fresh.length) return;
   const key = searchId(location.href);
   if (RP.key !== key) RP = { key, n: 0, rel: [] };
@@ -251,11 +268,15 @@ const relPass = () => {
     if (!a) continue;
     const r = { title: a.textContent || "", snippet: el.querySelector(".result-snippet")?.textContent || "" };
     const anchor = el.nextElementSibling?.classList.contains("ct-fold"); // a fold's anchor stays put
-    if (anchor || CT.related(words, qIdent, `${el.dataset.resultUrl || a.href} ${r.title} ${r.snippet}`, el.querySelectorAll(".result-engine-tag").length, pos)) RP.rel.push(r);
+    // The answer AI's verdict when it has one (reads meaning, not shared words); the word rule otherwise
+    const ai = AIW.get(aiKey(el.dataset.resultUrl || a.href));
+    if (ai) r.ai = true;
+    const ok = ai ? ai.p >= AI_LOW || pos === 0 : CT.related(words, qIdent, `${el.dataset.resultUrl || a.href} ${r.title} ${r.snippet}`, el.querySelectorAll(".result-engine-tag").length, pos);
+    if (anchor || ok) RP.rel.push(r);
     else out.push([el, r]);
   }
   // Second look: results that use other words for the same topic as the related ones stay (core topicOf)
-  if (out.length) { const same = CT.topicOf(RP.rel, words); out = out.filter(([, r]) => !same(r)); }
+  if (out.length) { const same = CT.topicOf(RP.rel, words); out = out.filter(([, r]) => r.ai || !same(r)); }
   out = out.map(([el]) => el);
   const shown = fresh.filter((el) => !out.includes(el) && el.style.display !== "none" && !el.classList.contains("ct-grouped"));
   if (!out.length || !shown.length) return;
@@ -1389,6 +1410,8 @@ const info = (el) => {
       fav: el.querySelector("img.result-favicon")?.src || "", dur: el.querySelector(".degoog-result--video-duration")?.textContent.trim() || "",
     };
     r.video = VIDEO_URL(u, h) || !!el.querySelector(".degoog-result--thumb--video");
+    const ai = AIW.get(aiKey(el.dataset.resultUrl || a.href));
+    if (ai) { r.ai = ai.p; r.best = ai.best; }
     r.forum = r.video ? "" : forumName(u, h);
   } catch {}
   _info.set(el, r);
@@ -1778,7 +1801,7 @@ const ansPass = () => {
     try { pg = Number(new URL(key).searchParams.get("page") || 1); } catch {}
     if (globalThis.CT_NOSNIP !== true && !ansVal && SHOW.ans !== false && webTab && !TYPE_WORDS.test(q) && !shaped(q) && pg <= 1) {
       const rs = [...document.querySelectorAll("#results-list .result-item")].filter((el) => el.style.display !== "none" && !el.classList.contains("ct-grouped")).slice(0, 6).map(info).filter(Boolean);
-      const f = CT.featuredSnippet(q, rs);
+      const f = CT.featuredSnippetAI(q, rs) || (rs.some((r) => r.best) ? null : CT.featuredSnippet(q, rs));
       if (f) ansVal = { ...f, label: `From ${f.h}` };
     }
   }

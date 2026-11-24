@@ -744,13 +744,10 @@ const HAS_NUM = (s) => /\d/.test(s) || NUM_WORDS.test(s);
 const HAS_DATE = (s) => /\b(?:\d{3,4}|\d{1,2}(?:st|nd|rd|th))\b|\b(?:january|february|march|april|may|june|july|august|september|october|november|december|monday|tuesday|wednesday|thursday|friday|saturday|sunday|today|tomorrow|tonight)\b/i.test(s);
 const mentions = (s, subj) => { const ws = new Set(String(s).split(/[^\p{L}\p{N}]+/u).map(snipStem)); return subj.filter((w) => ws.has(w)).length; };
 // results: [{title, href, h, snippet}] in page order (first 6 looked at). -> {kind: "snippet", text, href, title, h}
-export const featuredSnippet = (q, results) => {
-  const sq = typeof q === "string" ? snipQuery(q) : q;
-  if (!sq) return null;
-  const need = Math.max(1, Math.ceil(sq.subj.length / 2));
+const snipBlocked = (sq, results) => {
   // A how-to whose steps differ per model (AirPods: case button, Max, AirPods 4…) gets no snippet: the page that
   // has the per-model steps is shown first as a normal result instead (spec 2)
-  if (sq.howto && (results || []).slice(0, 6).some((r) => r && /\b(?:(?:each|every|your|all|different|older|newer|which) models?|by model|(?:\d(?:st|nd|rd|th)|first|second|third|fourth) gen(?:eration)?|model numbers?)\b/i.test(`${r.title || ""} ${r.snippet || ""}`))) return null;
+  if (sq.howto && (results || []).slice(0, 6).some((r) => r && /\b(?:(?:each|every|your|all|different|older|newer|which) models?|by model|(?:\d(?:st|nd|rd|th)|first|second|third|fourth) gen(?:eration)?|model numbers?)\b/i.test(`${r.title || ""} ${r.snippet || ""}`))) return true;
   // …or whose result titles name 2+ variants of the subject ("AirPods Pro", "AirPods Max", "AirPods Pro 3")
   if (sq.howto) {
     const vars = new Set();
@@ -758,8 +755,31 @@ export const featuredSnippet = (q, results) => {
       const ws = String((r && r.title) || "").split(/[^\p{L}\p{N}]+/u).filter(Boolean);
       ws.forEach((w, i) => { if (sq.subj.includes(snipStem(w)) && /^(?:pro|max|mini|plus|ultra|se|lite|air|\d{1,2})$/i.test(ws[i + 1] || "")) vars.add(ws[i + 1].toLowerCase()); });
     }
-    if (vars.size >= 2) return null;
+    if (vars.size >= 2) return true;
   }
+  return false;
+};
+// The answer AI's pick (server: each top result's best-answering sentence, scored 0..1): the highest-scoring sentence
+// of the first 6 results that passes the same rules as below (no per-model how-to, no "you/your", no question, no
+// video/social site); weak (< 0.5) -> no snippet. null when the AI didn't score these results.
+export const featuredSnippetAI = (q, results) => {
+  const sq = typeof q === "string" ? snipQuery(q) : q;
+  if (!sq || !(results || []).some((r) => r && r.best)) return null;
+  if (snipBlocked(sq, results)) return null;
+  let top = null;
+  for (const r of (results || []).slice(0, 6)) {
+    const b = r && r.best;
+    if (!b || /(?:^|\.)(?:youtube\.com|youtu\.be|tiktok\.com|instagram\.com|facebook\.com|x\.com|twitter\.com)$/.test(r.h || "")) continue;
+    if (b.p < 0.5 || PERSONAL.test(b.s) || PER_MODEL.test(b.s) || /\?$/.test(b.s)) continue;
+    if (!top || b.p > top.b.p) top = { r, b };
+  }
+  return top ? { kind: "snippet", text: top.b.s, href: top.r.href, title: top.r.title || "", h: top.r.h || "" } : null;
+};
+export const featuredSnippet = (q, results) => {
+  const sq = typeof q === "string" ? snipQuery(q) : q;
+  if (!sq) return null;
+  const need = Math.max(1, Math.ceil(sq.subj.length / 2));
+  if (snipBlocked(sq, results)) return null;
   for (const r of (results || []).slice(0, 6)) {
     if (!r || !r.snippet || /(?:^|\.)(?:youtube\.com|youtu\.be|tiktok\.com|instagram\.com|facebook\.com|x\.com|twitter\.com)$/.test(r.h || "")) continue;
     const ss = snipSentences(r.snippet);

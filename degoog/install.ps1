@@ -1314,6 +1314,37 @@ const vis = async (path, body, ms) => {
 };
 const jsonOut = (o) => new Response(JSON.stringify(o), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
 
+// Results hook (installed into degoog's search step by inline.js): before a web/Forums/News/Science search is sent,
+// the answer AI (reranker on the GPU) scores every result for how well it fits the search (ctRel, 0..1), and for
+// question-like searches each top result's best sentence (ctBest {s, p}) for the featured snippet. 700 ms budget;
+// no AI or too slow -> results go out unchanged and the page uses its word rules. Same search again: from memory.
+const AIC = new Map();
+const stripT = (t) => String(t || "").replace(/<[^>]+>/g, " ").replace(/&nbsp;|&#160;/g, " ").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/\s+/g, " ").trim();
+const sentences = (t) => stripT(t).replace(/^[A-Z][a-z]{2,8}\.? \d{1,2}, \d{4}\s*(?:\.\.\.|…|·|-|—)\s*/, "").split(/(?<=[.!?])\s+(?=["“(]?[A-Z0-9])/).map((x) => x.trim()).filter((x) => x.length >= 25 && x.length <= 400 && !/(?:\.\.\.|…)$/.test(x));
+const QLIKE = /\?\s*$|^(?:what|whats|what's|how|who|whom|whose|when|where|why|which|is|are|was|were|can|could|does|do|did|should|will|would)\b/i;
+globalThis.__ctResults = async (result, query, params) => {
+  const type = String((params && params.type) || "web");
+  if (!result || !Array.isArray(result.results) || !query || /^(images|videos)$/.test(type)) return;
+  const q = String(query).trim().slice(0, 300);
+  const rs = result.results.slice(0, 60);
+  if (!rs.length || q.startsWith("!")) return;
+  const key = `${type}|${q}|${rs.map((r) => r.url).join("|")}`;
+  let got = AIC.get(key);
+  if (!got) {
+    const docs = rs.map((r) => `${stripT(r.title)}. ${stripT(r.snippet)}`.slice(0, 1200));
+    const sents = [];
+    if (type === "web" && QLIKE.test(q)) rs.slice(0, 6).forEach((r, i) => sentences(r.snippet).slice(0, 4).forEach((x) => sents.push([i, x])));
+    const j = await vis("/rank", { q, docs: docs.concat(sents.map(([, x]) => x)) }, 700);
+    if (!j || !Array.isArray(j.s)) return;
+    got = { rel: j.s.slice(0, docs.length), best: {} };
+    sents.forEach(([i, x], k) => { const v = j.s[docs.length + k]; if (typeof v === "number" && (!got.best[i] || v > got.best[i].p)) got.best[i] = { s: x, p: v }; });
+    AIC.set(key, got);
+    if (AIC.size > 500) AIC.delete(AIC.keys().next().value);
+  }
+  rs.forEach((r, i) => { if (typeof got.rel[i] === "number") r.ctRel = got.rel[i]; if (got.best[i]) r.ctBest = got.best[i]; });
+  result.ctAi = 1;
+};
+
 export const routes = [
   {
     // Image AI: {q, u: [image addresses]} -> {p: [0..1 or null]} (how well each picture shows the search)
@@ -2885,13 +2916,10 @@ const HAS_NUM = (s) => /\d/.test(s) || NUM_WORDS.test(s);
 const HAS_DATE = (s) => /\b(?:\d{3,4}|\d{1,2}(?:st|nd|rd|th))\b|\b(?:january|february|march|april|may|june|july|august|september|october|november|december|monday|tuesday|wednesday|thursday|friday|saturday|sunday|today|tomorrow|tonight)\b/i.test(s);
 const mentions = (s, subj) => { const ws = new Set(String(s).split(/[^\p{L}\p{N}]+/u).map(snipStem)); return subj.filter((w) => ws.has(w)).length; };
 // results: [{title, href, h, snippet}] in page order (first 6 looked at). -> {kind: "snippet", text, href, title, h}
-const featuredSnippet = (q, results) => {
-  const sq = typeof q === "string" ? snipQuery(q) : q;
-  if (!sq) return null;
-  const need = Math.max(1, Math.ceil(sq.subj.length / 2));
+const snipBlocked = (sq, results) => {
   // A how-to whose steps differ per model (AirPods: case button, Max, AirPods 4…) gets no snippet: the page that
   // has the per-model steps is shown first as a normal result instead (spec 2)
-  if (sq.howto && (results || []).slice(0, 6).some((r) => r && /\b(?:(?:each|every|your|all|different|older|newer|which) models?|by model|(?:\d(?:st|nd|rd|th)|first|second|third|fourth) gen(?:eration)?|model numbers?)\b/i.test(`${r.title || ""} ${r.snippet || ""}`))) return null;
+  if (sq.howto && (results || []).slice(0, 6).some((r) => r && /\b(?:(?:each|every|your|all|different|older|newer|which) models?|by model|(?:\d(?:st|nd|rd|th)|first|second|third|fourth) gen(?:eration)?|model numbers?)\b/i.test(`${r.title || ""} ${r.snippet || ""}`))) return true;
   // …or whose result titles name 2+ variants of the subject ("AirPods Pro", "AirPods Max", "AirPods Pro 3")
   if (sq.howto) {
     const vars = new Set();
@@ -2899,8 +2927,31 @@ const featuredSnippet = (q, results) => {
       const ws = String((r && r.title) || "").split(/[^\p{L}\p{N}]+/u).filter(Boolean);
       ws.forEach((w, i) => { if (sq.subj.includes(snipStem(w)) && /^(?:pro|max|mini|plus|ultra|se|lite|air|\d{1,2})$/i.test(ws[i + 1] || "")) vars.add(ws[i + 1].toLowerCase()); });
     }
-    if (vars.size >= 2) return null;
+    if (vars.size >= 2) return true;
   }
+  return false;
+};
+// The answer AI's pick (server: each top result's best-answering sentence, scored 0..1): the highest-scoring sentence
+// of the first 6 results that passes the same rules as below (no per-model how-to, no "you/your", no question, no
+// video/social site); weak (< 0.5) -> no snippet. null when the AI didn't score these results.
+const featuredSnippetAI = (q, results) => {
+  const sq = typeof q === "string" ? snipQuery(q) : q;
+  if (!sq || !(results || []).some((r) => r && r.best)) return null;
+  if (snipBlocked(sq, results)) return null;
+  let top = null;
+  for (const r of (results || []).slice(0, 6)) {
+    const b = r && r.best;
+    if (!b || /(?:^|\.)(?:youtube\.com|youtu\.be|tiktok\.com|instagram\.com|facebook\.com|x\.com|twitter\.com)$/.test(r.h || "")) continue;
+    if (b.p < 0.5 || PERSONAL.test(b.s) || PER_MODEL.test(b.s) || /\?$/.test(b.s)) continue;
+    if (!top || b.p > top.b.p) top = { r, b };
+  }
+  return top ? { kind: "snippet", text: top.b.s, href: top.r.href, title: top.r.title || "", h: top.r.h || "" } : null;
+};
+const featuredSnippet = (q, results) => {
+  const sq = typeof q === "string" ? snipQuery(q) : q;
+  if (!sq) return null;
+  const need = Math.max(1, Math.ceil(sq.subj.length / 2));
+  if (snipBlocked(sq, results)) return null;
   for (const r of (results || []).slice(0, 6)) {
     if (!r || !r.snippet || /(?:^|\.)(?:youtube\.com|youtu\.be|tiktok\.com|instagram\.com|facebook\.com|x\.com|twitter\.com)$/.test(r.h || "")) continue;
     const ss = snipSentences(r.snippet);
@@ -2925,7 +2976,7 @@ const featuredSnippet = (q, results) => {
   return null;
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, related, topicOf, tidyTitle, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippet };
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, related, topicOf, tidyTitle, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippetAI, featuredSnippet };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -2943,12 +2994,28 @@ const bridge = (route, params = {}, body) => {
 };
 // Other plugins' requests (AI Summary...) that the iPhone's content blocker stops are sent again through the bridge
 const _fetch0 = window.fetch.bind(window);
+// The answer AI's verdicts ride along in degoog's own search answers (ctRel per result, ctBest = its best sentence):
+// read here, before degoog draws the results, so relevance and the featured snippet use them in the same pass
+const AIW = globalThis.__ctAIW || (globalThis.__ctAIW = new Map());
+const aiKey = (u) => { try { const x = new URL(u, location.href); return (x.host.replace(/^www\./, "") + x.pathname.replace(/\/$/, "") + x.search).toLowerCase(); } catch { return String(u || ""); } };
 window.fetch = async (input, init) => {
-  let path = "";
+  let path = "", search = false;
   try {
     const u = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.href);
     if (u.origin === location.origin && u.pathname.startsWith("/api/plugin/")) path = u.pathname + u.search;
+    if (u.origin === location.origin && u.pathname === "/api/search" && !/^(images|videos)$/.test(u.searchParams.get("type") || "")) search = true;
   } catch {}
+  if (search) {
+    const r = await _fetch0(input, init);
+    try {
+      if (r.ok) {
+        const j = await r.clone().json();
+        if (j && j.ctAi && Array.isArray(j.results)) for (const x of j.results) if (x && x.url && typeof x.ctRel === "number") AIW.set(aiKey(x.url), { p: x.ctRel, best: x.ctBest || null });
+        if (AIW.size > 3000) for (const k of [...AIW.keys()].slice(0, 1000)) AIW.delete(k);
+      }
+    } catch {}
+    return r;
+  }
   if (!path) return _fetch0(input, init);
   try { return await _fetch0(input, init); }
   catch (e) {
@@ -3158,11 +3225,12 @@ const tabPass = () => {
 // search (none of its words, one engine only, not an identifier lookup's top 3) goes to the end of the batch it came
 // in, folded under "N unrelated results ⌄" (one tap shows them). Decided before paint; nothing is filtered by topic.
 const relPlanned = new WeakSet();
+const AI_LOW = 0.02; // answer AI: below this a result isn't about the search (first result always stays)
 let RP = { key: "", n: 0, rel: [] };
 const relPass = () => {
   const list = document.getElementById("results-list");
   if (!list) return;
-  const fresh = [...list.querySelectorAll(":scope > .result-item")].filter((el) => !relPlanned.has(el));
+  const fresh = [...list.children].filter((el) => el.classList.contains("result-item") && !relPlanned.has(el));
   if (!fresh.length) return;
   const key = searchId(location.href);
   if (RP.key !== key) RP = { key, n: 0, rel: [] };
@@ -3180,11 +3248,15 @@ const relPass = () => {
     if (!a) continue;
     const r = { title: a.textContent || "", snippet: el.querySelector(".result-snippet")?.textContent || "" };
     const anchor = el.nextElementSibling?.classList.contains("ct-fold"); // a fold's anchor stays put
-    if (anchor || CT.related(words, qIdent, `${el.dataset.resultUrl || a.href} ${r.title} ${r.snippet}`, el.querySelectorAll(".result-engine-tag").length, pos)) RP.rel.push(r);
+    // The answer AI's verdict when it has one (reads meaning, not shared words); the word rule otherwise
+    const ai = AIW.get(aiKey(el.dataset.resultUrl || a.href));
+    if (ai) r.ai = true;
+    const ok = ai ? ai.p >= AI_LOW || pos === 0 : CT.related(words, qIdent, `${el.dataset.resultUrl || a.href} ${r.title} ${r.snippet}`, el.querySelectorAll(".result-engine-tag").length, pos);
+    if (anchor || ok) RP.rel.push(r);
     else out.push([el, r]);
   }
   // Second look: results that use other words for the same topic as the related ones stay (core topicOf)
-  if (out.length) { const same = CT.topicOf(RP.rel, words); out = out.filter(([, r]) => !same(r)); }
+  if (out.length) { const same = CT.topicOf(RP.rel, words); out = out.filter(([, r]) => r.ai || !same(r)); }
   out = out.map(([el]) => el);
   const shown = fresh.filter((el) => !out.includes(el) && el.style.display !== "none" && !el.classList.contains("ct-grouped"));
   if (!out.length || !shown.length) return;
@@ -4318,6 +4390,8 @@ const info = (el) => {
       fav: el.querySelector("img.result-favicon")?.src || "", dur: el.querySelector(".degoog-result--video-duration")?.textContent.trim() || "",
     };
     r.video = VIDEO_URL(u, h) || !!el.querySelector(".degoog-result--thumb--video");
+    const ai = AIW.get(aiKey(el.dataset.resultUrl || a.href));
+    if (ai) { r.ai = ai.p; r.best = ai.best; }
     r.forum = r.video ? "" : forumName(u, h);
   } catch {}
   _info.set(el, r);
@@ -4707,7 +4781,7 @@ const ansPass = () => {
     try { pg = Number(new URL(key).searchParams.get("page") || 1); } catch {}
     if (globalThis.CT_NOSNIP !== true && !ansVal && SHOW.ans !== false && webTab && !TYPE_WORDS.test(q) && !shaped(q) && pg <= 1) {
       const rs = [...document.querySelectorAll("#results-list .result-item")].filter((el) => el.style.display !== "none" && !el.classList.contains("ct-grouped")).slice(0, 6).map(info).filter(Boolean);
-      const f = CT.featuredSnippet(q, rs);
+      const f = CT.featuredSnippetAI(q, rs) || (rs.some((r) => r.best) ? null : CT.featuredSnippet(q, rs));
       if (f) ansVal = { ...f, label: `From ${f.h}` };
     }
   }
@@ -5113,6 +5187,19 @@ h = preRe.test(h) ? h.replace(preRe, () => pre) : h.replace("</head>", () => `${
 fs.writeFileSync(f, h);
 console.log(`public suffix list: ${pslUrl} (${psl.length} chars)`);
 console.log(`page script: ${ctUrl} (${code.length} chars, cached by the browser)`);
+// Results hook: degoog's search step hands each search's results to clean-titles before sending them (the answer AI
+// scores relevance and picks the featured snippet on the server, so nothing moves on the phone). Idempotent; when
+// degoog's code doesn't match (an update changed it), nothing is patched and the page keeps its word rules.
+try {
+  const sf = "/app/src/server/routes/search/search-routes.ts";
+  let s = fs.readFileSync(sf, "utf8");
+  if (!s.includes("__ctResults")) {
+    let n = 0;
+    s = s.replace(/(const result = await handleSearch\(\{ query, \.\.\.(\w+) \}\);)/g, (m, all, p) => { n++; return `${all}\n    try { await (globalThis as any).__ctResults?.(result, query, ${p}); } catch {}`; });
+    if (n) { fs.writeFileSync(sf, s); console.log(`results hook: patched ${n} search routes`); }
+    else console.log("results hook: degoog's search route changed, not patched");
+  } else console.log("results hook: in place");
+} catch (e) { console.log(`results hook: not patched (${e.message})`); }
 
 '@)
 [IO.File]::WriteAllText("$t\psl.enc", @'
@@ -6449,6 +6536,15 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
       } catch (e) { rows.push(["Image AI test search", "INFO", `could not run: ${String(e && e.message || e).slice(0, 60)}`]); }
     }
   }
+  // Answer AI in degoog's search step (results hook): every result scored, best sentence for the featured snippet
+  try {
+    const t0 = Date.now();
+    const j = await (await fetch(`http://127.0.0.1:${PORT}/api/search?q=${encodeURIComponent("how tall is the eiffel tower")}`, { signal: AbortSignal.timeout(20000) })).json();
+    const ms = Date.now() - t0, rs = j.results || [];
+    const scored = rs.filter((r) => typeof r.ctRel === "number"), best = rs.map((r) => r.ctBest).filter(Boolean).sort((a, b) => b.p - a.p)[0];
+    if (!j.ctAi) rows.push(["Answer AI in search", "INFO", "not active yet (AI still starting, or degoog's search code changed and the hook isn't in)"]);
+    else rows.push(["Answer AI in search", "PASS", `${scored.length}/${rs.length} results scored, search ${ms} ms; low ${scored.filter((r) => r.ctRel < 0.02).length}; snippet ${best ? `${best.p.toFixed(2)} "${best.s.slice(0, 60)}"` : "none"}`]);
+  } catch (e) { rows.push(["Answer AI in search", "INFO", `could not run: ${String(e && e.message || e).slice(0, 60)}`]); }
   // How degoog has been opening on each device (timings the page sent, last 60 loads): median and the slowest load,
   // split into where the time went
   try {
