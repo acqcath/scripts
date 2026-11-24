@@ -9,7 +9,7 @@ import httpx, torch
 from PIL import Image
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-from transformers import AutoModel, AutoProcessor
+from transformers import AutoModel, AutoProcessor, AutoModelForSequenceClassification, AutoTokenizer
 
 MODEL = os.environ.get("CT_VISION_MODEL", "google/siglip2-so400m-patch14-384")  # strongest open image-text model
 dev = "cuda" if torch.cuda.is_available() else "cpu"
@@ -20,6 +20,19 @@ proc = AutoProcessor.from_pretrained(MODEL)
 scale = model.logit_scale.exp().item()
 bias = model.logit_bias.item()
 gpu = torch.cuda.get_device_name(0) if dev == "cuda" else ""
+# Text: a cross-encoder reranker reads the question and each passage together and says how well the passage answers it
+# (what "People also ask" needs: the passage that answers, not just the first snippet)
+RERANK = os.environ.get("CT_RERANK_MODEL", "BAAI/bge-reranker-v2-m3")
+rtok = AutoTokenizer.from_pretrained(RERANK)
+rmodel = AutoModelForSequenceClassification.from_pretrained(RERANK, torch_dtype=dtype).to(dev).eval()
+
+@torch.inference_mode()
+def rerank(q, docs):
+    out = []
+    for i in range(0, len(docs), 32):
+        x = rtok([[q, d] for d in docs[i:i + 32]], padding=True, truncation=True, max_length=384, return_tensors="pt").to(dev)
+        out += torch.sigmoid(rmodel(**x).logits.view(-1).float()).cpu().tolist()
+    return out
 
 class LRU(OrderedDict):
     def __init__(self, n): super().__init__(); self.n = n
@@ -84,7 +97,7 @@ async def ensure(urls, budget):
 
 @app.get("/health")
 async def health():
-    return {"ok": True, "device": dev, "gpu": gpu, "model": MODEL, "cached": len(IMG)}
+    return {"ok": True, "device": dev, "gpu": gpu, "model": MODEL, "rerank": RERANK, "cached": len(IMG)}
 
 @app.post("/score")
 async def score(body: dict):
@@ -113,6 +126,16 @@ async def near(body: dict):
     a = embs[0]
     sim = [None if (a is None or a is False or e is None or e is False) else round(float((a.float() @ e.float()).item()), 4) for e in embs[1:]]
     return {"sim": sim, "ms": round((time.perf_counter() - t0) * 1000)}
+
+@app.post("/rank")
+async def rank(body: dict):
+    t0 = time.perf_counter()
+    q = str(body.get("q") or "")[:300]
+    docs = [str(d)[:1500] for d in (body.get("docs") or [])][:64]
+    if not q or not docs: return {"s": [], "ms": 0}
+    async with lock:
+        s = await asyncio.to_thread(rerank, q, docs)
+    return {"s": [round(x, 4) for x in s], "ms": round((time.perf_counter() - t0) * 1000)}
 
 @app.exception_handler(Exception)
 async def err(_, e):

@@ -1145,8 +1145,19 @@ const paa = () => {
       // Answers are fetched as the box comes near the screen, so a tap shows one at once; a question no page answers
       // is taken out before you get to it (no "Search for" stand-ins); fewer than 2 left: no box
       const ans = new Map();
+      // The answer: of the question's top 8 results, the passage the answer AI (a reranker on the PC's GPU) says answers it
+      // best; too weak an answer = no answer. Without the AI: the first result with a description.
       const get = (text) => ans.get(text) || ans.set(text, fetch(`/api/search?q=${encodeURIComponent(text)}`).then((r) => (r.ok ? r.json() : null))
-        .then((sj) => (sj && Array.isArray(sj.results) ? sj.results.find((x) => x && x.url && x.snippet) : null) || null).catch(() => null)).get(text);
+        .then(async (sj) => {
+          const c = (sj && Array.isArray(sj.results) ? sj.results : []).filter((x) => x && x.url && x.snippet).slice(0, 8);
+          if (!c.length) return null;
+          const strip = (t) => String(t || "").replace(/<[^>]+>/g, "").trim();
+          const j = await bridge("rank", {}, JSON.stringify({ q: text, d: c.map((x) => `${strip(x.title)}. ${strip(x.snippet)}`) })).catch(() => null);
+          if (!j || !Array.isArray(j.s)) return c[0];
+          let bi = -1;
+          j.s.forEach((v, i) => { if (typeof v === "number" && (bi < 0 || v > j.s[bi])) bi = i; });
+          return bi >= 0 && j.s[bi] >= 0.1 ? c[bi] : null;
+        }).catch(() => null)).get(text);
       const drop = (d) => { d.remove(); if (box.querySelectorAll("details").length < 2) box.remove(); };
       const items = [];
       for (const raw of j.q) {
