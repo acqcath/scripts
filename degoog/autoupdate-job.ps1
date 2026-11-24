@@ -14,6 +14,16 @@ function Notify($text) {
     [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe').Show([Windows.UI.Notifications.ToastNotification]::new($x))
   } catch {}
 }
+# Checks every hour (one small GitHub request; installs only when something changed), so a fix reaches the PC
+# within the hour. The job switches its own task to hourly once.
+try {
+  $task = Get-ScheduledTask -TaskName 'degoog clean-titles update' -ErrorAction Stop
+  $tr = $task.Triggers | Select-Object -First 1
+  if (-not $tr -or -not $tr.Repetition -or $tr.Repetition.Interval -ne 'PT1H') {
+    $nt = New-ScheduledTaskTrigger -Once -At ((Get-Date).Date.AddMinutes(7)) -RepetitionInterval (New-TimeSpan -Hours 1)
+    Set-ScheduledTask -TaskName 'degoog clean-titles update' -Trigger $nt -ErrorAction Stop | Out-Null
+  }
+} catch {}
 try {
   $sha = (Invoke-RestMethod 'https://api.github.com/repos/acqcath/scripts/commits?path=degoog/install.ps1&sha=main&per_page=1' -ErrorAction Stop)[0].sha
   if (-not $sha) { return }
