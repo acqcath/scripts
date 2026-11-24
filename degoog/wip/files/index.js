@@ -1330,7 +1330,7 @@ globalThis.__ctResults = async (result, query, params) => {
   if (!got) {
     const docs = rs.map((r) => `${stripT(r.title)}. ${stripT(r.snippet)}`.slice(0, 1200));
     const sents = [];
-    if (type === "web" && QLIKE.test(q)) rs.slice(0, 6).forEach((r, i) => sentences(r.snippet).slice(0, 4).forEach((x) => sents.push([i, x])));
+    if (type === "web" && (QLIKE.test(q) || q.split(/\s+/).length >= 2)) rs.slice(0, 6).forEach((r, i) => sentences(r.snippet).slice(0, 4).forEach((x) => sents.push([i, x])));
     const j = await vis("/rank", { q, docs: docs.concat(sents.map(([, x]) => x)) }, 700);
     if (!j || !Array.isArray(j.s)) return;
     got = { rel: j.s.slice(0, docs.length), best: {} };

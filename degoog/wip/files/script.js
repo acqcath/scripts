@@ -1177,9 +1177,9 @@ const paa = () => {
           if (!j || !Array.isArray(j.s)) return c[0];
           let bi = -1;
           j.s.forEach((v, i) => { if (typeof v === "number" && (bi < 0 || v > j.s[bi])) bi = i; });
-          return bi >= 0 && j.s[bi] >= 0.1 ? c[bi] : null;
+          return bi >= 0 && j.s[bi] >= 0.02 ? c[bi] : null; // the best of them unless none is about the question at all
         }).catch(() => null)).get(text);
-      const drop = (d) => { d.remove(); if (box.querySelectorAll("details").length < 2) box.remove(); };
+      const drop = (d) => { d.remove(); if (box.querySelectorAll("details").length < 2) { box.remove(); if (paaBox === box) paaBox = null; } }; // gone for good (not put back after a redraw)
       const items = [];
       for (const raw of j.q) {
         const text = fixCase(raw);
