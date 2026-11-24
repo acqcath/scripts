@@ -5501,7 +5501,7 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .ct-ans.ct-copied .ct-ans-copied { opacity: 1; }
 .ct-ans-value { margin-top: 2px; font-size: 24px; line-height: 32px; color: var(--text-primary); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .ct-ans-sw { display: inline-block; width: 22px; height: 22px; margin-right: 10px; vertical-align: -3px; border-radius: 6px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .25); }
-.ct-ans-title { display: block; margin-top: 2px; font-size: 18px; line-height: 24px; color: var(--text-link); text-decoration: none; text-wrap: balance; overflow-wrap: anywhere; }
+.ct-ans-title { display: block; margin-top: 2px; font-size: 18px; line-height: 24px; color: var(--text-link); text-decoration: none; text-wrap-style: balance; overflow-wrap: anywhere; }
 .ct-ans-title:visited { color: var(--text-link-visited); }
 /* Featured snippet: the sentence at reading size, then the page's title as its link */
 .ct-ans-text { margin-top: 4px; font-size: 16px; line-height: 24px; color: var(--text-primary); overflow-wrap: anywhere; }
@@ -5659,8 +5659,8 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 
 /* Line breaks that read well, for every piece of text: anything title-like that wraps is split into even lines
    (balance), paragraphs avoid ragged and one-word last lines (pretty, where the browser has it). */
-.result-item .result-title, .ct-ct, .ct-ans-text, .ct-ans-title, .ct-gh, #ct-qa summary, .ct-sl-t, .ct-kp :is(h2, h3), .ct-sc .ct-ct { text-wrap: balance; }
-.result-snippet, .ct-ans-text, .ct-ai-text, .ct-kp p { text-wrap: pretty; }
+.result-item .result-title, .ct-ct, .ct-ans-text, .ct-ans-title, .ct-gh, #ct-qa summary, .ct-sl-t, .ct-kp :is(h2, h3), .ct-sc .ct-ct { text-wrap-style: balance; }
+.result-snippet, .ct-ans-text, .ct-ai-text, .ct-kp p { text-wrap-style: pretty; }
 /* Long unbroken strings (URLs, hashes, model numbers) wrap inside the column instead of running past it; descriptions
    hyphenate long words on narrow screens so lines stay even instead of ragged */
 .result-item :is(.result-title, .result-snippet), .ct-ct, .ct-ans-text, .ct-kp, .ct-ai-text { overflow-wrap: anywhere; }
