@@ -88,7 +88,9 @@ const run = async (q, opts = {}) => {
   await new Promise((r) => setTimeout(r, opts.engines || 0)); // the engines' time, while early answers arrive
   const list = document.getElementById("results-list");
   // Images tab: degoog's own image-card.html in a .image-card each (render-media.tsx _mediaCard), host without www.
-  list.innerHTML = opts.type === "images"
+  const host = (u) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; } };
+  list.innerHTML = opts.type === "videos" ? `<div class="video-grid">${res.map((r, i) => `<div class="video-card" data-idx="${i}"><span class="video-title">${r.title}</span><span class="video-source">${host(r.url)}</span></div>`).join("")}</div>`
+    : opts.type === "images"
     ? res.map((r, i) => `<div class="image-card" data-idx="${i}">${render(IMG_TPL, { title: r.title, url: r.url, thumbnail_url: r.thumbnail || "", fallback_url: r.thumbnail || "", hostname: (() => { try { return new URL(r.url).hostname.replace(/^www\./, ""); } catch { return ""; } })() })}</div>`).join("")
     : res.map((r, i) => render(TPL, ctx(r, i))).join("");
   fire([...list.children]);
@@ -339,6 +341,17 @@ const QS = { q: ["What is Python used for?", "Is Python hard to learn?"] };
   b.click();
   expect(cards.every((c) => c.style.display !== "none")).toBe(true);
   expect(document.querySelector(".ct-fold-img")).toBe(null);
+  expect(errors).toEqual([]);
+});
+
+(HAS_RECS ? test : test.skip)("page: Videos tab folds videos with none of the search's words, same rule as Images", async () => {
+  const R = (title, url) => ({ title, url });
+  const res = [R("How ultrasonic sensors work", "https://youtube.com/a"), R("Transparent graphic design tutorial", "https://vimeo.com/b"),
+    R("Hot cum drenched compilation video", "https://xvideos.com/c"), R("Sensor basics explained simply", "https://youtube.com/d")];
+  const { document, errors } = await run("sensors graphic transparent", { type: "videos", res });
+  const hidden = [...document.querySelectorAll(".video-card")].filter((c) => c.style.display === "none").map((c) => c.querySelector(".video-source").textContent);
+  expect(hidden).toEqual(["xvideos.com"]);
+  expect(document.querySelector(".ct-fold-img .ct-fold-b").textContent).toContain("1 unrelated video");
   expect(errors).toEqual([]);
 });
 
