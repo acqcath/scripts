@@ -6201,7 +6201,7 @@ import httpx, torch
 from PIL import Image
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-from transformers import AutoModel, AutoProcessor, AutoModelForSequenceClassification, AutoTokenizer
+from transformers import AutoModel, AutoProcessor, AutoTokenizer
 
 MODEL = os.environ.get("CT_VISION_MODEL", "google/siglip2-so400m-patch14-384")  # strongest open image-text model
 dev = "cuda" if torch.cuda.is_available() else "cpu"
@@ -6212,18 +6212,29 @@ proc = AutoProcessor.from_pretrained(MODEL)
 scale = model.logit_scale.exp().item()
 bias = model.logit_bias.item()
 gpu = torch.cuda.get_device_name(0) if dev == "cuda" else ""
-# Text: a cross-encoder reranker reads the question and each passage together and says how well the passage answers it
-# (what "People also ask" needs: the passage that answers, not just the first snippet)
-RERANK = os.environ.get("CT_RERANK_MODEL", "BAAI/bge-reranker-v2-m3")
-rtok = AutoTokenizer.from_pretrained(RERANK)
-rmodel = AutoModelForSequenceClassification.from_pretrained(RERANK, torch_dtype=dtype).to(dev).eval()
+# Text: Qwen3-Reranker reads the search and each passage together and answers "does this passage meet the search?"
+# (probability of "yes"): what relevance, the featured snippet and "People also ask" need
+RERANK = os.environ.get("CT_RERANK_MODEL", "Qwen/Qwen3-Reranker-0.6B")
+from transformers import AutoModelForCausalLM
+rtok = AutoTokenizer.from_pretrained(RERANK, padding_side="left")
+rmodel = AutoModelForCausalLM.from_pretrained(RERANK, torch_dtype=dtype).to(dev).eval()
+R_YES, R_NO = rtok.convert_tokens_to_ids("yes"), rtok.convert_tokens_to_ids("no")
+R_PRE = rtok.encode('<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the Instruct provided. Note that the answer can only be "yes" or "no".<|im_end|>\n<|im_start|>user\n', add_special_tokens=False)
+R_SUF = rtok.encode("<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n", add_special_tokens=False)
+R_TASK = "Given a web search query, retrieve relevant passages that answer the query"
+R_MAX = 512
 
 @torch.inference_mode()
 def rerank(q, docs):
     out = []
-    for i in range(0, len(docs), 32):
-        x = rtok([[q, d] for d in docs[i:i + 32]], padding=True, truncation=True, max_length=384, return_tensors="pt").to(dev)
-        out += torch.sigmoid(rmodel(**x).logits.view(-1).float()).cpu().tolist()
+    for i in range(0, len(docs), 16):
+        pairs = [f"<Instruct>: {R_TASK}\n<Query>: {q}\n<Document>: {d}" for d in docs[i:i + 16]]
+        enc = rtok(pairs, padding=False, truncation="longest_first", return_attention_mask=False, max_length=R_MAX - len(R_PRE) - len(R_SUF), add_special_tokens=False)
+        enc["input_ids"] = [R_PRE + ids + R_SUF for ids in enc["input_ids"]]
+        x = rtok.pad(enc, padding=True, return_tensors="pt").to(dev)
+        logits = rmodel(**x).logits[:, -1, :]
+        two = torch.stack([logits[:, R_NO], logits[:, R_YES]], dim=1).float()
+        out += torch.nn.functional.softmax(two, dim=1)[:, 1].cpu().tolist()
     return out
 
 class LRU(OrderedDict):
@@ -6354,7 +6365,7 @@ for i in $(docker images ct-vision --format '{{.Repository}}:{{.Tag}}'); do [ "$
 echo "ct-vision ready: $TAG"
 
 '@).Replace("`r", ""))
-[IO.File]::WriteAllText("$vd\tag", "ca31ff30c105")
+[IO.File]::WriteAllText("$vd\tag", "afe4b38cd397")
 docker network inspect ct-net 2>&1 | Out-Null; if ($LASTEXITCODE -ne 0) { docker network create ct-net | Out-Null }
 docker network connect ct-net $c 2>&1 | Out-Null
 docker rm -f ct-vision-setup 2>&1 | Out-Null
