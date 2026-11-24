@@ -423,6 +423,15 @@ const aiKeyT = (u) => { try { const x = new URL(u); return (x.host.replace(/^www
   expect(errors).toEqual([]);
 });
 
+(HAS_RECS ? test : test.skip)("page: AI snippet on a search not worded as a question only when the AI is sure (>= 0.8)", async () => {
+  const rec = REC.searches.find((x) => x.q === "golden gate bridge" && !x.type).results;
+  const mk = (p) => rec.map((r, i) => [aiKeyT(r.url), { p: 0.6, best: i === 1 ? { s: "The Golden Gate Bridge is a suspension bridge spanning the Golden Gate strait in San Francisco.", p } : null }]);
+  let { document } = await run("golden gate bridge", { aiw: mk(0.92), engines: 40 });
+  expect(document.querySelector("#at-a-glance .ct-ans")?.textContent || "").toContain("suspension bridge spanning");
+  ({ document } = await run("golden gate bridge", { aiw: mk(0.6), engines: 40 }));
+  expect(document.querySelector("#at-a-glance .ct-ans")?.textContent || "").not.toContain("suspension bridge spanning");
+});
+
 (HAS_RECS ? test : test.skip)("page: local answer card is in the panel area in the same pass as the results; back after degoog clears it; none on other searches", async () => {
   const { document, win, fire, errors } = await run("5 mi in km");
   const g = document.getElementById("at-a-glance");

@@ -1254,13 +1254,15 @@ const snipBlocked = (sq, results) => {
 // video/social site); weak (< 0.5) -> no snippet. null when the AI didn't score these results.
 const featuredSnippetAI = (q, results) => {
   const sq = typeof q === "string" ? snipQuery(q) : q;
-  if (!sq || !(results || []).some((r) => r && r.best)) return null;
-  if (snipBlocked(sq, results)) return null;
+  if (!(results || []).some((r) => r && r.best)) return null;
+  if (sq && snipBlocked(sq, results)) return null;
+  // Not worded as a question ("adderall loss of appetite length"): only a sentence the AI is sure answers it
+  const min = sq ? 0.5 : 0.8;
   let top = null;
   for (const r of (results || []).slice(0, 6)) {
     const b = r && r.best;
     if (!b || /(?:^|\.)(?:youtube\.com|youtu\.be|tiktok\.com|instagram\.com|facebook\.com|x\.com|twitter\.com)$/.test(r.h || "")) continue;
-    if (b.p < 0.5 || PERSONAL.test(b.s) || PER_MODEL.test(b.s) || /\?$/.test(b.s)) continue;
+    if (b.p < min || PERSONAL.test(b.s) || PER_MODEL.test(b.s) || /\?$/.test(b.s)) continue;
     if (!top || b.p > top.b.p) top = { r, b };
   }
   return top ? { kind: "snippet", text: top.b.s, href: top.r.href, title: top.r.title || "", h: top.r.h || "" } : null;
@@ -2475,9 +2477,9 @@ const paa = () => {
           if (!j || !Array.isArray(j.s)) return c[0];
           let bi = -1;
           j.s.forEach((v, i) => { if (typeof v === "number" && (bi < 0 || v > j.s[bi])) bi = i; });
-          return bi >= 0 && j.s[bi] >= 0.1 ? c[bi] : null;
+          return bi >= 0 && j.s[bi] >= 0.02 ? c[bi] : null; // the best of them unless none is about the question at all
         }).catch(() => null)).get(text);
-      const drop = (d) => { d.remove(); if (box.querySelectorAll("details").length < 2) box.remove(); };
+      const drop = (d) => { d.remove(); if (box.querySelectorAll("details").length < 2) { box.remove(); if (paaBox === box) paaBox = null; } }; // gone for good (not put back after a redraw)
       const items = [];
       for (const raw of j.q) {
         const text = fixCase(raw);
