@@ -132,6 +132,32 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
     } catch (e) { note = `no answer: ${String(e && e.message || e).slice(0, 50)}`; }
     rows.push(["Wikipedia API from this server", ok ? "PASS" : "INFO", note]);
   }
+  // Image AI (ct-vision next to degoog): running on the GPU?, how fast, and what it would fold on a test image search
+  {
+    const V = "http://ct-vision:8077";
+    let h = null;
+    try { h = await (await fetch(`${V}/health`, { signal: AbortSignal.timeout(5000) })).json(); } catch {}
+    if (!h) rows.push(["Image AI (ct-vision)", "INFO", "not answering yet: the first build downloads PyTorch + the model (a few GB, ~10 min) in the background"]);
+    else {
+      rows.push(["Image AI (ct-vision)", h.device === "cuda" ? "PASS" : "INFO", h.device === "cuda" ? `GPU: ${h.gpu}` : "running on the CPU (GPU not available to Docker): slower"]);
+      try {
+        const j = await (await fetch(`http://127.0.0.1:${PORT}/api/search?q=kalimba&type=images`, { signal: AbortSignal.timeout(20000) })).json();
+        const res = (j.results || []).filter((x) => x && x.thumbnail).slice(0, 60);
+        const orig = (t) => { try { const u = new URL(t, "http://x"); return /\/proxy\/image$/.test(u.pathname) ? u.searchParams.get("url") : u.href; } catch { return ""; } };
+        const urls = res.map((x) => orig(x.thumbnail));
+        const post = async (path, b) => { const t0 = Date.now(); const r = await (await fetch(V + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b), signal: AbortSignal.timeout(15000) })).json(); return [r, Date.now() - t0]; };
+        const [a, cold] = await post("/score", { q: "kalimba", urls, budget: 3 });
+        const [, warm] = await post("/score", { q: "kalimba", urls, budget: 3 });
+        const [nr, nearMs] = await post("/near", { url: urls[0], urls: urls.slice(1) });
+        const ps = (a.p || []).map((p, i) => [p, res[i].title || ""]).filter(([p]) => typeof p === "number").sort((x, y) => x[0] - y[0]);
+        const med = ps.length ? ps[Math.floor(ps.length / 2)][0] : 0, low = Math.min(0.02, med * 0.05);
+        const folded = ps.filter(([p]) => p < low);
+        rows.push(["Image AI speed (60 pictures)", cold <= 2500 && warm <= 300 ? "PASS" : "INFO", `first ${cold} ms (fetch + AI), again ${warm} ms, alike ${nearMs} ms; ${ps.length}/${urls.length} pictures read`]);
+        rows.push(["Image AI on 'kalimba'", folded.length <= ps.length / 3 ? "PASS" : "INFO", `median ${med.toFixed(4)}, folds ${folded.length}: ${folded.slice(0, 4).map(([p, t]) => `${p.toFixed(5)} ${t.slice(0, 32)}`).join(" | ") || "none"}; top ${ps.slice(-2).map(([p, t]) => `${p.toFixed(3)} ${t.slice(0, 24)}`).join(" | ")}`]);
+        if (!Array.isArray(nr.sim)) rows.push(["Image AI alike", "FAIL", "no answer"]);
+      } catch (e) { rows.push(["Image AI test search", "INFO", `could not run: ${String(e && e.message || e).slice(0, 60)}`]); }
+    }
+  }
   // How degoog has been opening on each device (timings the page sent, last 60 loads): median and the slowest load,
   // split into where the time went
   try {

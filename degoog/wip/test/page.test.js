@@ -369,11 +369,42 @@ const QS = { q: ["What is Python used for?", "Is Python hard to learn?"] };
   panel.innerHTML = `<img id="media-preview-img" src="/big"><div id="media-preview-info"><h3 class="media-preview-title">Fame FK-1 Mahogany Kalimba 17 keys</h3><a class="media-preview-link" href="https://musicstore.de/a">musicstore.de</a></div><div id="media-preview-more"><div class="media-preview-more-grid">${cards.slice(1).map((c) => `<button class="media-preview-more-item"><img src="${c.querySelector("img").getAttribute("src")}"></button>`).join("")}</div></div>`;
   document.body.append(panel);
   fire([panel]);
+  await new Promise((r) => setTimeout(r, 30)); // the AI isn't there (bridge fails): words order
   const strip = [...document.querySelectorAll("#media-preview-more .media-preview-more-img")].map((i) => i.getAttribute("src"));
   expect(strip.slice(0, 2).sort()).toEqual(["/t/d", "/t/f"]); // same 17 keys / mahogany first
   expect(strip).not.toContain("/t/b"); // folded (no "kalimba") never shown
   const a = document.querySelector("#media-preview-info .media-preview-title a");
   expect(a.getAttribute("href")).toBe("https://musicstore.de/a");
+  expect(errors).toEqual([]);
+});
+
+(HAS_RECS ? test : test.skip)("page: image AI folds pictures that don't show the search (even titled with it), brings back ones the words rule folded, orders related images by look", async () => {
+  const R = (title, url, th) => ({ title, url, thumbnail: th });
+  const res = [
+    R("Kalimba 17 keys mahogany", "https://a.com/1", "/t/1"), R("Kalimba thumb piano beginner", "https://b.com/2", "/t/2"),
+    R("kalimba kalimba kalimba hot pics", "https://spam.com/3", "/t/3"), R("Kalimba songs for beginners", "https://c.com/4", "/t/4"),
+    R("IMG 2231 wooden instrument photo", "https://d.com/5", "/t/5"), R("Kalimba with hammer and bag", "https://e.com/6", "/t/6"),
+    R("Kalimba tuning chart", "https://f.com/7", "/t/7"),
+  ];
+  const p = [0.31, 0.22, 0.0002, 0.18, 0.4, 0.27, 0.12];
+  const { document, fire, errors } = await run("kalimba", { type: "images", res, bridge: { vis: { data: { p }, delay: 5 }, near: { data: { sim: [0.9, 0.5, 0.8, 0.1, 0.2] }, delay: 5 } } });
+  const cards = [...document.querySelectorAll(".image-card")];
+  expect(cards.every((c) => c.classList.contains("ct-vpend") || c.style.display === "none")).toBe(true); // waiting, picture hidden
+  await new Promise((r) => setTimeout(r, 40));
+  const src = (c) => c.querySelector(".image-source").textContent;
+  expect(cards.filter((c) => c.style.display === "none").map(src)).toEqual(["spam.com"]); // its title says kalimba, its picture doesn't
+  expect(cards.find((c) => src(c) === "d.com").style.display).toBe(""); // words rule folded it, the AI sees a kalimba
+  expect(cards.some((c) => c.classList.contains("ct-vpend"))).toBe(false);
+  expect(document.querySelector(".ct-fold-img .ct-fold-b").textContent).toContain("1 unrelated image");
+  cards[0].classList.add("selected");
+  const panel = document.createElement("div");
+  panel.innerHTML = `<div id="media-preview-info"></div><div id="media-preview-more"><div class="media-preview-more-grid"><button class="media-preview-more-item"><img src="/x"></button></div></div>`;
+  document.body.append(panel);
+  fire([panel]);
+  await new Promise((r) => setTimeout(r, 30));
+  const strip = [...document.querySelectorAll("#media-preview-more .media-preview-more-img")].map((i) => i.getAttribute("src"));
+  expect(strip.slice(0, 3)).toEqual(["/t/2", "/t/5", "/t/4"]); // most alike first (by the AI's similarity)
+  expect(strip).not.toContain("/t/3");
   expect(errors).toEqual([]);
 });
 

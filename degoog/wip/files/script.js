@@ -494,6 +494,69 @@ const aiImg = (host) => { if (!AIIMG || !host) return false; for (let h = host; 
 // Relevance on the Images and Videos tabs too (same one rule as Web, on the title and site): an image or video with
 // none of the search's words and not on the topic the related ones share goes behind "N unrelated images ⌄" /
 // "N unrelated videos ⌄" at the end ("graphic" in a search doesn't bring porn in). Decided before paint, a batch at a time.
+// ===== Image AI (ct-vision on the PC's GPU, through this plugin's server) =====
+// Each picture gets a 0..1 "shows the search" score from SigLIP 2. Pictures far below this page's typical score fold
+// (a dick under "kalimba" folds even when its title says kalimba); pictures the words rule folded but the AI sees as
+// on-topic come back. Cards wait for their score (at most 0.9 s, pictures hidden, nothing moves) before they show.
+const origOf = (src) => { try { const u = new URL(src, location.href); return /\/proxy\/image$/.test(u.pathname) ? u.searchParams.get("url") || "" : u.href; } catch { return ""; } };
+// Off for this page when the AI doesn't answer, and for 10 min in this browser (no waiting on a missing AI)
+let VISON = (() => { try { return Date.now() - Number(localStorage.getItem("ct-visoff") || 0) > 600000; } catch { return true; } })();
+const VS = { key: "", p: new Map(), q: [], t: 0 };
+const visThr = () => {
+  const v = [...VS.p.values()].filter((x) => typeof x === "number").sort((a, b) => a - b);
+  if (v.length < 6) return null;
+  const med = v[Math.floor(v.length / 2)];
+  return { low: Math.min(0.02, med * 0.05), mid: med };
+};
+const visAsk = (q, urls) => bridge("vis", {}, JSON.stringify({ q, u: urls })).then((j) => {
+  if (!j || !Array.isArray(j.p)) { VISON = false; try { localStorage.setItem("ct-visoff", String(Date.now())); } catch {} return null; }
+  urls.forEach((u, i) => VS.p.set(u, j.p[i]));
+  return j;
+}).catch(() => { VISON = false; return null; });
+const visQueue = (el, kind) => {
+  if (!VISON) return;
+  visKey();
+  const u = origOf(el.querySelector("img")?.getAttribute("src") || "");
+  if (!u) return;
+  el.dataset.ctV = u;
+  el.classList.add("ct-vpend");
+  VS.q.push([el, kind]);
+  if (VS.q.length === 1) queueMicrotask(visFlush);
+};
+const visFlush = () => {
+  const batch = VS.q.splice(0);
+  if (!batch.length) return;
+  let q0 = "";
+  try { q0 = new URL(location.href).searchParams.get("q") || ""; } catch {}
+  const show = () => batch.forEach(([el]) => el.classList.remove("ct-vpend"));
+  const timer = setTimeout(show, 900);
+  visAsk(q0, [...new Set(batch.map(([el]) => el.dataset.ctV))]).then(() => { clearTimeout(timer); visApply(); show(); });
+};
+const visKey = () => { const key = searchId(location.href); if (VS.key !== key) { VS.key = key; VS.p.clear(); VS.q = []; } };
+// Web's Images row: pictures the AI sees as off-topic leave the row (also when the score comes after the row is drawn)
+const visRow = () => {
+  const th = visThr();
+  if (!th) return;
+  for (const a of document.querySelectorAll(".ct-imgs .ct-im[data-ct-v]")) { const p = VS.p.get(a.dataset.ctV); if (typeof p === "number" && p < th.low) a.remove(); }
+};
+const visApply = () => {
+  const th = visThr();
+  if (!th) return;
+  for (const kind of ["image", "video"]) {
+    const R = MR[kind];
+    const fold = [], back = [];
+    for (const el of document.querySelectorAll(`.${kind}-card[data-ct-v]`)) {
+      const p = VS.p.get(el.dataset.ctV);
+      if (typeof p !== "number" || el.dataset.ctAi) continue;
+      if (p < th.low && !el.dataset.ctUnrel) fold.push(el);
+      else if (p >= th.mid && el.dataset.ctUnrel && R && R.out.includes(el)) back.push(el);
+    }
+    for (const el of back) { R.out.splice(R.out.indexOf(el), 1); el.style.display = ""; delete el.dataset.ctUnrel; }
+    if (fold.length) { for (const el of fold) { el.style.display = "none"; el.dataset.ctUnrel = "1"; } mediaFoldAdd(kind, fold); }
+    else if (back.length && R) mediaFoldAdd(kind, []);
+  }
+  visRow();
+};
 const MR = {};
 const mediaRel = (el, kind, text, title) => {
   readQuery();
@@ -515,9 +578,17 @@ const mediaFold = (kind) => {
   const same = CT.topicOf(R.rel, qWords);
   const out = [];
   for (const [el, r] of R.q.splice(0)) { if (same(r)) { el.style.display = ""; delete el.dataset.ctUnrel; } else out.push(el); }
-  if (!out.length) return;
+  if (out.length) mediaFoldAdd(kind, out);
+};
+const mediaFoldAdd = (kind, out) => {
+  const key = searchId(location.href);
+  let R = MR[kind];
+  if (!R || R.key !== key) R = MR[kind] = { key, q: [], rel: [], btn: null, out: [] };
   R.out.push(...out);
-  const grid = out[0].closest(".image-grid, .video-grid") || out[0].parentElement;
+  const n = R.out.length;
+  const first = R.out[0];
+  if (!n) { R.btn?.closest(".ct-fold")?.remove(); R.btn = null; return; }
+  const grid = first.closest(".image-grid, .video-grid") || first.parentElement;
   if (!grid) return;
   let row = R.btn?.closest(".ct-fold");
   if (!row) {
@@ -528,7 +599,7 @@ const mediaFold = (kind) => {
     b.addEventListener("click", () => { for (const x of R.out.splice(0)) { x.style.display = ""; delete x.dataset.ctUnrel; fadeIn(x); } row.remove(); R.btn = null; });
     R.btn = b;
   }
-  const n = R.out.length, w = kind === "video" ? "video" : "image";
+  const w = kind === "video" ? "video" : "image";
   R.btn.replaceChildren(`${n} unrelated ${w}${n > 1 ? "s" : ""}`, mk("span", "ct-chev", "⌄"));
   grid.after(row); // after the grid, so it stays at the end as more load
 };
@@ -570,17 +641,35 @@ const relatedStrip = () => {
   const scored = pool.map((c, i) => {
     const t = `${title(c)} ${c.querySelector(`.${kind}-source`)?.textContent || ""}`;
     return { c, i, s: 2 * CT.matchShare(mine, t) * mine.length + (CT.matchShare(qWords, t) > 0 ? 1 : 0) };
-  }).sort((a, b) => b.s - a.s || a.i - b.i).slice(0, n);
+  }).sort((a, b) => b.s - a.s || a.i - b.i);
   const grid = mk("div", "media-preview-more-grid");
   grid.dataset.ct = "1";
-  for (const { c } of scored) {
-    const b = mk("button", "media-preview-more-item"); b.type = "button";
-    const im = mk("img", "media-preview-more-img"); im.loading = "lazy"; im.src = c.querySelector("img").getAttribute("src"); im.alt = title(c);
-    im.onerror = () => { b.style.display = "none"; };
-    b.append(im);
-    b.addEventListener("click", () => { c.click(); c.scrollIntoView({ block: "nearest", behavior: "smooth" }); });
-    grid.append(b);
-  }
+  const draw = (list) => {
+    grid.replaceChildren();
+    for (const c of list.slice(0, n)) {
+      const b = mk("button", "media-preview-more-item"); b.type = "button";
+      const im = mk("img", "media-preview-more-img"); im.loading = "lazy"; im.src = c.querySelector("img").getAttribute("src"); im.alt = title(c);
+      im.onerror = () => { b.style.display = "none"; };
+      b.append(im);
+      b.addEventListener("click", () => { c.click(); c.scrollIntoView({ block: "nearest", behavior: "smooth" }); });
+      grid.append(b);
+    }
+  };
+  const words = () => draw(scored.map((x) => x.c));
+  // Image AI: the ones that look most like the opened picture (waits at most 0.6 s, hidden meanwhile, so the strip
+  // never reshuffles in front of you); no AI answer -> the words order
+  const me = origOf(sel.querySelector("img")?.getAttribute("src") || "");
+  if (VISON && me && pool.length) {
+    grid.style.visibility = "hidden";
+    let done = false;
+    const fin = (list) => { if (done) return; done = true; if (list) draw(list); else words(); grid.style.visibility = ""; };
+    setTimeout(() => fin(null), 600);
+    const us = pool.map((c) => origOf(c.querySelector("img").getAttribute("src")));
+    bridge("near", {}, JSON.stringify({ u: me, us })).then((j) => {
+      if (!j || !Array.isArray(j.sim)) return fin(null);
+      fin(pool.map((c, i) => ({ c, v: typeof j.sim[i] === "number" ? j.sim[i] : -2, i })).sort((x, y) => y.v - x.v || x.i - y.i).map((x) => x.c));
+    }).catch(() => fin(null));
+  } else words();
   g.replaceWith(grid);
 };
 // Web's own rows (Images row, Videos box) use the same rule
@@ -592,9 +681,10 @@ const card = (el, isImage) => {
   const host = raw.toLowerCase().replace(/^www\./, "");
   const text = t && t.textContent || "";
   if (t && !t.dataset.ctTidy) { t.dataset.ctTidy = "1"; const x = CT.tidyTitle(text.replace(/\s+/g, " ").trim()); if (x !== text.trim()) t.textContent = x; }
-  if (!isImage) { mediaRel(el, "video", `https://${host}/ ${text}`, text); return; }
+  if (!isImage) { mediaRel(el, "video", `https://${host}/ ${text}`, text); visQueue(el, "video"); return; }
   if (aiImg(host)) { el.style.display = "none"; el.dataset.ctAi = "1"; return; }
   mediaRel(el, "image", `https://${host}/ ${text}`, text);
+  visQueue(el, "image");
   if (src && host !== raw) src.textContent = host;
   if (t && host) {
     const out = cleanTitle(text, `https://${host}/`);
@@ -736,7 +826,11 @@ const earlyStart = () => {
       const e = { key, data: undefined };
       early.set("img", e);
       fetch(`/api/search?q=${encodeURIComponent(q)}&type=images`).then((x) => (x.ok ? x.json() : null))
-        .then((j) => { e.data = j && Array.isArray(j.results) ? j : null; }, () => { e.data = null; });
+        .then((j) => {
+          e.data = j && Array.isArray(j.results) ? j : null;
+          // Image AI scores the row's pictures now, in parallel with the web results
+          if (e.data && VISON) { visKey(); visAsk(q, [...new Set(e.data.results.slice(0, 40).map((x) => origOf(x.thumbnail || "")).filter(Boolean))]).then(visRow); }
+        }, () => { e.data = null; });
     }
     // Top stories: the News search starts now, in parallel, only for a search that looked like news last time
     if (SHOW.news && !shaped(q) && newsy.has(qHash(q))) {
@@ -1435,12 +1529,13 @@ const groups = () => {
     G.img = true;
     const j = ready("img", key);
     const t = j && [...list.querySelectorAll(".result-item")].find(shown);
-    const pics = j ? (j.results || []).filter((x) => x && x.thumbnail && x.url && relOk(x.title, x.url) && !aiImg((() => { try { return new URL(x.url).hostname.replace(/^www\./, ""); } catch { return ""; } })())).slice(0, 12) : [];
+    const th = visThr();
+    const pics = j ? (j.results || []).filter((x) => x && x.thumbnail && x.url && relOk(x.title, x.url) && !(th && VS.p.get(origOf(x.thumbnail)) < th.low) && !aiImg((() => { try { return new URL(x.url).hostname.replace(/^www\./, ""); } catch { return ""; } })())).slice(0, 12) : [];
     if (t && pics.length >= 4) {
       const s = section("ct-imgs", "Images");
       const [wrap, row] = scroller();
       for (const x of pics) {
-        const a = mk("a", "ct-im"); a.href = x.url; a.rel = "noopener";
+        const a = mk("a", "ct-im"); a.href = x.url; a.rel = "noopener"; a.dataset.ctV = origOf(x.thumbnail);
         a.title = String(x.title || "");
         const i = mk("img"); i.alt = String(x.title || ""); i.decoding = "async"; i.loading = "lazy";
         i.onload = () => i.classList.add("ct-on"); i.onerror = () => { i.style.visibility = "hidden"; };
