@@ -158,6 +158,15 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
       } catch (e) { rows.push(["Image AI test search", "INFO", `could not run: ${String(e && e.message || e).slice(0, 60)}`]); }
     }
   }
+  // Answer AI in degoog's search step (results hook): every result scored, best sentence for the featured snippet
+  try {
+    const t0 = Date.now();
+    const j = await (await fetch(`http://127.0.0.1:${PORT}/api/search?q=${encodeURIComponent("how tall is the eiffel tower")}`, { signal: AbortSignal.timeout(20000) })).json();
+    const ms = Date.now() - t0, rs = j.results || [];
+    const scored = rs.filter((r) => typeof r.ctRel === "number"), best = rs.map((r) => r.ctBest).filter(Boolean).sort((a, b) => b.p - a.p)[0];
+    if (!j.ctAi) rows.push(["Answer AI in search", "INFO", "not active yet (AI still starting, or degoog's search code changed and the hook isn't in)"]);
+    else rows.push(["Answer AI in search", "PASS", `${scored.length}/${rs.length} results scored, search ${ms} ms; low ${scored.filter((r) => r.ctRel < 0.02).length}; snippet ${best ? `${best.p.toFixed(2)} "${best.s.slice(0, 60)}"` : "none"}`]);
+  } catch (e) { rows.push(["Answer AI in search", "INFO", `could not run: ${String(e && e.message || e).slice(0, 60)}`]); }
   // How degoog has been opening on each device (timings the page sent, last 60 loads): median and the slowest load,
   // split into where the time went
   try {

@@ -1311,6 +1311,37 @@ const vis = async (path, body, ms) => {
 };
 const jsonOut = (o) => new Response(JSON.stringify(o), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
 
+// Results hook (installed into degoog's search step by inline.js): before a web/Forums/News/Science search is sent,
+// the answer AI (reranker on the GPU) scores every result for how well it fits the search (ctRel, 0..1), and for
+// question-like searches each top result's best sentence (ctBest {s, p}) for the featured snippet. 700 ms budget;
+// no AI or too slow -> results go out unchanged and the page uses its word rules. Same search again: from memory.
+const AIC = new Map();
+const stripT = (t) => String(t || "").replace(/<[^>]+>/g, " ").replace(/&nbsp;|&#160;/g, " ").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/\s+/g, " ").trim();
+const sentences = (t) => stripT(t).replace(/^[A-Z][a-z]{2,8}\.? \d{1,2}, \d{4}\s*(?:\.\.\.|…|·|-|—)\s*/, "").split(/(?<=[.!?])\s+(?=["“(]?[A-Z0-9])/).map((x) => x.trim()).filter((x) => x.length >= 25 && x.length <= 400 && !/(?:\.\.\.|…)$/.test(x));
+const QLIKE = /\?\s*$|^(?:what|whats|what's|how|who|whom|whose|when|where|why|which|is|are|was|were|can|could|does|do|did|should|will|would)\b/i;
+globalThis.__ctResults = async (result, query, params) => {
+  const type = String((params && params.type) || "web");
+  if (!result || !Array.isArray(result.results) || !query || /^(images|videos)$/.test(type)) return;
+  const q = String(query).trim().slice(0, 300);
+  const rs = result.results.slice(0, 60);
+  if (!rs.length || q.startsWith("!")) return;
+  const key = `${type}|${q}|${rs.map((r) => r.url).join("|")}`;
+  let got = AIC.get(key);
+  if (!got) {
+    const docs = rs.map((r) => `${stripT(r.title)}. ${stripT(r.snippet)}`.slice(0, 1200));
+    const sents = [];
+    if (type === "web" && QLIKE.test(q)) rs.slice(0, 6).forEach((r, i) => sentences(r.snippet).slice(0, 4).forEach((x) => sents.push([i, x])));
+    const j = await vis("/rank", { q, docs: docs.concat(sents.map(([, x]) => x)) }, 700);
+    if (!j || !Array.isArray(j.s)) return;
+    got = { rel: j.s.slice(0, docs.length), best: {} };
+    sents.forEach(([i, x], k) => { const v = j.s[docs.length + k]; if (typeof v === "number" && (!got.best[i] || v > got.best[i].p)) got.best[i] = { s: x, p: v }; });
+    AIC.set(key, got);
+    if (AIC.size > 500) AIC.delete(AIC.keys().next().value);
+  }
+  rs.forEach((r, i) => { if (typeof got.rel[i] === "number") r.ctRel = got.rel[i]; if (got.best[i]) r.ctBest = got.best[i]; });
+  result.ctAi = 1;
+};
+
 export const routes = [
   {
     // Image AI: {q, u: [image addresses]} -> {p: [0..1 or null]} (how well each picture shows the search)

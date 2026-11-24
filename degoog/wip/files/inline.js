@@ -29,3 +29,16 @@ h = preRe.test(h) ? h.replace(preRe, () => pre) : h.replace("</head>", () => `${
 fs.writeFileSync(f, h);
 console.log(`public suffix list: ${pslUrl} (${psl.length} chars)`);
 console.log(`page script: ${ctUrl} (${code.length} chars, cached by the browser)`);
+// Results hook: degoog's search step hands each search's results to clean-titles before sending them (the answer AI
+// scores relevance and picks the featured snippet on the server, so nothing moves on the phone). Idempotent; when
+// degoog's code doesn't match (an update changed it), nothing is patched and the page keeps its word rules.
+try {
+  const sf = "/app/src/server/routes/search/search-routes.ts";
+  let s = fs.readFileSync(sf, "utf8");
+  if (!s.includes("__ctResults")) {
+    let n = 0;
+    s = s.replace(/(const result = await handleSearch\(\{ query, \.\.\.(\w+) \}\);)/g, (m, all, p) => { n++; return `${all}\n    try { await (globalThis as any).__ctResults?.(result, query, ${p}); } catch {}`; });
+    if (n) { fs.writeFileSync(sf, s); console.log(`results hook: patched ${n} search routes`); }
+    else console.log("results hook: degoog's search route changed, not patched");
+  } else console.log("results hook: in place");
+} catch (e) { console.log(`results hook: not patched (${e.message})`); }
