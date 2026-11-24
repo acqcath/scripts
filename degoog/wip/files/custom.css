@@ -42,7 +42,7 @@ html:root { --ct-desc-pc: 15px; --ct-desc-phone: 13.5px; }
 .ct-alts a:visited { color: var(--text-link-visited); }
 .ct-alts a:hover { text-decoration: underline; }
 /* Typo fix line above results (Google's "Showing results for") */
-#ct-fix { margin: 0 0 16px; padding-left: var(--ct-x, 0px); font-size: 14px; line-height: 21px; color: var(--text-secondary); }
+#ct-fix { margin: -12px 0 4px; padding-left: var(--ct-x, 0px); font-size: 14px; line-height: 21px; color: var(--text-secondary); }
 /* Everything the plugin adds enters with degoog's own result fade-in */
 .ct-in { animation: resultFadeIn .3s ease-out both; }
 /* Sharp thumbnail laid over the small one: same box, opacity only (resultFadeIn also slides, which a picture
