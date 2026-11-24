@@ -355,6 +355,28 @@ const QS = { q: ["What is Python used for?", "Is Python hard to learn?"] };
   expect(errors).toEqual([]);
 });
 
+(HAS_RECS ? test : test.skip)("page: image preview: picture and title open the page; 'more images' are the ones like the opened image, folded ones never", async () => {
+  const R = (title, url, th) => ({ title, url, thumbnail: th });
+  const res = [
+    R("Fame FK-1 Mahogany Kalimba 17 keys", "https://musicstore.de/a", "/t/a"), R("Download Big Black Cock", "https://pngkit.com/b", "/t/b"),
+    R("50+ Easy Kalimba Songs For Beginners", "https://carvedculture.com/c", "/t/c"), R("Kalimba 17 keys mahogany wood thumb piano", "https://amazon.com/d", "/t/d"),
+    R("KALIMBA or calimba - Musical Instrument", "https://kaypacha.com.ar/e", "/t/e"), R("Mahogany 17 keys kalimba with hammer", "https://seeds.com/f", "/t/f"),
+  ];
+  const { document, win, fire, errors } = await run("kalimba", { type: "images", res });
+  const cards = [...document.querySelectorAll(".image-card")];
+  cards[0].classList.add("selected");
+  const panel = document.createElement("div");
+  panel.innerHTML = `<img id="media-preview-img" src="/big"><div id="media-preview-info"><h3 class="media-preview-title">Fame FK-1 Mahogany Kalimba 17 keys</h3><a class="media-preview-link" href="https://musicstore.de/a">musicstore.de</a></div><div id="media-preview-more"><div class="media-preview-more-grid">${cards.slice(1).map((c) => `<button class="media-preview-more-item"><img src="${c.querySelector("img").getAttribute("src")}"></button>`).join("")}</div></div>`;
+  document.body.append(panel);
+  fire([panel]);
+  const strip = [...document.querySelectorAll("#media-preview-more .media-preview-more-img")].map((i) => i.getAttribute("src"));
+  expect(strip.slice(0, 2).sort()).toEqual(["/t/d", "/t/f"]); // same 17 keys / mahogany first
+  expect(strip).not.toContain("/t/b"); // folded (no "kalimba") never shown
+  const a = document.querySelector("#media-preview-info .media-preview-title a");
+  expect(a.getAttribute("href")).toBe("https://musicstore.de/a");
+  expect(errors).toEqual([]);
+});
+
 (HAS_RECS ? test : test.skip)("page: local answer card is in the panel area in the same pass as the results; back after degoog clears it; none on other searches", async () => {
   const { document, win, fire, errors } = await run("5 mi in km");
   const g = document.getElementById("at-a-glance");

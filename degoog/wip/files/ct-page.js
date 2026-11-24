@@ -1810,6 +1810,57 @@ const mediaFold = (kind) => {
   R.btn.replaceChildren(`${n} unrelated ${w}${n > 1 ? "s" : ""}`, mk("span", "ct-chev", "⌄"));
   grid.after(row); // after the grid, so it stays at the end as more load
 };
+// Image/video preview panel: the picture and the title open the page in one tap (like Google; degoog's picture opened
+// a zoom view and only the button visited), and its "more images" strip leaves out what the grid folded or hid
+document.addEventListener("click", (e) => {
+  if (!e.target?.closest?.("#media-preview-img")) return;
+  const a = document.querySelector("#media-preview-info .media-preview-link");
+  if (!a || !a.href) return;
+  e.preventDefault(); e.stopPropagation();
+  if (a.target === "_blank") window.open(a.href, "_blank", "noopener"); else location.href = a.href;
+}, true);
+const previewPass = () => {
+  const info = document.getElementById("media-preview-info");
+  const h = info?.querySelector("h3.media-preview-title");
+  const src = info?.querySelector(".media-preview-link");
+  if (h && src && !h.querySelector("a")) {
+    const a = mk("a", "ct-pv-t", h.textContent);
+    a.href = src.href; if (src.target) { a.target = src.target; a.rel = "noopener"; }
+    h.replaceChildren(a);
+  }
+  relatedStrip();
+};
+// "More images" under the preview = images like the one you opened (degoog drew a random 15 of all results, folded
+// ones included): the grid's shown images ranked by the words they share with the opened image's title beyond the
+// search's own words (17-key, mahogany, cartoon…), then by matching the search; ties keep the engines' order
+const relatedStrip = () => {
+  const more = document.getElementById("media-preview-more");
+  const g = more?.querySelector(".media-preview-more-grid");
+  if (!g || g.dataset.ct) return;
+  const sel = document.querySelector(".image-card.selected, .video-card.selected");
+  if (!sel) return;
+  const kind = sel.classList.contains("video-card") ? "video" : "image";
+  const title = (c) => { const t = c.querySelector(`.${kind}-title`); return (t && (t.title || t.textContent)) || c.querySelector("img")?.alt || ""; };
+  const own = new Set(qWords);
+  const mine = CT.relWords(title(sel)).filter((w) => !own.has(w));
+  const pool = [...document.querySelectorAll(`.${kind}-card`)].filter((c) => c !== sel && c.style.display !== "none" && !c.dataset.ctUnrel && !c.dataset.ctAi && c.querySelector("img")?.getAttribute("src"));
+  const n = Math.max(g.children.length, Math.min(15, pool.length));
+  const scored = pool.map((c, i) => {
+    const t = `${title(c)} ${c.querySelector(`.${kind}-source`)?.textContent || ""}`;
+    return { c, i, s: 2 * CT.matchShare(mine, t) * mine.length + (CT.matchShare(qWords, t) > 0 ? 1 : 0) };
+  }).sort((a, b) => b.s - a.s || a.i - b.i).slice(0, n);
+  const grid = mk("div", "media-preview-more-grid");
+  grid.dataset.ct = "1";
+  for (const { c } of scored) {
+    const b = mk("button", "media-preview-more-item"); b.type = "button";
+    const im = mk("img", "media-preview-more-img"); im.loading = "lazy"; im.src = c.querySelector("img").getAttribute("src"); im.alt = title(c);
+    im.onerror = () => { b.style.display = "none"; };
+    b.append(im);
+    b.addEventListener("click", () => { c.click(); c.scrollIntoView({ block: "nearest", behavior: "smooth" }); });
+    grid.append(b);
+  }
+  g.replaceWith(grid);
+};
 // Web's own rows (Images row, Videos box) use the same rule
 const relOk = (title, url) => { readQuery(); let q0 = ""; try { q0 = new URL(location.href).searchParams.get("q") || ""; } catch {} return !CT.relJudgeable(q0) || CT.related(qWords, qIdent, `${url || ""} ${title || ""}`, 0, 99) || (String(title || "").match(/[\p{L}\p{N}]+/gu) || []).length < 3; };
 const card = (el, isImage) => {
@@ -3156,7 +3207,7 @@ const init = () => {
     safe("rel", relPass);
     for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { safe("scan", () => scan(n)); safe("skeleton", () => skel(n)); safe("usage", () => noUsage(n)); }
     safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("card", glance);
-    safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass);
+    safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass); safe("preview", previewPass);
     safe("drawn", markDrawn);
     safe("ai", () => { const g = document.getElementById("at-a-glance"); if (g) aiPass(g, searchId(location.href)); });
   }).observe(document.body, { childList: true, subtree: true });
