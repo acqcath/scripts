@@ -2990,7 +2990,7 @@ const cleanTitle = (raw, href) => {
     if (/(^|\.)reddit\.com$/.test(host)) {
       let m = t.match(/^r\/([\w-]+) on Reddit\s*[:\-–—]\s*(.+)$/i);
       if (m) return `${m[2].trim()} : r/${m[1]}`;
-      m = t.match(/^(.+?)\s*:\s*r\/([\w-]+)(?:\s*[-|–—]\s*Reddit)?$/i);
+      m = t.match(/^(.+?)\s*:\s*r\/\s*([\w-]+)(?:\s*[-|–—]\s*Reddit)?$/i);
       if (m) return `${m[1].trim()} : r/${m[2]}`;
       t = t.replace(/\s*[-|–—]\s*Reddit$/i, "");
       return t.length >= 6 ? t : title;
@@ -3906,18 +3906,37 @@ const paa = () => {
       const h = document.createElement("h3");
       h.textContent = "People also ask";
       box.append(h);
-      // Words written the way your results write them ("putty" -> "PuTTY")
-      const cased = new Map();
-      for (const r of document.querySelectorAll("#results-list .result-item .result-title")) for (const w of r.textContent.match(/[\p{L}\p{N}][\p{L}\p{N}'+.#-]*/gu) || []) {
-        const k = w.toLowerCase(); if (w === k) continue;
-        const m = cased.get(k) || new Map(); m.set(w, (m.get(w) || 0) + 1); cased.set(k, m);
+      // Words written the way your results write them ("putty" -> "PuTTY", "paris" -> "Paris"): a form with capitals
+      // inside it (PuTTY, iPhone, NASA) from titles or text, or a capitalised word the result text writes that way
+      // mid-sentence most of the time (names); title case ("Day Old Tea") never counts
+      const cased = new Map(), mid = new Map();
+      const add = (m, k, w) => { const x = m.get(k) || new Map(); x.set(w, (x.get(w) || 0) + 1); m.set(k, x); };
+      for (const r of document.querySelectorAll("#results-list .result-item :is(.result-title, .result-snippet)")) for (const w of r.textContent.match(/[\p{L}\p{N}][\p{L}\p{N}'+.#-]*/gu) || []) if (/\p{Lu}/u.test(w.slice(1))) add(cased, w.toLowerCase(), w);
+      for (const r of document.querySelectorAll("#results-list .result-item .result-snippet")) {
+        const toks = r.textContent.split(/\s+/);
+        for (let i = 1; i < toks.length; i++) { const w = toks[i].replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""); if (w && !/[.!?:…]$/.test(toks[i - 1])) add(mid, w.toLowerCase(), w); }
       }
+      const pick = (k) => {
+        const c = cased.get(k);
+        if (c) return [...c].sort((a, b) => b[1] - a[1])[0][0];
+        const m = mid.get(k);
+        if (!m) return null;
+        const up = [...m].filter(([w]) => /^\p{Lu}/u.test(w)).reduce((n, [, v]) => n + v, 0), all = [...m].reduce((n, [, v]) => n + v, 0);
+        return up >= 2 && up * 3 >= all * 2 ? k[0].toUpperCase() + k.slice(1) : null;
+      };
       const fixCase = (t) => t.replace(/[\p{L}\p{N}][\p{L}\p{N}'+.#-]*/gu, (w, i) => {
-        const m = cased.get(w.toLowerCase());
-        if (!m || !q.toLowerCase().split(/\s+/).includes(w.toLowerCase())) return w;
-        const best = [...m].sort((a, b) => b[1] - a[1])[0][0];
+        const k = w.toLowerCase(), m = mid.get(k);
+        const lowMostly = m && [...m].filter(([x]) => x === k).reduce((n, [, v]) => n + v, 0) * 2 > [...m].reduce((n, [, v]) => n + v, 0);
+        const best = pick(k) || (lowMostly ? k : w); // no evidence either way: as the suggestion wrote it
         return i === 0 ? best[0].toUpperCase() + best.slice(1) : best;
       });
+      // Answers are fetched as the box comes near the screen, so a tap shows one at once; a question no page answers
+      // is taken out before you get to it (no "Search for" stand-ins); fewer than 2 left: no box
+      const ans = new Map();
+      const get = (text) => ans.get(text) || ans.set(text, fetch(`/api/search?q=${encodeURIComponent(text)}`).then((r) => (r.ok ? r.json() : null))
+        .then((sj) => (sj && Array.isArray(sj.results) ? sj.results.find((x) => x && x.url && x.snippet) : null) || null).catch(() => null)).get(text);
+      const drop = (d) => { d.remove(); if (box.querySelectorAll("details").length < 2) box.remove(); };
+      const items = [];
       for (const raw of j.q) {
         const text = fixCase(raw);
         const d = document.createElement("details");
@@ -3926,47 +3945,44 @@ const paa = () => {
         const body = document.createElement("div");
         body.className = "ct-qa-a";
         d.append(s, body);
+        items.push([d, text]);
         d.addEventListener("toggle", () => {
           if (!d.open || body.dataset.done) return;
           body.dataset.done = "1";
           body.textContent = "Loading…";
-          const more = document.createElement("a");
-          more.className = "ct-qa-more";
-          more.href = goTo(text);
-          more.textContent = `Search for: ${text}`;
-          fetch(`/api/search?q=${encodeURIComponent(text)}`)
-            .then((r) => (r.ok ? r.json() : null))
-            .then((sj) => {
-              body.textContent = "";
-              const top = sj && Array.isArray(sj.results) ? sj.results.find((x) => x && x.url && x.snippet) : null;
-              if (top) {
-                // Same order and look as a result: answer, then site icon + name, then the page title
-                const p = document.createElement("p");
-                p.className = "ct-qa-text";
-                let t = String(top.snippet).replace(/<[^>]+>/g, "").trim();
-                const dm = /^([A-Z][a-z]{2,8}\.? \d{1,2}, \d{4})\s*(?:\.\.\.|…|·|-|—)\s*/.exec(t);
-                if (dm) { t = t.slice(dm[0].length); const ds = document.createElement("span"); ds.className = "result-date"; ds.textContent = `${dm[1]} · `; p.append(ds); }
-                p.append(t);
-                const row = document.createElement("div");
-                row.className = "ct-qa-site";
-                let host = "";
-                try { host = new URL(top.url).hostname.replace(/^www\./, ""); } catch {}
-                if (top.favicon) { const ic = document.createElement("img"); ic.src = top.favicon; ic.alt = ""; ic.onerror = () => ic.remove(); row.append(ic); }
-                const cite = document.createElement("cite");
-                cite.textContent = host;
-                row.append(cite);
-                const a = document.createElement("a");
-                a.className = "ct-qa-src";
-                a.href = top.url;
-                a.textContent = cleanTitle(top.title || top.url, top.url);
-                body.append(p, row, a);
-              }
-              body.append(more);
-            })
-            .catch(() => { body.textContent = ""; body.append(more); });
+          get(text).then((top) => {
+            body.textContent = "";
+            if (!top) { drop(d); return; }
+            // Same order and look as a result: answer, then site icon + name, then the page title
+            const p = document.createElement("p");
+            p.className = "ct-qa-text";
+            let t = String(top.snippet).replace(/<[^>]+>/g, "").trim();
+            const dm = /^([A-Z][a-z]{2,8}\.? \d{1,2}, \d{4})\s*(?:\.\.\.|…|·|-|—)\s*/.exec(t);
+            if (dm) { t = t.slice(dm[0].length); const ds = document.createElement("span"); ds.className = "result-date"; ds.textContent = `${dm[1]} · `; p.append(ds); }
+            p.append(t);
+            const row = document.createElement("div");
+            row.className = "ct-qa-site";
+            let host = "";
+            try { host = new URL(top.url).hostname.replace(/^www\./, ""); } catch {}
+            if (top.favicon) { const ic = document.createElement("img"); ic.src = top.favicon; ic.alt = ""; ic.onerror = () => ic.remove(); row.append(ic); }
+            const cite = document.createElement("cite");
+            cite.textContent = host;
+            row.append(cite);
+            const a = document.createElement("a");
+            a.className = "ct-qa-src";
+            a.href = top.url;
+            a.textContent = cleanTitle(top.title || top.url, top.url);
+            body.append(p, row, a);
+          });
         });
         box.append(d);
       }
+      const io = "IntersectionObserver" in window ? new IntersectionObserver((es) => {
+        if (!es.some((e) => e.isIntersecting)) return;
+        io.disconnect();
+        for (const [d, text] of items) get(text).then((top) => { if (!top && !d.open) drop(d); });
+      }, { rootMargin: "600px 0px" }) : null;
+      if (io) io.observe(box);
       paaBox = fadeIn(box);
       paaAnchor()?.after(box);
     })(ready("qs", key));
@@ -5490,7 +5506,6 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .ct-qa-site img { width: 16px; height: 16px; border-radius: 4px; object-fit: contain; }
 .ct-qa-site cite { font-style: normal; font-size: 13px; line-height: 18px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ct-qa-src { display: block; margin: 4px 0 12px; font-size: 21px; line-height: 26px; color: var(--text-link); text-decoration: none; }
-.ct-qa-more { font-size: 14px; color: var(--text-link); text-decoration: none; }
 @media (max-width: 767px) {
   #ct-qa h3 { font-size: 18px; line-height: 23px; }
   .ct-qa-text { font-size: var(--ct-desc-phone); line-height: 19px; color: var(--text-secondary); }
