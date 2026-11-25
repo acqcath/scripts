@@ -17,6 +17,7 @@ const _fetch0 = window.fetch.bind(window);
 // The answer AI's verdicts ride along in degoog's own search answers (ctRel per result, ctBest = its best sentence):
 // read here, before degoog draws the results, so relevance and the featured snippet use them in the same pass
 const AIW = globalThis.__ctAIW || (globalThis.__ctAIW = new Map());
+const PUBW = globalThis.__ctPUBW || (globalThis.__ctPUBW = new Map()); // doi.org result -> publisher name (server, Crossref)
 const aiKey = (u) => { try { const x = new URL(u, location.href); return (x.host.replace(/^www\./, "") + x.pathname.replace(/\/$/, "") + x.search).toLowerCase(); } catch { return String(u || ""); } };
 window.fetch = async (input, init) => {
   let path = "", search = false;
@@ -30,7 +31,10 @@ window.fetch = async (input, init) => {
     try {
       if (r.ok) {
         const j = await r.clone().json();
-        if (j && j.ctAi && Array.isArray(j.results)) for (const x of j.results) if (x && x.url && typeof x.ctRel === "number") AIW.set(aiKey(x.url), { p: x.ctRel, best: x.ctBest || null });
+        if (j && (j.ctAi || j.ctPub) && Array.isArray(j.results)) for (const x of j.results) if (x && x.url) {
+          if (typeof x.ctRel === "number") AIW.set(aiKey(x.url), { p: x.ctRel, best: x.ctBest || null });
+          if (x.ctPub) PUBW.set(aiKey(x.url), String(x.ctPub));
+        }
         if (AIW.size > 3000) for (const k of [...AIW.keys()].slice(0, 1000)) AIW.delete(k);
       }
     } catch {}
@@ -462,7 +466,7 @@ const row = (el) => {
   try { site = new URL(el.dataset.resultUrl || a.href).hostname.replace(/^www\./, ""); } catch {}
   // Forum threads (any tab): the community is the source ("r/Jersey", "Stack Overflow"), not repeated in the title,
   // and Reddit's "Archived post. New comments cannot be posted..." filler is dropped from the description
-  const pub = CT.doiPublisher(el.dataset.resultUrl || a.href);
+  const pub = CT.doiPublisher(el.dataset.resultUrl || a.href) || PUBW.get(aiKey(el.dataset.resultUrl || a.href)) || "";
   if (pub) site = pub; // "Elsevier" instead of doi.org (the address still shows on hover)
   const fn = u ? forumName(u, site) : "";
   if (fn) {
@@ -2050,7 +2054,27 @@ const kpPass = () => {
 };
 
 const safe = (name, fn) => { try { fn(); } catch (e) { console.error(`clean-titles ${name}:`, e); } };
+// A tab tapped while degoog's first search is still starting is ignored by degoog (it has no current search yet), so the
+// page seemed stuck until it finished loading. The tap is kept and repeated until degoog takes it (its tab turns
+// active); degoog then drops the search that was loading and opens the tab. A later tap on another tab cancels it.
+let rescueId = 0, repeating = false;
+const tabRescue = () => {
+  document.addEventListener("click", (e) => {
+    const tab = e.target && e.target.closest ? e.target.closest("#results-tabs .results-tab") : null;
+    if (!tab || repeating) return; // our own repeated taps never start another rescue
+    const id = ++rescueId;
+    const t0 = Date.now();
+    const tick = () => {
+      if (id !== rescueId || !tab.isConnected || tab.classList.contains("active") || Date.now() - t0 > 12000) return;
+      repeating = true; try { tab.click(); } finally { repeating = false; }
+      setTimeout(tick, 450);
+    };
+    setTimeout(tick, 450);
+  }, true);
+};
+
 const init = () => {
+  safe("tabrescue", tabRescue);
   safe("query", readQuery);
   safe("early", earlyStart);
   safe("usage", () => noUsage(document.body));

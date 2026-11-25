@@ -106,6 +106,15 @@ async def ensure(urls, budget):
             for (u, _), e in zip(ok, embs): IMG.put(u, e)
     return [IMG.get1(u) for u in urls]
 
+@app.on_event("startup")
+async def warm():
+    # First GPU calls compile kernels and take seconds; do that now, not on the first search
+    try:
+        async with lock:
+            await asyncio.to_thread(rerank, "warm up", ["warm up passage about a warm up query " * 12] * 16)
+    except Exception:
+        pass
+
 @app.get("/health")
 async def health():
     return {"ok": True, "device": dev, "gpu": gpu, "model": MODEL, "rerank": RERANK, "cached": len(IMG)}

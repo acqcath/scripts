@@ -506,3 +506,35 @@ test("load timings: only numbers kept, last 60, nothing else stored", async () =
   expect(saved[0].nav).toEqual({ wait: 0, dns: 12, ready: 340, type: "navigate" });
   expect(JSON.stringify(saved)).not.toContain("secret");
 });
+
+test("server: DOI publisher names (Crossref prefix list), trending words, slow rank kept for the next request", async () => {
+  const srv = await import("../files/index.js");
+  expect(srv.doiNice("Elsevier BV")).toBe("Elsevier");
+  expect(srv.doiNice("Institute of Electrical and Electronics Engineers (IEEE)")).toBe("IEEE");
+  expect(srv.doiNice("Springer Science and Business Media LLC")).toBe("Springer Science and Business Media");
+  expect(srv.doiPrefixOf("https://doi.org/10.9999/abc.1")).toBe("10.9999");
+  expect(srv.doiPrefixOf("https://example.com/10.9999/abc")).toBe("");
+  expect(srv.trendWords(["Main_Page", "Special:Search", "Kalimba", "Taylor_Swift", "AI", "2026_in_film", "Dune_(2021_film)"]).sort()).toEqual(["ai", "dune", "film", "kalimba", "swift", "taylor"].sort());
+  // Fake network: Crossref answers at once; ct-vision answers after 2.2 s (longer than the 1.6 s wait)
+  const real = globalThis.fetch; let ranks = 0;
+  globalThis.fetch = async (url) => {
+    const u = String(url);
+    if (u.includes("api.crossref.org/prefixes/10.9999")) return new Response(JSON.stringify({ message: { name: "Acme Press Ltd." } }));
+    if (u.includes("/rank")) { ranks++; await new Promise((r) => setTimeout(r, 2200)); return new Response(JSON.stringify({ s: [0.9, 0.1], ms: 2200 })); }
+    return new Response("", { status: 404 });
+  };
+  const tdir = fs.mkdtempSync(path.join(os.tmpdir(), "ct-doi-"));
+  srv.default.init({ id: "clean-titles", dir: tdir, fetch: globalThis.fetch });
+  try {
+    const mk = () => ({ results: [{ url: "https://doi.org/10.9999/x.1", title: "A study of kalimba", snippet: "Kalimba tines vibrate." }, { url: "https://example.com/a", title: "B", snippet: "Other." }] });
+    const a = mk(); await globalThis.__ctResults(a, "kalimba physics", { type: "science" });
+    expect(a.results[0].ctPub).toBe("Acme Press");
+    expect(a.ctPub).toBe(1);
+    expect(a.ctAi).toBeUndefined(); // too slow for this response...
+    await new Promise((r) => setTimeout(r, 1000));
+    const b = mk(); await globalThis.__ctResults(b, "kalimba physics", { type: "science" });
+    expect(b.ctAi).toBe(1); // ...but kept, so the same results one request later have it at once
+    expect(b.results[0].ctRel).toBe(0.9);
+    expect(ranks).toBe(1);
+  } finally { globalThis.fetch = real; }
+}, 15000);
