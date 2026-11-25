@@ -2044,7 +2044,7 @@ const kpPass = () => {
   if (late && !wide) return; // on top of the list, after the results are on screen: would push them down
   const rows = [...list.querySelectorAll(".result-item")];
   if (!rows.length) return;
-  const m = CT.kpMatch(kp.title, rows.map((r) => r.querySelector("a.result-title")?.href || ""));
+  const m = CT.kpMatch(kp.title, rows.map((r) => r.querySelector("a.result-title")?.href || ""), kp.hosts);
   if (!m.ok) return;
   if (!late) for (const i of m.wiki) rows[i].dataset.ctKp = "1"; // the panel replaces that result (before paint only)
   const card = kpCard(kp, wide);

@@ -606,12 +606,16 @@ export const sportsAnswer = (g, now = Date.now()) => {
 // ----- Knowledge panel (spec 3): which searches ask for one, and whether the results back it up -----
 // Short name-like searches only: no question, task, shopping or command words (those want results or an answer)
 const KP_NOT = /^(?:how|what|whats|why|when|where|who|whos|which|is|are|was|do|does|did|can|could|should|will|define|weather|time|best|top|cheap|buy|download|install|watch|play|login|log|sign|free|near|latest|new)\b|\b(?:vs|versus|or|near me|review|reviews|price|prices|deal|deals|stock|tutorial|login|error|errors|support|setup|fix|not working|lyrics|meaning|tickets|hours|menu|coupon|codes?|app|apk|wallpaper|jobs|careers|salary|today|tonight|score|schedule|news|recipe|pdf|reddit)\b/i;
+// "X specs", "X price", "X release date"… ask for the panel about X (a product's panel has those facts)
+const KP_ASK = / (?:specs|spec sheet|specifications|tech specs|price|msrp|launch price|release date|discontinued|end of production)$/i;
+// Model numbers (ps5, s24, m1, rtx4090, a7iv) are names; other letter-digit words (tracking numbers, code) aren't
+const KP_MODEL = /^\p{L}{1,4}\d{1,5}\p{L}{0,3}$/u;
 export const kpQuery = (q) => {
-  const s = String(q || "").trim().replace(/\s+/g, " ");
+  const s = String(q || "").trim().replace(/\s+/g, " ").replace(KP_ASK, "");
   if (s.length < 2 || s.length > 60 || s.split(" ").length > 5) return null;
   if (!/^[\p{L}\d][\p{L}\d .'&-]*$/u.test(s) || /^[\d .-]+$/.test(s) || KP_NOT.test(s)) return null;
   // Code-like words (useEffect, 1Z999…) aren't names of things
-  if (/\p{Ll}\p{Lu}/u.test(s) || /\d\p{L}|\p{L}\d/u.test(s)) return null;
+  if (/\p{Ll}\p{Lu}/u.test(s) || s.split(" ").some((w) => /\d\p{L}|\p{L}\d/u.test(w) && !KP_MODEL.test(w))) return null;
   return s;
 };
 // Titles compared without case, underscores/hyphens or a "(qualifier)"
@@ -620,7 +624,8 @@ const kpNorm = (t) => String(t || "").toLowerCase().replace(/[_-]+/g, " ").repla
 // replaces it), or the same article on Wikiwand (a Wikipedia mirror) or Britannica (on the user's engines no
 // Wikipedia result came back in 50 recorded searches; Britannica's article is the same evidence that this meaning
 // is the one the results are about). Returns {ok, wiki: [indices of Wikipedia results]}.
-export const kpMatch = (title, urls) => {
+// hosts: a product's own and its maker's official sites (apple.com for an iPhone): a result there backs it up too
+export const kpMatch = (title, urls, hosts = []) => {
   const t = kpNorm(title), wiki = [];
   let ok = false;
   if (!t) return { ok, wiki };
@@ -633,6 +638,7 @@ export const kpMatch = (title, urls) => {
     let m;
     if (/^en\.(?:m\.)?wikipedia\.org$/.test(host) && (m = /^\/wiki\/([^/]+)$/.exec(path)) && kpNorm(m[1]) === t) { ok = true; wiki.push(i); }
     else if (host === "wikiwand.com" && (m = /^\/en\/(?:articles\/)?([^/]+)$/.exec(path)) && kpNorm(m[1]) === t) ok = true;
+    else if ((hosts || []).some((x) => host === x || host.endsWith(`.${x}`))) ok = true;
     else if (host === "britannica.com" && (m = /^\/(?:topic|biography|place|science|art|technology|event|animal|plant|money|sports|summary)\/([^/]+)/.exec(path)) && kpNorm(m[1]) === t) ok = true;
   });
   return { ok, wiki };

@@ -448,22 +448,95 @@ const KP_TYPES = [
   ["language", ["Q9143"], [["Designed by", "P287"], ["First appeared", "P571"], ["Latest version", "P348"]]],
   ["animal", ["Q16521"], [["Conservation status", "P141"]]],
 ];
+// Products (phones, laptops, consoles, cars, cameras…): any item with a manufacturer or brand that isn't one of the
+// types above. Wikidata gives the dates and a few specs; the Wikipedia infobox fills in the rest (kpInfobox).
+const KP_PRODUCT = ["product", [], [["Released", "P577|P571"], ["Discontinued", "P2669|P576"], ["Launch price", "P2284"], ["Manufacturer", "P176|P1716"], ["Processor", "P880"], ["Memory", "P2928"], ["OS", "P306", 2], ["Predecessor", "P155"], ["Successor", "P156"]]];
+const KP_ORDER = ["Released", "Discontinued", "Launch price", "Manufacturer", "Processor", "Graphics", "Memory", "Storage", "Display", "Battery", "Camera", "OS", "Engine", "Weight", "Predecessor", "Successor"];
 // entity JSON (wbgetentities) -> {type, rows: [{k, prop, vals: [wdValue...], max}], image, title}
 // up: {P31 value: its own "subclass of" (P279) values}, asked only when no P31 value is a known type
 // (Golden Gate Bridge is a "suspension bridge", which is a subclass of "bridge")
 export const kpPlan = (ent, up = {}) => {
   const cl = (ent && ent.claims) || {};
   const p31 = wdBest(cl.P31).map(wdValue).filter((v) => v && v.id).map((v) => v.id);
-  const t = KP_TYPES.find(([, ids]) => p31.some((x) => ids.includes(x))) || KP_TYPES.find(([, ids]) => p31.some((x) => (up[x] || []).some((y) => ids.includes(y))));
+  const t = KP_TYPES.find(([, ids]) => p31.some((x) => ids.includes(x))) || ((cl.P176 || cl.P1716) && KP_PRODUCT) || KP_TYPES.find(([, ids]) => p31.some((x) => (up[x] || []).some((y) => ids.includes(y))));
   const rows = [];
-  for (const [k, prop, max = 1] of t ? t[2] : []) {
-    const vals = wdBest(cl[prop]).map(wdValue).filter(Boolean).slice(0, max);
-    if (vals.length) rows.push({ k, prop, vals, max });
+  for (const [k, props, max = 1] of t ? t[2] : []) {
+    for (const prop of props.split("|")) {
+      const vals = wdBest(cl[prop]).map(wdValue).filter(Boolean).slice(0, max);
+      if (vals.length) { rows.push({ k, prop, vals, max }); break; }
+    }
   }
+  const site = wdBest(cl.P856).map(wdValue).find((x) => typeof x === "string") || "";
   const img = wdBest(cl.P18).map((c) => c.mainsnak.datavalue.value).find((x) => typeof x === "string");
   const title = ent && ent.sitelinks && ent.sitelinks.enwiki && ent.sitelinks.enwiki.title;
-  return { type: t ? t[0] : "", rows, image: img || "", title: title || "", p31 };
+  return { type: t ? t[0] : "", rows, image: img || "", title: title || "", p31, site };
 };
+// Units and currencies read by their English label (no guessed item ids)
+const CUR_SYM = { "united states dollar": "$", "euro": "€", "pound sterling": "£", "japanese yen": "¥", "canadian dollar": "CA$", "australian dollar": "A$", "indian rupee": "₹", "renminbi": "CN¥" };
+const UNIT_ABBR = { "gigabyte": "GB", "megabyte": "MB", "terabyte": "TB", "kilobyte": "KB", "gibibyte": "GiB", "mebibyte": "MiB", "gram": "g", "kilogram": "kg", "millimetre": "mm", "centimetre": "cm", "inch": "in", "milliampere hour": "mAh", "watt": "W", "gigahertz": "GHz", "megahertz": "MHz", "megapixel": "MP" };
+// ----- Wikipedia infobox -> [{k, v}] (product specs). Wikitext of the article's lead section; values cleaned of
+// references, links and templates; dates from {{Start date|2023|9|22}} etc. written like Wikidata's ("Sep 22, 2023").
+const IB_KEYS = [["Released", /^(?:release_?date|released|first_?release|launch_?date|date_?released|introduced|introductory_?date)$/], ["Discontinued", /^(?:discontinued|discontinuation(?:_?date)?|end_?of_?production|production_?end|discontinued_?date)$/], ["Launch price", /^(?:price|introductory_?price|launch_?price|msrp|retail_?price|price_?launch|introductory_?price_?us)$/], ["Manufacturer", /^(?:manufacturer|maker)$/], ["Processor", /^(?:cpu|soc|processor|chipset)$/], ["Graphics", /^(?:gpu|graphics)$/], ["Memory", /^(?:memory|ram)$/], ["Storage", /^(?:storage|internal_?storage)$/], ["Display", /^(?:display|screen)$/], ["Battery", /^battery$/], ["Camera", /^(?:camera|rear_?camera|primary_?camera)$/], ["OS", /^(?:os|operating_?system|operatingsystem)$/], ["Engine", /^engine$/], ["Weight", /^(?:weight|mass)$/], ["Predecessor", /^predecessor$/], ["Successor", /^successor$/]];
+const MON3 = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const ibDate = (a) => {
+  const n = a.filter((x) => !x.includes("=")).map((x) => x.trim()).filter(Boolean);
+  const y = +n[0], m = +n[1], d = +n[2];
+  if (!(y > 1000)) return "";
+  return m >= 1 && m <= 12 ? (d >= 1 && d <= 31 ? `${MON3[m - 1]} ${d}, ${y}` : `${MON3[m - 1]} ${y}`) : String(y);
+};
+const ibTpl = (name, a) => {
+  const t = name.trim().toLowerCase();
+  if (/^(?:start date|end date|release date|film date|start date and age|end date and age|date|birth date|dts)$/.test(t)) return ibDate(a);
+  if (/^(?:us\$|usd)$/.test(t)) return `$${(a[0] || "").trim()}`;
+  if (/^(?:€|eur|euro)$/.test(t)) return `€${(a[0] || "").trim()}`;
+  if (/^(?:£|gbp)$/.test(t)) return `£${(a[0] || "").trim()}`;
+  if (/^(?:¥|jpy|yen)$/.test(t)) return `¥${(a[0] || "").trim()}`;
+  if (t === "convert" || t === "cvt") return `${(a[0] || "").trim()} ${(a[1] || "").trim()}`;
+  if (/^(?:nowrap|nobr|small|abbr|tooltip|nowrap begin|lang-?\w*|resize)$/.test(t)) return (t.startsWith("lang") && a.length > 1 ? a[1] : a[0]) || "";
+  if (t === "nbsp" || t === "sp") return " ";
+  if (/^(?:ubl|unbulleted list|plainlist|plain list|flatlist|hlist|bulleted list|ubil|br separated entries)$/.test(t)) return a.filter((x) => !/^\s*\w+\s*=/.test(x)).join("\n");
+  return "";
+};
+export const ibClean = (v) => {
+  let s = String(v || "").replace(/<!--[\s\S]*?-->/g, "").replace(/<ref[^>]*\/>/gi, "").replace(/<ref[^>]*>[\s\S]*?<\/ref>/gi, "");
+  s = s.replace(/\[\[(?:File|Image):[^\]]*\]\]/gi, "").replace(/\[\[([^\]|]*)\|([^\]]*)\]\]/g, "$2").replace(/\[\[([^\]]*)\]\]/g, "$1");
+  for (let i = 0; i < 8 && /\{\{[^{}]*\}\}/.test(s); i++) s = s.replace(/\{\{([^{}]*)\}\}/g, (_, x) => { const [n, ...a] = x.split("|"); return ibTpl(n, a); });
+  s = s.replace(/\{\{|\}\}/g, "").replace(/\[https?:\/\/\S+\s+([^\]]+)\]/g, "$1").replace(/\[https?:\/\/\S+\]/g, "").replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "").replace(/'{2,}/g, "").replace(/&nbsp;/g, " ").replace(/&ndash;/g, "–").replace(/&amp;/g, "&");
+  s = s.split("\n").map((x) => x.replace(/^[*#:;\s]+/, "").trim()).filter(Boolean).join(", ");
+  s = s.replace(/\s+/g, " ").replace(/\s+,/g, ",").replace(/,(\s*,)+/g, ",").replace(/^[,;\s]+|[,;:\s]+$/g, "").replace(/\(\s*\)/g, "").trim();
+  if (s.length > 140) s = `${s.slice(0, 140).replace(/[\s,;]+\S*$/, "")}…`;
+  return s;
+};
+export const kpInfobox = (wikitext) => {
+  const w = String(wikitext || ""), at = w.search(/\{\{\s*Infobox/i);
+  if (at < 0) return [];
+  let depth = 0, end = w.length;
+  for (let i = at; i < w.length - 1; i++) {
+    if (w[i] === "{" && w[i + 1] === "{") { depth++; i++; } else if (w[i] === "}" && w[i + 1] === "}") { depth--; i++; if (!depth) { end = i - 1; break; } }
+  }
+  const body = w.slice(at + 2, end), parts = [];
+  let d = 0, cur = "";
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i], two = body.slice(i, i + 2);
+    if (two === "{{" || two === "[[") { d++; cur += two; i++; continue; }
+    if (two === "}}" || two === "]]") { d--; cur += two; i++; continue; }
+    if (c === "|" && d === 0) { parts.push(cur); cur = ""; continue; }
+    cur += c;
+  }
+  parts.push(cur);
+  const out = [];
+  for (const p of parts.slice(1)) {
+    const eq = p.indexOf("=");
+    if (eq < 0) continue;
+    const key = p.slice(0, eq).trim().toLowerCase().replace(/[\s-]+/g, "_");
+    const hit = IB_KEYS.find(([, re]) => re.test(key));
+    if (!hit || out.some((f) => f.k === hit[0])) continue;
+    const v = ibClean(p.slice(eq + 1));
+    if (v) out.push({ k: hit[0], v });
+  }
+  return out;
+};
+const hostOf = (u) => { try { return new URL(u).hostname.replace(/^www\./, "").toLowerCase(); } catch { return ""; } };
 const UNIT_NAME = { Q11573: ["m", 1], Q712226: ["km²", 1], Q25343: ["m²", 1e-6], Q7727: ["min", 1], Q174728: ["cm", 1] };
 // One fact's text (labels: {Qid: name}); dates as written, "as of" for population, imperial next to metric
 export const kpText = (row, labels) => row.vals.map((v) => {
@@ -477,7 +550,10 @@ export const kpText = (row, labels) => row.vals.map((v) => {
     if (row.prop === "P2048" && u && u[0] === "m") return `${n.toLocaleString("en-US")} m (${Math.round(n / 0.3048).toLocaleString("en-US")} ft)`;
     if (row.prop === "P2046" && u) { const km2 = u[0] === "km²" ? n : n * u[1]; return `${km2.toLocaleString("en-US", { maximumFractionDigits: 1 })} km² (${(km2 / 2.589988).toLocaleString("en-US", { maximumFractionDigits: 1 })} sq mi)`; }
     if (row.prop === "P2047" && u && u[0] === "min") return `${n} min`;
-    return u ? `${n.toLocaleString("en-US")} ${u[0]}` : n.toLocaleString("en-US");
+    if (u) return `${n.toLocaleString("en-US")} ${u[0]}`;
+    const ul = String(labels[v.unit] || "").toLowerCase();
+    if (row.prop === "P2284" && CUR_SYM[ul]) return `${CUR_SYM[ul]}${n.toLocaleString("en-US")}`;
+    return ul ? `${n.toLocaleString("en-US")} ${UNIT_ABBR[ul] || labels[v.unit]}` : n.toLocaleString("en-US");
   }
   if (typeof v === "string") return v;
   return "";
@@ -508,19 +584,33 @@ export const kpFor = async (q) => {
       }
       if (!plan.title) why("kp", "no English Wikipedia article");
       if (plan.title) {
-        const ids = [...new Set(plan.rows.flatMap((r) => r.vals.filter((x) => x.id).map((x) => x.id)))].slice(0, 20);
-        const [lab, sum] = await Promise.all([
+        const ids = [...new Set(plan.rows.flatMap((r) => r.vals.flatMap((x) => x.id ? [x.id] : x.unit && /^Q\d+$/.test(x.unit) && !UNIT_NAME[x.unit] ? [x.unit] : [])))].slice(0, 20);
+        const prod = plan.type === "product", maker = prod && (plan.rows.find((r) => r.k === "Manufacturer") || { vals: [] }).vals.find((x) => x.id);
+        const page = encodeURIComponent(plan.title.replace(/ /g, "_"));
+        const [lab, sum, raw, mk] = await Promise.all([
           ids.length ? wdGet({ action: "wbgetentities", ids: ids.join("|"), props: "labels", languages: "en" }) : null,
-          net(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(plan.title.replace(/ /g, "_"))}`, { timeout: 3000, max: 200000, accept: "application/json", headers: WD_UA }),
+          net(`https://en.wikipedia.org/api/rest_v1/page/summary/${page}`, { timeout: 3000, max: 200000, accept: "application/json", headers: WD_UA }),
+          prod ? net(`https://en.wikipedia.org/w/index.php?title=${page}&action=raw&section=0`, { timeout: 3000, max: 400000, headers: WD_UA }) : null,
+          maker ? wdGet({ action: "wbgetclaims", entity: maker.id, property: "P856" }) : null,
         ]);
         const labels = {};
         for (const id of ids) { const l = lab && lab.entities && lab.entities[id] && lab.entities[id].labels && lab.entities[id].labels.en; if (l) labels[id] = l.value; }
         let sj = null;
         try { sj = sum.status === 200 ? JSON.parse(sum.text) : null; } catch {}
-        const facts = plan.rows.map((r) => ({ k: r.k, v: kpText(r, labels) })).filter((f) => f.v);
+        let facts = plan.rows.map((r) => ({ k: r.k, v: kpText(r, labels) })).filter((f) => f.v);
+        // Products: the infobox adds what Wikidata lacks (specs, launch price); its official sites back the panel up
+        const hosts = [];
+        if (prod) {
+          const ib = raw && raw.status === 200 ? kpInfobox(raw.text) : [];
+          for (const f of ib) if (!facts.some((x) => x.k === f.k)) facts.push(f);
+          facts.sort((a, b) => KP_ORDER.indexOf(a.k) - KP_ORDER.indexOf(b.k));
+          const ms = mk && mk.claims ? wdBest(mk.claims.P856).map(wdValue).find((x) => typeof x === "string") : "";
+          for (const u of [plan.site, ms]) { const h = u && hostOf(u); if (h && !hosts.includes(h)) hosts.push(h); }
+          if (!ib.length) why("kp-specs", raw ? `infobox ${raw.status === 200 ? "not found" : `http ${raw.status || "no answer"}`}` : "not asked");
+        }
         const photo = plan.image ? `https://commons.wikimedia.org/w/index.php?title=Special:FilePath/${encodeURIComponent(plan.image)}&width=330` : sj && sj.thumbnail && sj.thumbnail.source || "";
         why("kp", [!plan.type && "type not known", !facts.length && "no facts", !(sj && sj.extract) && `Wikipedia summary ${sum.status ? `http ${sum.status}` : "no answer"}`, !photo && "no photo", photo && !_sign && "no image signer"].filter(Boolean).join(", ") || "ok");
-        v = { qid: h.id, title: plan.title, name: h.label || plan.title, type: plan.type, desc: h.description || (sj && sj.description) || "", extract: sj && typeof sj.extract === "string" ? sj.extract : "", facts, photo: photo && _sign ? _sign(photo) : "" };
+        v = { qid: h.id, title: plan.title, name: h.label || plan.title, type: plan.type, desc: h.description || (sj && sj.description) || "", extract: sj && typeof sj.extract === "string" ? sj.extract : "", facts, photo: photo && _sign ? _sign(photo) : "", ...(hosts.length ? { hosts } : {}) };
       }
     }
     if (alts.length >= 2) v = { ...(v || {}), alts };
