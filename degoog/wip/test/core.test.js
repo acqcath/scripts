@@ -271,3 +271,14 @@ test("polish: one clean-up for every title and description", async () => {
   expect(tidyText("bold word ")).toBe("bold word "); // text pieces keep their edge spaces
   expect(tidyTitle(" | Something - ")).toBe("Something");
 });
+
+test("relevance: core words most results share; a common shared word isn't enough", () => {
+  const words = C.relWords("using dbr 12 on a pole");
+  expect(words).toContain("dbr12");
+  const texts = ["Yamaha DBR12 monitor duty?", "Setting up a Yamaha DBR12 powered speaker", "How To Use DBR12 Powered", "Yamaha DBR12 on a speaker pole", "DBR12 review", "Useing or Using – Which Spelling Is Correct?", "Best speaker stands"];
+  const core = C.relCore(words, texts);
+  expect(core).toEqual(["dbr12"]);
+  expect(C.matchShare(core, texts[5])).toBe(0);
+  expect(C.matchShare(core, texts[3])).toBeGreaterThan(0);
+  expect(C.relCore(words, texts.slice(0, 3))).toEqual([]);
+});

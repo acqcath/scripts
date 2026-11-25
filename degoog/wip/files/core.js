@@ -455,7 +455,12 @@ export const tabLow = (tab, host, title, seen) => {
 const REL_STOP = new Set("the and for with from what whats how who whos why when where which this that these those are was were you your can does did will about into than then there many much".split(" "));
 // "15-213", "10.1038" are one token (digit groups joined); words match by shared start (love / loves / lover)
 const relToks = (t) => String(t || "").toLowerCase().replace(/(\d)[-.\/](?=\d)/g, "$1").split(/[^\p{L}\p{N}]+/u).filter(Boolean);
-export const relWords = (q) => [...new Set(relToks(q).filter((w) => (/\p{L}/u.test(w) ? w.length >= 3 && !REL_STOP.has(w) : w.length >= 4)))];
+// A model name split by a space ("dbr 12", "rtx 4090", "galaxy s 24") also counts written together ("dbr12")
+export const relWords = (q) => {
+  const t = relToks(q), joined = [];
+  for (let i = 0; i + 1 < t.length; i++) if (/^\p{L}+$/u.test(t[i]) && /^\d+$/.test(t[i + 1]) && t[i].length <= 6) joined.push(t[i] + t[i + 1]);
+  return [...new Set([...t.filter((w) => (/\p{L}/u.test(w) ? w.length >= 3 && !REL_STOP.has(w) : w.length >= 4)), ...joined])];
+};
 export const relIdent = (q) => { const t = relToks(q); return t.length > 0 && t.every((w) => /\d/.test(w)); };
 const relHit = (w, t) => t === w || (w.length >= 4 && t.length >= 4 && (t.startsWith(w) || w.startsWith(t)));
 export const matchShare = (words, text) => {
@@ -465,6 +470,16 @@ export const matchShare = (words, text) => {
 };
 // A search made mostly of common words (a quote, "who are you who do you work for") can't be judged by its words: no check
 export const relJudgeable = (q) => { const t = relToks(q); return t.length > 0 && relWords(q).length * 2 >= t.length; };
+// Core words: the search's words that 40%+ of the first results share (at least 3 of them). Empty = no core (every
+// result is judged as before). Words found in nearly every result but too common to say anything still qualify:
+// they are then simply shared by the related results too.
+export const relCore = (words, texts) => {
+  const n = (texts || []).length;
+  if (n < 5 || !words.length) return [];
+  const toks = texts.map((x) => [...new Set(relToks(x))]);
+  const need = Math.max(3, Math.ceil(n * 0.4));
+  return words.filter((w) => toks.filter((ts) => ts.some((t) => relHit(w, t))).length >= need);
+};
 export const related = (words, ident, text, engines, pos) => matchShare(words, text) > 0 || engines >= 2 || (ident && pos < 3);
 // Second look before a result is folded: words the related results share (in 15%+ of them, at least 3; one also in
 // 2+ of their titles) are the topic of this search ("tracking", "package" for a UPS number; "attention", "encoder"

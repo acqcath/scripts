@@ -451,22 +451,95 @@ const KP_TYPES = [
   ["language", ["Q9143"], [["Designed by", "P287"], ["First appeared", "P571"], ["Latest version", "P348"]]],
   ["animal", ["Q16521"], [["Conservation status", "P141"]]],
 ];
+// Products (phones, laptops, consoles, cars, cameras…): any item with a manufacturer or brand that isn't one of the
+// types above. Wikidata gives the dates and a few specs; the Wikipedia infobox fills in the rest (kpInfobox).
+const KP_PRODUCT = ["product", [], [["Released", "P577|P571"], ["Discontinued", "P2669|P576"], ["Launch price", "P2284"], ["Manufacturer", "P176|P1716"], ["Processor", "P880"], ["Memory", "P2928"], ["OS", "P306", 2], ["Predecessor", "P155"], ["Successor", "P156"]]];
+const KP_ORDER = ["Released", "Discontinued", "Launch price", "Manufacturer", "Processor", "Graphics", "Memory", "Storage", "Display", "Battery", "Camera", "OS", "Engine", "Weight", "Predecessor", "Successor"];
 // entity JSON (wbgetentities) -> {type, rows: [{k, prop, vals: [wdValue...], max}], image, title}
 // up: {P31 value: its own "subclass of" (P279) values}, asked only when no P31 value is a known type
 // (Golden Gate Bridge is a "suspension bridge", which is a subclass of "bridge")
 export const kpPlan = (ent, up = {}) => {
   const cl = (ent && ent.claims) || {};
   const p31 = wdBest(cl.P31).map(wdValue).filter((v) => v && v.id).map((v) => v.id);
-  const t = KP_TYPES.find(([, ids]) => p31.some((x) => ids.includes(x))) || KP_TYPES.find(([, ids]) => p31.some((x) => (up[x] || []).some((y) => ids.includes(y))));
+  const t = KP_TYPES.find(([, ids]) => p31.some((x) => ids.includes(x))) || ((cl.P176 || cl.P1716) && KP_PRODUCT) || KP_TYPES.find(([, ids]) => p31.some((x) => (up[x] || []).some((y) => ids.includes(y))));
   const rows = [];
-  for (const [k, prop, max = 1] of t ? t[2] : []) {
-    const vals = wdBest(cl[prop]).map(wdValue).filter(Boolean).slice(0, max);
-    if (vals.length) rows.push({ k, prop, vals, max });
+  for (const [k, props, max = 1] of t ? t[2] : []) {
+    for (const prop of props.split("|")) {
+      const vals = wdBest(cl[prop]).map(wdValue).filter(Boolean).slice(0, max);
+      if (vals.length) { rows.push({ k, prop, vals, max }); break; }
+    }
   }
+  const site = wdBest(cl.P856).map(wdValue).find((x) => typeof x === "string") || "";
   const img = wdBest(cl.P18).map((c) => c.mainsnak.datavalue.value).find((x) => typeof x === "string");
   const title = ent && ent.sitelinks && ent.sitelinks.enwiki && ent.sitelinks.enwiki.title;
-  return { type: t ? t[0] : "", rows, image: img || "", title: title || "", p31 };
+  return { type: t ? t[0] : "", rows, image: img || "", title: title || "", p31, site };
 };
+// Units and currencies read by their English label (no guessed item ids)
+const CUR_SYM = { "united states dollar": "$", "euro": "€", "pound sterling": "£", "japanese yen": "¥", "canadian dollar": "CA$", "australian dollar": "A$", "indian rupee": "₹", "renminbi": "CN¥" };
+const UNIT_ABBR = { "gigabyte": "GB", "megabyte": "MB", "terabyte": "TB", "kilobyte": "KB", "gibibyte": "GiB", "mebibyte": "MiB", "gram": "g", "kilogram": "kg", "millimetre": "mm", "centimetre": "cm", "inch": "in", "milliampere hour": "mAh", "watt": "W", "gigahertz": "GHz", "megahertz": "MHz", "megapixel": "MP" };
+// ----- Wikipedia infobox -> [{k, v}] (product specs). Wikitext of the article's lead section; values cleaned of
+// references, links and templates; dates from {{Start date|2023|9|22}} etc. written like Wikidata's ("Sep 22, 2023").
+const IB_KEYS = [["Released", /^(?:release_?date|released|first_?release|launch_?date|date_?released|introduced|introductory_?date)$/], ["Discontinued", /^(?:discontinued|discontinuation(?:_?date)?|end_?of_?production|production_?end|discontinued_?date)$/], ["Launch price", /^(?:price|introductory_?price|launch_?price|msrp|retail_?price|price_?launch|introductory_?price_?us)$/], ["Manufacturer", /^(?:manufacturer|maker)$/], ["Processor", /^(?:cpu|soc|processor|chipset)$/], ["Graphics", /^(?:gpu|graphics)$/], ["Memory", /^(?:memory|ram)$/], ["Storage", /^(?:storage|internal_?storage)$/], ["Display", /^(?:display|screen)$/], ["Battery", /^battery$/], ["Camera", /^(?:camera|rear_?camera|primary_?camera)$/], ["OS", /^(?:os|operating_?system|operatingsystem)$/], ["Engine", /^engine$/], ["Weight", /^(?:weight|mass)$/], ["Predecessor", /^predecessor$/], ["Successor", /^successor$/]];
+const MON3 = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const ibDate = (a) => {
+  const n = a.filter((x) => !x.includes("=")).map((x) => x.trim()).filter(Boolean);
+  const y = +n[0], m = +n[1], d = +n[2];
+  if (!(y > 1000)) return "";
+  return m >= 1 && m <= 12 ? (d >= 1 && d <= 31 ? `${MON3[m - 1]} ${d}, ${y}` : `${MON3[m - 1]} ${y}`) : String(y);
+};
+const ibTpl = (name, a) => {
+  const t = name.trim().toLowerCase();
+  if (/^(?:start date|end date|release date|film date|start date and age|end date and age|date|birth date|dts)$/.test(t)) return ibDate(a);
+  if (/^(?:us\$|usd)$/.test(t)) return `$${(a[0] || "").trim()}`;
+  if (/^(?:€|eur|euro)$/.test(t)) return `€${(a[0] || "").trim()}`;
+  if (/^(?:£|gbp)$/.test(t)) return `£${(a[0] || "").trim()}`;
+  if (/^(?:¥|jpy|yen)$/.test(t)) return `¥${(a[0] || "").trim()}`;
+  if (t === "convert" || t === "cvt") return `${(a[0] || "").trim()} ${(a[1] || "").trim()}`;
+  if (/^(?:nowrap|nobr|small|abbr|tooltip|nowrap begin|lang-?\w*|resize)$/.test(t)) return (t.startsWith("lang") && a.length > 1 ? a[1] : a[0]) || "";
+  if (t === "nbsp" || t === "sp") return " ";
+  if (/^(?:ubl|unbulleted list|plainlist|plain list|flatlist|hlist|bulleted list|ubil|br separated entries)$/.test(t)) return a.filter((x) => !/^\s*\w+\s*=/.test(x)).join("\n");
+  return "";
+};
+export const ibClean = (v) => {
+  let s = String(v || "").replace(/<!--[\s\S]*?-->/g, "").replace(/<ref[^>]*\/>/gi, "").replace(/<ref[^>]*>[\s\S]*?<\/ref>/gi, "");
+  s = s.replace(/\[\[(?:File|Image):[^\]]*\]\]/gi, "").replace(/\[\[([^\]|]*)\|([^\]]*)\]\]/g, "$2").replace(/\[\[([^\]]*)\]\]/g, "$1");
+  for (let i = 0; i < 8 && /\{\{[^{}]*\}\}/.test(s); i++) s = s.replace(/\{\{([^{}]*)\}\}/g, (_, x) => { const [n, ...a] = x.split("|"); return ibTpl(n, a); });
+  s = s.replace(/\{\{|\}\}/g, "").replace(/\[https?:\/\/\S+\s+([^\]]+)\]/g, "$1").replace(/\[https?:\/\/\S+\]/g, "").replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "").replace(/'{2,}/g, "").replace(/&nbsp;/g, " ").replace(/&ndash;/g, "–").replace(/&amp;/g, "&");
+  s = s.split("\n").map((x) => x.replace(/^[*#:;\s]+/, "").trim()).filter(Boolean).join(", ");
+  s = s.replace(/\s+/g, " ").replace(/\s+,/g, ",").replace(/,(\s*,)+/g, ",").replace(/^[,;\s]+|[,;:\s]+$/g, "").replace(/\(\s*\)/g, "").trim();
+  if (s.length > 140) s = `${s.slice(0, 140).replace(/[\s,;]+\S*$/, "")}…`;
+  return s;
+};
+export const kpInfobox = (wikitext) => {
+  const w = String(wikitext || ""), at = w.search(/\{\{\s*Infobox/i);
+  if (at < 0) return [];
+  let depth = 0, end = w.length;
+  for (let i = at; i < w.length - 1; i++) {
+    if (w[i] === "{" && w[i + 1] === "{") { depth++; i++; } else if (w[i] === "}" && w[i + 1] === "}") { depth--; i++; if (!depth) { end = i - 1; break; } }
+  }
+  const body = w.slice(at + 2, end), parts = [];
+  let d = 0, cur = "";
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i], two = body.slice(i, i + 2);
+    if (two === "{{" || two === "[[") { d++; cur += two; i++; continue; }
+    if (two === "}}" || two === "]]") { d--; cur += two; i++; continue; }
+    if (c === "|" && d === 0) { parts.push(cur); cur = ""; continue; }
+    cur += c;
+  }
+  parts.push(cur);
+  const out = [];
+  for (const p of parts.slice(1)) {
+    const eq = p.indexOf("=");
+    if (eq < 0) continue;
+    const key = p.slice(0, eq).trim().toLowerCase().replace(/[\s-]+/g, "_");
+    const hit = IB_KEYS.find(([, re]) => re.test(key));
+    if (!hit || out.some((f) => f.k === hit[0])) continue;
+    const v = ibClean(p.slice(eq + 1));
+    if (v) out.push({ k: hit[0], v });
+  }
+  return out;
+};
+const hostOf = (u) => { try { return new URL(u).hostname.replace(/^www\./, "").toLowerCase(); } catch { return ""; } };
 const UNIT_NAME = { Q11573: ["m", 1], Q712226: ["km²", 1], Q25343: ["m²", 1e-6], Q7727: ["min", 1], Q174728: ["cm", 1] };
 // One fact's text (labels: {Qid: name}); dates as written, "as of" for population, imperial next to metric
 export const kpText = (row, labels) => row.vals.map((v) => {
@@ -480,7 +553,10 @@ export const kpText = (row, labels) => row.vals.map((v) => {
     if (row.prop === "P2048" && u && u[0] === "m") return `${n.toLocaleString("en-US")} m (${Math.round(n / 0.3048).toLocaleString("en-US")} ft)`;
     if (row.prop === "P2046" && u) { const km2 = u[0] === "km²" ? n : n * u[1]; return `${km2.toLocaleString("en-US", { maximumFractionDigits: 1 })} km² (${(km2 / 2.589988).toLocaleString("en-US", { maximumFractionDigits: 1 })} sq mi)`; }
     if (row.prop === "P2047" && u && u[0] === "min") return `${n} min`;
-    return u ? `${n.toLocaleString("en-US")} ${u[0]}` : n.toLocaleString("en-US");
+    if (u) return `${n.toLocaleString("en-US")} ${u[0]}`;
+    const ul = String(labels[v.unit] || "").toLowerCase();
+    if (row.prop === "P2284" && CUR_SYM[ul]) return `${CUR_SYM[ul]}${n.toLocaleString("en-US")}`;
+    return ul ? `${n.toLocaleString("en-US")} ${UNIT_ABBR[ul] || labels[v.unit]}` : n.toLocaleString("en-US");
   }
   if (typeof v === "string") return v;
   return "";
@@ -511,19 +587,33 @@ export const kpFor = async (q) => {
       }
       if (!plan.title) why("kp", "no English Wikipedia article");
       if (plan.title) {
-        const ids = [...new Set(plan.rows.flatMap((r) => r.vals.filter((x) => x.id).map((x) => x.id)))].slice(0, 20);
-        const [lab, sum] = await Promise.all([
+        const ids = [...new Set(plan.rows.flatMap((r) => r.vals.flatMap((x) => x.id ? [x.id] : x.unit && /^Q\d+$/.test(x.unit) && !UNIT_NAME[x.unit] ? [x.unit] : [])))].slice(0, 20);
+        const prod = plan.type === "product", maker = prod && (plan.rows.find((r) => r.k === "Manufacturer") || { vals: [] }).vals.find((x) => x.id);
+        const page = encodeURIComponent(plan.title.replace(/ /g, "_"));
+        const [lab, sum, raw, mk] = await Promise.all([
           ids.length ? wdGet({ action: "wbgetentities", ids: ids.join("|"), props: "labels", languages: "en" }) : null,
-          net(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(plan.title.replace(/ /g, "_"))}`, { timeout: 3000, max: 200000, accept: "application/json", headers: WD_UA }),
+          net(`https://en.wikipedia.org/api/rest_v1/page/summary/${page}`, { timeout: 3000, max: 200000, accept: "application/json", headers: WD_UA }),
+          prod ? net(`https://en.wikipedia.org/w/index.php?title=${page}&action=raw&section=0`, { timeout: 3000, max: 400000, headers: WD_UA }) : null,
+          maker ? wdGet({ action: "wbgetclaims", entity: maker.id, property: "P856" }) : null,
         ]);
         const labels = {};
         for (const id of ids) { const l = lab && lab.entities && lab.entities[id] && lab.entities[id].labels && lab.entities[id].labels.en; if (l) labels[id] = l.value; }
         let sj = null;
         try { sj = sum.status === 200 ? JSON.parse(sum.text) : null; } catch {}
-        const facts = plan.rows.map((r) => ({ k: r.k, v: kpText(r, labels) })).filter((f) => f.v);
+        let facts = plan.rows.map((r) => ({ k: r.k, v: kpText(r, labels) })).filter((f) => f.v);
+        // Products: the infobox adds what Wikidata lacks (specs, launch price); its official sites back the panel up
+        const hosts = [];
+        if (prod) {
+          const ib = raw && raw.status === 200 ? kpInfobox(raw.text) : [];
+          for (const f of ib) if (!facts.some((x) => x.k === f.k)) facts.push(f);
+          facts.sort((a, b) => KP_ORDER.indexOf(a.k) - KP_ORDER.indexOf(b.k));
+          const ms = mk && mk.claims ? wdBest(mk.claims.P856).map(wdValue).find((x) => typeof x === "string") : "";
+          for (const u of [plan.site, ms]) { const h = u && hostOf(u); if (h && !hosts.includes(h)) hosts.push(h); }
+          if (!ib.length) why("kp-specs", raw ? `infobox ${raw.status === 200 ? "not found" : `http ${raw.status || "no answer"}`}` : "not asked");
+        }
         const photo = plan.image ? `https://commons.wikimedia.org/w/index.php?title=Special:FilePath/${encodeURIComponent(plan.image)}&width=330` : sj && sj.thumbnail && sj.thumbnail.source || "";
         why("kp", [!plan.type && "type not known", !facts.length && "no facts", !(sj && sj.extract) && `Wikipedia summary ${sum.status ? `http ${sum.status}` : "no answer"}`, !photo && "no photo", photo && !_sign && "no image signer"].filter(Boolean).join(", ") || "ok");
-        v = { qid: h.id, title: plan.title, name: h.label || plan.title, type: plan.type, desc: h.description || (sj && sj.description) || "", extract: sj && typeof sj.extract === "string" ? sj.extract : "", facts, photo: photo && _sign ? _sign(photo) : "" };
+        v = { qid: h.id, title: plan.title, name: h.label || plan.title, type: plan.type, desc: h.description || (sj && sj.description) || "", extract: sj && typeof sj.extract === "string" ? sj.extract : "", facts, photo: photo && _sign ? _sign(photo) : "", ...(hosts.length ? { hosts } : {}) };
       }
     }
     if (alts.length >= 2) v = { ...(v || {}), alts };
@@ -1757,7 +1847,7 @@ export default {
 };
 '@)
 [IO.File]::WriteAllText("$t\script.js", @'
-// clean-titles v51
+// clean-titles v52
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -2216,7 +2306,12 @@ const tabLow = (tab, host, title, seen) => {
 const REL_STOP = new Set("the and for with from what whats how who whos why when where which this that these those are was were you your can does did will about into than then there many much".split(" "));
 // "15-213", "10.1038" are one token (digit groups joined); words match by shared start (love / loves / lover)
 const relToks = (t) => String(t || "").toLowerCase().replace(/(\d)[-.\/](?=\d)/g, "$1").split(/[^\p{L}\p{N}]+/u).filter(Boolean);
-const relWords = (q) => [...new Set(relToks(q).filter((w) => (/\p{L}/u.test(w) ? w.length >= 3 && !REL_STOP.has(w) : w.length >= 4)))];
+// A model name split by a space ("dbr 12", "rtx 4090", "galaxy s 24") also counts written together ("dbr12")
+const relWords = (q) => {
+  const t = relToks(q), joined = [];
+  for (let i = 0; i + 1 < t.length; i++) if (/^\p{L}+$/u.test(t[i]) && /^\d+$/.test(t[i + 1]) && t[i].length <= 6) joined.push(t[i] + t[i + 1]);
+  return [...new Set([...t.filter((w) => (/\p{L}/u.test(w) ? w.length >= 3 && !REL_STOP.has(w) : w.length >= 4)), ...joined])];
+};
 const relIdent = (q) => { const t = relToks(q); return t.length > 0 && t.every((w) => /\d/.test(w)); };
 const relHit = (w, t) => t === w || (w.length >= 4 && t.length >= 4 && (t.startsWith(w) || w.startsWith(t)));
 const matchShare = (words, text) => {
@@ -2226,6 +2321,16 @@ const matchShare = (words, text) => {
 };
 // A search made mostly of common words (a quote, "who are you who do you work for") can't be judged by its words: no check
 const relJudgeable = (q) => { const t = relToks(q); return t.length > 0 && relWords(q).length * 2 >= t.length; };
+// Core words: the search's words that 40%+ of the first results share (at least 3 of them). Empty = no core (every
+// result is judged as before). Words found in nearly every result but too common to say anything still qualify:
+// they are then simply shared by the related results too.
+const relCore = (words, texts) => {
+  const n = (texts || []).length;
+  if (n < 5 || !words.length) return [];
+  const toks = texts.map((x) => [...new Set(relToks(x))]);
+  const need = Math.max(3, Math.ceil(n * 0.4));
+  return words.filter((w) => toks.filter((ts) => ts.some((t) => relHit(w, t))).length >= need);
+};
 const related = (words, ident, text, engines, pos) => matchShare(words, text) > 0 || engines >= 2 || (ident && pos < 3);
 // Second look before a result is folded: words the related results share (in 15%+ of them, at least 3; one also in
 // 2+ of their titles) are the topic of this search ("tracking", "package" for a UPS number; "attention", "encoder"
@@ -2855,12 +2960,16 @@ const sportsAnswer = (g, now = Date.now()) => {
 // ----- Knowledge panel (spec 3): which searches ask for one, and whether the results back it up -----
 // Short name-like searches only: no question, task, shopping or command words (those want results or an answer)
 const KP_NOT = /^(?:how|what|whats|why|when|where|who|whos|which|is|are|was|do|does|did|can|could|should|will|define|weather|time|best|top|cheap|buy|download|install|watch|play|login|log|sign|free|near|latest|new)\b|\b(?:vs|versus|or|near me|review|reviews|price|prices|deal|deals|stock|tutorial|login|error|errors|support|setup|fix|not working|lyrics|meaning|tickets|hours|menu|coupon|codes?|app|apk|wallpaper|jobs|careers|salary|today|tonight|score|schedule|news|recipe|pdf|reddit)\b/i;
+// "X specs", "X price", "X release date"… ask for the panel about X (a product's panel has those facts)
+const KP_ASK = / (?:specs|spec sheet|specifications|tech specs|price|msrp|launch price|release date|discontinued|end of production)$/i;
+// Model numbers (ps5, s24, m1, rtx4090, a7iv) are names; other letter-digit words (tracking numbers, code) aren't
+const KP_MODEL = /^\p{L}{1,4}\d{1,5}\p{L}{0,3}$/u;
 const kpQuery = (q) => {
-  const s = String(q || "").trim().replace(/\s+/g, " ");
+  const s = String(q || "").trim().replace(/\s+/g, " ").replace(KP_ASK, "");
   if (s.length < 2 || s.length > 60 || s.split(" ").length > 5) return null;
   if (!/^[\p{L}\d][\p{L}\d .'&-]*$/u.test(s) || /^[\d .-]+$/.test(s) || KP_NOT.test(s)) return null;
   // Code-like words (useEffect, 1Z999…) aren't names of things
-  if (/\p{Ll}\p{Lu}/u.test(s) || /\d\p{L}|\p{L}\d/u.test(s)) return null;
+  if (/\p{Ll}\p{Lu}/u.test(s) || s.split(" ").some((w) => /\d\p{L}|\p{L}\d/u.test(w) && !KP_MODEL.test(w))) return null;
   return s;
 };
 // Titles compared without case, underscores/hyphens or a "(qualifier)"
@@ -2869,7 +2978,8 @@ const kpNorm = (t) => String(t || "").toLowerCase().replace(/[_-]+/g, " ").repla
 // replaces it), or the same article on Wikiwand (a Wikipedia mirror) or Britannica (on the user's engines no
 // Wikipedia result came back in 50 recorded searches; Britannica's article is the same evidence that this meaning
 // is the one the results are about). Returns {ok, wiki: [indices of Wikipedia results]}.
-const kpMatch = (title, urls) => {
+// hosts: a product's own and its maker's official sites (apple.com for an iPhone): a result there backs it up too
+const kpMatch = (title, urls, hosts = []) => {
   const t = kpNorm(title), wiki = [];
   let ok = false;
   if (!t) return { ok, wiki };
@@ -2882,6 +2992,7 @@ const kpMatch = (title, urls) => {
     let m;
     if (/^en\.(?:m\.)?wikipedia\.org$/.test(host) && (m = /^\/wiki\/([^/]+)$/.exec(path)) && kpNorm(m[1]) === t) { ok = true; wiki.push(i); }
     else if (host === "wikiwand.com" && (m = /^\/en\/(?:articles\/)?([^/]+)$/.exec(path)) && kpNorm(m[1]) === t) ok = true;
+    else if ((hosts || []).some((x) => host === x || host.endsWith(`.${x}`))) ok = true;
     else if (host === "britannica.com" && (m = /^\/(?:topic|biography|place|science|art|technology|event|animal|plant|money|sports|summary)\/([^/]+)/.exec(path)) && kpNorm(m[1]) === t) ok = true;
   });
   return { ok, wiki };
@@ -3055,7 +3166,21 @@ const featuredSnippet = (q, results) => {
   return null;
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, related, topicOf, tidyTitle, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippetAI, featuredSnippet };
+// ----- People also ask: is a page about the question? -----
+// A question's own words (not "why", "is", "my"…) must be in the page's title or description: at least one, and two
+// once the question has three or more. Word stems compared (nostrils ~ nostril, hurts ~ hurt).
+const QA_LEAD = /^(?:why|what|whats|how|who|whos|when|where|which|is|are|was|were|can|could|do|does|did|should|will|would)$/;
+const QA_STOP = new Set("the and for with that this from your you my his her its our their they them about into over than then there what when where which while who why how are was were does did can could should would will have has had been being not too very so it is am be do of in on at to by or an a me i we us get got feel feels".split(" "));
+const qaStem = (w) => w.replace(/(?:ies|es|s|ing|ed|ly)$/, "").slice(0, 6);
+const qaAbout = (question, text) => {
+  const ws = [...new Set(String(question || "").toLowerCase().match(/[\p{L}\p{N}]+/gu) || [])].filter((w) => w.length >= 3 && !QA_STOP.has(w)).map(qaStem);
+  if (!ws.length) return true;
+  const hay = new Set((String(text || "").toLowerCase().replace(/<[^>]+>/g, " ").match(/[\p{L}\p{N}]+/gu) || []).map(qaStem));
+  const n = ws.filter((w) => hay.has(w)).length;
+  return n >= (ws.length >= 3 ? 2 : 1);
+};
+
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, relCore, related, topicOf, tidyTitle, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippetAI, featuredSnippet, QA_LEAD, qaAbout };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -3221,8 +3346,10 @@ const cleanTitle = (raw, href) => {
 };
 
 let href = "", webTab = true, wantsDict = true, qWords = [], qIdent = false;
-// Dictionary pages only when the search is about a word (Bing adds them for words like "under" or "fix")
-const DICT = /(^|\.)(merriam-webster\.com|thefreedictionary\.com|dictionary\.cambridge\.org|dictionary\.com|collinsdictionary\.com|oxfordlearnersdictionaries\.com|vocabulary\.com|wordreference\.com|yourdictionary\.com|wiktionary\.org|urbandictionary\.com)$/i;
+// Dictionary, spelling and grammar pages only when the search is one word or asks about words (Bing adds them for
+// any word of a search: "using dbr 12 on a pole" got "Useing or Using – Which Spelling Is Correct?")
+const DICT = /(^|\.)(merriam-webster\.com|thefreedictionary\.com|dictionary\.cambridge\.org|dictionary\.com|collinsdictionary\.com|oxfordlearnersdictionaries\.com|vocabulary\.com|wordreference\.com|yourdictionary\.com|wiktionary\.org|urbandictionary\.com|thesaurus\.com|grammartribe\.com|grammarist\.com|grammarly\.com|writingexplained\.org|wordhippo\.com|ludwig\.guru|dictionary\.law\.com|macmillandictionary\.com|englishclub\.com|grammar-monster\.com|grammarbook\.com|differencebetween\.net|thecontentauthority\.com|onelook\.com|lexico\.com|definitions\.net|howtopronounce\.com|youglish\.com|sentencedict\.com)$/i;
+const DICT_TITLE = /\b(?:which spelling|spelling|correct spelling|definition|definitions|meaning of|english meaning|synonyms?|antonyms?|how to pronounce|pronunciation|grammar rules?|in a sentence|use .{1,20} in a sentence)\b/i;
 const readQuery = () => {
   if (location.href === href) return;
   href = location.href;
@@ -3231,7 +3358,7 @@ const readQuery = () => {
   try { qWords = CT.relWords(new URL(href).searchParams.get("q") || ""); } catch { qWords = []; }
   try {
     const q = (new URL(href).searchParams.get("q") || "").trim();
-    wantsDict = q.split(/\s+/).length <= 2 || /\b(define|definition|meaning|means?|synonyms?|antonyms?|pronounc\w*|spell\w*|dictionary|word|etymology|slang)\b/i.test(q);
+    wantsDict = q.split(/\s+/).length === 1 || /\b(define|definition|meaning|means?|synonyms?|antonyms?|pronounc\w*|spell\w*|dictionary|word|etymology|slang)\b/i.test(q);
   } catch { wantsDict = true; }
 };
 // Results the page never shows: dictionary pages for non-word searches (Bing adds them for words like "under")
@@ -3240,7 +3367,7 @@ const junk = (el) => {
   if (!a) return false;
   let h = "";
   try { h = new URL(a.href).hostname; } catch {}
-  return !wantsDict && DICT.test(h.replace(/^www\./, ""));
+  return !wantsDict && (DICT.test(h.replace(/^www\./, "")) || DICT_TITLE.test(a.textContent || ""));
 };
 
 // ===== List pass (Web tab): dedupe -> site prefs -> 2 per site with folds, planned by core.js before paint =====
@@ -3309,19 +3436,23 @@ const tabPass = () => {
 // in, folded under "N unrelated results ⌄" (one tap shows them). Decided before paint; nothing is filtered by topic.
 const relPlanned = new WeakSet();
 const AI_LOW = 0.02; // answer AI: below this a result isn't about the search (first result always stays)
-let RP = { key: "", n: 0, rel: [] };
+let RP = { key: "", n: 0, rel: [], core: null };
 const relPass = () => {
   const list = document.getElementById("results-list");
   if (!list) return;
   const fresh = [...list.children].filter((el) => el.classList.contains("result-item") && !relPlanned.has(el));
   if (!fresh.length) return;
   const key = searchId(location.href);
-  if (RP.key !== key) RP = { key, n: 0, rel: [] };
+  if (RP.key !== key) RP = { key, n: 0, rel: [], core: null };
   // Words of the corrected search too, when degoog searched a typo fix ("Showing results for …")
   const words = [...new Set([...qWords, ...CT.relWords(document.querySelector("#ct-fix a")?.textContent || "")])];
   let q0 = "";
   try { q0 = new URL(location.href).searchParams.get("q") || ""; } catch {}
   if (!CT.relJudgeable(q0)) { fresh.forEach((el) => relPlanned.add(el)); return; }
+  // The search's core words: those most of the results share ("dbr12" for "using dbr 12 on a pole"). A result needs
+  // one of them, even when it shares a common word ("using") or the answer AI gave it a weak yes
+  if (!RP.core) { const txt = fresh.map((el) => `${el.dataset.resultUrl || el.querySelector("a.result-title")?.href || ""} ${el.querySelector("a.result-title")?.textContent || ""} ${el.querySelector(".result-snippet")?.textContent || ""}`); if (txt.length >= 5) RP.core = CT.relCore(words, txt); }
+  const core = RP.core || [];
   let out = [];
   for (const el of fresh) {
     relPlanned.add(el);
@@ -3334,12 +3465,15 @@ const relPass = () => {
     // The answer AI's verdict when it has one (reads meaning, not shared words); the word rule otherwise
     const ai = AIW.get(aiKey(el.dataset.resultUrl || a.href));
     if (ai) r.ai = true;
-    const ok = ai ? ai.p >= AI_LOW || pos === 0 : CT.related(words, qIdent, `${el.dataset.resultUrl || a.href} ${r.title} ${r.snippet}`, el.querySelectorAll(".result-engine-tag").length, pos);
+    const txt = `${el.dataset.resultUrl || a.href} ${r.title} ${r.snippet}`;
+    const coreOk = CT.matchShare(core, txt) > 0;
+    if (!coreOk) r.core = false;
+    const ok = pos === 0 || (coreOk && (ai ? ai.p >= AI_LOW : CT.related(words, qIdent, txt, el.querySelectorAll(".result-engine-tag").length, pos)));
     if (anchor || ok) RP.rel.push(r);
     else out.push([el, r]);
   }
   // Second look: results that use other words for the same topic as the related ones stay (core topicOf)
-  if (out.length) { const same = CT.topicOf(RP.rel, words); out = out.filter(([, r]) => r.ai || !same(r)); }
+  if (out.length) { const same = CT.topicOf(RP.rel, words); out = out.filter(([, r]) => (r.ai && r.core !== false) || !same(r)); }
   out = out.map(([el]) => el);
   const shown = fresh.filter((el) => !out.includes(el) && el.style.display !== "none" && !el.classList.contains("ct-grouped"));
   if (!out.length || !shown.length) return;
@@ -4207,7 +4341,9 @@ const paa = () => {
       // mid-sentence most of the time (names); title case ("Day Old Tea") never counts
       const cased = new Map(), mid = new Map();
       const add = (m, k, w) => { const x = m.get(k) || new Map(); x.set(w, (x.get(w) || 0) + 1); m.set(k, x); };
-      for (const r of document.querySelectorAll("#results-list .result-item :is(.result-title, .result-snippet)")) for (const w of r.textContent.match(/[\p{L}\p{N}][\p{L}\p{N}'+.#-]*/gu) || []) if (/\p{Lu}/u.test(w.slice(1))) add(cased, w.toLowerCase(), w);
+      // ALL-CAPS in a title is shouting ("WHY - English meaning"), not how the word is spelled: titles teach only
+      // mixed forms (PuTTY, iPhone); acronyms (NASA) are learned from the descriptions
+      for (const r of document.querySelectorAll("#results-list .result-item :is(.result-title, .result-snippet)")) { const ttl = r.classList.contains("result-title"); for (const w of r.textContent.match(/[\p{L}\p{N}][\p{L}\p{N}'+.#-]*/gu) || []) if (/\p{Lu}/u.test(w.slice(1)) && !(ttl && w === w.toUpperCase())) add(cased, w.toLowerCase(), w); }
       for (const r of document.querySelectorAll("#results-list .result-item .result-snippet")) {
         const toks = r.textContent.split(/\s+/);
         for (let i = 1; i < toks.length; i++) { const w = toks[i].replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""); if (w && !/[.!?:…]$/.test(toks[i - 1])) add(mid, w.toLowerCase(), w); }
@@ -4224,6 +4360,7 @@ const paa = () => {
         const k = w.toLowerCase(), m = mid.get(k);
         const lowMostly = m && [...m].filter(([x]) => x === k).reduce((n, [, v]) => n + v, 0) * 2 > [...m].reduce((n, [, v]) => n + v, 0);
         const best = pick(k) || (lowMostly ? k : w); // no evidence either way: as the suggestion wrote it
+        if (i === 0 && CT.QA_LEAD.test(k)) return k[0].toUpperCase() + k.slice(1); // "Why", never "WHY"
         return i === 0 ? best[0].toUpperCase() + best.slice(1) : best;
       });
       // Answers are fetched as the box comes near the screen, so a tap shows one at once; a question no page answers
@@ -4233,7 +4370,8 @@ const paa = () => {
       // best; too weak an answer = no answer. Without the AI: the first result with a description.
       const get = (text) => ans.get(text) || ans.set(text, fetch(`/api/search?q=${encodeURIComponent(text)}`).then((r) => (r.ok ? r.json() : null))
         .then(async (sj) => {
-          const c = (sj && Array.isArray(sj.results) ? sj.results : []).filter((x) => x && x.url && x.snippet).slice(0, 8);
+          // Only results about the question's own words ("nose", "dry"), not just its question word ("why")
+          const c = (sj && Array.isArray(sj.results) ? sj.results : []).filter((x) => x && x.url && x.snippet).slice(0, 8).filter((x) => CT.qaAbout(text, `${x.title || ""} ${x.snippet}`));
           if (!c.length) return null;
           const strip = (t) => String(t || "").replace(/<[^>]+>/g, "").trim();
           const j = await bridge("rank", {}, JSON.stringify({ q: text, d: c.map((x) => `${strip(x.title)}. ${strip(x.snippet)}`) })).catch(() => null);
@@ -4242,6 +4380,9 @@ const paa = () => {
           j.s.forEach((v, i) => { if (typeof v === "number" && (bi < 0 || v > j.s[bi])) bi = i; });
           return bi >= 0 && j.s[bi] >= 0.02 ? c[bi] : null; // the best of them unless none is about the question at all
         }).catch(() => null)).get(text);
+      // One page answers one question: a page already answering another question isn't repeated under this one
+      const used = new Map();
+      const own = (text) => (top) => { if (!top) return null; const u = used.get(top.url); if (u && u !== text) return null; used.set(top.url, text); return top; };
       const drop = (d) => { d.remove(); if (box.querySelectorAll("details").length < 2) { box.remove(); if (paaBox === box) paaBox = null; } }; // gone for good (not put back after a redraw)
       const items = [];
       for (const raw of j.q) {
@@ -4257,7 +4398,7 @@ const paa = () => {
           if (!d.open || body.dataset.done) return;
           body.dataset.done = "1";
           body.textContent = "Loading…";
-          get(text).then((top) => {
+          get(text).then(own(text)).then((top) => {
             body.textContent = "";
             if (!top) { drop(d); return; }
             // Same order and look as a result: answer, then site icon + name, then the page title
@@ -4287,7 +4428,7 @@ const paa = () => {
       const io = "IntersectionObserver" in window ? new IntersectionObserver((es) => {
         if (!es.some((e) => e.isIntersecting)) return;
         io.disconnect();
-        for (const [d, text] of items) get(text).then((top) => { if (!top && !d.open) drop(d); });
+        for (const [d, text] of items) get(text).then(own(text)).then((top) => { if (!top && !d.open) drop(d); });
       }, { rootMargin: "600px 0px" }) : null;
       if (io) io.observe(box);
       paaBox = fadeIn(box);
@@ -5103,7 +5244,7 @@ const kpPass = () => {
   if (late && !wide) return; // on top of the list, after the results are on screen: would push them down
   const rows = [...list.querySelectorAll(".result-item")];
   if (!rows.length) return;
-  const m = CT.kpMatch(kp.title, rows.map((r) => r.querySelector("a.result-title")?.href || ""));
+  const m = CT.kpMatch(kp.title, rows.map((r) => r.querySelector("a.result-title")?.href || ""), kp.hosts);
   if (!m.ok) return;
   if (!late) for (const i of m.wiki) rows[i].dataset.ctKp = "1"; // the panel replaces that result (before paint only)
   const card = kpCard(kp, wide);
@@ -6489,7 +6630,7 @@ docker restart $c | Out-Null
 $null = docker exec $c sh -c 'for i in $(seq 1 40); do curl -fs -o /dev/null http://127.0.0.1:${DEGOOG_PORT:-4444}/readyz && exit 0; sleep 1; done'
 
 $ss = docker exec $c cat /app/data/server-settings.json | Out-String | ConvertFrom-Json
-"plugin code inside the page (should be v51): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
+"plugin code inside the page (should be v52): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
 "page files (should be a ct and a psl file): " + (docker exec $c sh -c 'ls /app/src/public/ct/')
 "progressive results off (should be False): $($ss.settings.streamingEnabled -eq $true)"
 "typo fixer word list (should be about 82800): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/words.txt')

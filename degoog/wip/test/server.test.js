@@ -538,3 +538,31 @@ test("server: DOI publisher names (Crossref prefix list), trending words, slow r
     expect(ranks).toBe(1);
   } finally { globalThis.fetch = real; }
 }, 15000);
+
+test("server: product panel: manufacturer makes a product, dates to the month, launch price by currency label, infobox specs", async () => {
+  const srv = await import("../files/index.js");
+  const snak = (value) => ({ rank: "normal", mainsnak: { snaktype: "value", datavalue: { value } } });
+  const item = (id) => snak({ "entity-type": "item", id });
+  const ph = { claims: { P31: [item("Q19723451")], P176: [item("Q312")], P577: [snak({ time: "+2023-09-22T00:00:00Z", precision: 11 })], P2669: [snak({ time: "+2024-09-00T00:00:00Z", precision: 10 })], P2284: [snak({ amount: "+999", unit: "http://www.wikidata.org/entity/Q4917" })], P2928: [snak({ amount: "+8", unit: "http://www.wikidata.org/entity/Q79738" })], P856: [snak("https://www.apple.com/iphone-15-pro/")] }, sitelinks: { enwiki: { title: "iPhone 15 Pro" } } };
+  const plan = srv.kpPlan(ph);
+  expect(plan.type).toBe("product");
+  expect(plan.site).toBe("https://www.apple.com/iphone-15-pro/");
+  expect(plan.rows.map((r) => [r.k, srv.kpText(r, { Q312: "Apple", Q4917: "United States dollar", Q79738: "gigabyte" })])).toEqual([["Released", "Sep 22, 2023"], ["Discontinued", "Sep 2024"], ["Launch price", "$999"], ["Manufacturer", "Apple"], ["Memory", "8 GB"]]);
+  // A company is still a company, not a product
+  expect(srv.kpPlan({ claims: { P31: [item("Q4830453")], P1716: [item("Q1")] } }).type).toBe("company");
+  const wt = `'''iPhone 15 Pro''' {{Infobox mobile phone
+| name = iPhone 15 Pro
+| released = {{Start date|2023|9|22}}<ref>{{cite web|url=x|title=y}}</ref>
+| discontinued = {{End date|2024|9|9}}
+| price = 15 Pro: {{US$|999}}<br />15 Pro Max: {{US$|1199}}
+| soc = [[Apple A17 Pro|Apple A17 Pro]]
+| memory = 8&nbsp;GB [[LPDDR5]]
+| storage = {{ubl|128 GB|256 GB|512 GB|1 TB}}
+| weight = {{convert|187|g|oz|abbr=on}}
+| display = 6.1 in<!-- note -->
+| colors = Black Titanium
+}}
+The iPhone 15 Pro is...`;
+  expect(srv.kpInfobox(wt)).toEqual([{ k: "Released", v: "Sep 22, 2023" }, { k: "Discontinued", v: "Sep 9, 2024" }, { k: "Launch price", v: "15 Pro: $999, 15 Pro Max: $1199" }, { k: "Processor", v: "Apple A17 Pro" }, { k: "Memory", v: "8 GB LPDDR5" }, { k: "Storage", v: "128 GB, 256 GB, 512 GB, 1 TB" }, { k: "Weight", v: "187 g" }, { k: "Display", v: "6.1 in" }]);
+  expect(srv.kpInfobox("no infobox here")).toEqual([]);
+});

@@ -177,3 +177,19 @@ test("images row: clearly visual searches from their words", () => {
   expect(A.featuredSnippet("how to reset airpods", rows(old.searches.find((s) => s.q === "how to reset airpods")))).toBeNull();
   expect(A.snipSentences("Jun 29, 2011 ... So there are two ways to skin a cat : alive or dead. ... @x How many?")).toEqual(["So there are two ways to skin a cat: alive or dead."]);
 });
+
+test("knowledge panel: product searches (model numbers, specs/price/release date words) and official-site backing", () => {
+  for (const [q, s] of [["iphone 15 pro specs", "iphone 15 pro"], ["ps5 price", "ps5"], ["galaxy s24 release date", "galaxy s24"], ["macbook pro m1", "macbook pro m1"], ["rtx 4090 discontinued", "rtx 4090"], ["sony a7iv", "sony a7iv"]]) expect([q, A.kpQuery(q)]).toEqual([q, s]);
+  for (const q of ["nvidia stock price", "1Z999AA10123456784 price", "react useEffect specs"]) expect([q, A.kpQuery(q)]).toEqual([q, null]);
+  expect(A.kpMatch("IPhone 15 Pro", ["https://www.apple.com/iphone-15-pro/", "https://example.com"], ["apple.com"])).toEqual({ ok: true, wiki: [] });
+  expect(A.kpMatch("IPhone 15 Pro", ["https://support.apple.com/kb/x"], ["apple.com"]).ok).toBe(true);
+  expect(A.kpMatch("IPhone 15 Pro", ["https://notapple.com/x"], ["apple.com"]).ok).toBe(false);
+});
+
+test("people also ask: an answer must be about the question's own words, not its question word", () => {
+  const dict = "WHY - English meaning When we ask for reasons in speaking, we can use the phrase why is that? In informal conversations we often say why's that?";
+  for (const q of ["Why is my nose dry and stuffy?", "Why is my nose so dry it hurts?", "Why do my nostrils feel dry?"]) expect([q, A.qaAbout(q, dict)]).toEqual([q, false]);
+  expect(A.qaAbout("Why is my nose dry and stuffy?", "Dry, stuffy nose: causes include low humidity and allergies")).toBe(true);
+  expect(A.qaAbout("Why do my nostrils feel dry?", "Dry nostrils are common in winter when indoor air is dry")).toBe(true);
+  expect(A.QA_LEAD.test("why") && !A.QA_LEAD.test("nose")).toBe(true);
+});
