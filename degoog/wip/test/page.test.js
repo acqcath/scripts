@@ -81,6 +81,7 @@ const run = async (q, opts = {}) => {
     set: (t, k, v) => { t[k] = v; return true; },
   });
   globalThis.__ctAIW = win.__ctAIW = opts.aiw ? new Map(opts.aiw) : new Map(); // the page reads globalThis (the window, in a browser)
+  globalThis.__ctPUBW = win.__ctPUBW = new Map(opts.pubw || []); // doi.org result -> publisher name from the server
   new Function("scope", `with (scope) {\nconst __PLUGIN_ID__="clean-titles";\n${CODE}\n}`)(scope);
   const fire = (nodes) => { for (const m of mos) m.cb([{ type: "childList", addedNodes: nodes }], m); };
   const res = opts.res || REC.searches.find((x) => x.q === q && (opts.type ? x.type === opts.type : !x.type || x.type === "web")).results;
@@ -731,4 +732,33 @@ const aiKeyT = (u) => { try { const x = new URL(u); return (x.host.replace(/^www
   const p = await run("$AAPL", { engines: 0, store });
   expect(p.document.querySelectorAll(".ct-paywall:not(.ct-pdf)").length).toBe(0);
   expect(a.errors.concat(p.errors)).toEqual([]);
+});
+
+test("page: a doi.org result shows the publisher the server found (any prefix), and the known table still wins", async () => {
+  const res = [
+    { title: "Kalimba tines and vibration modes", url: "https://doi.org/10.9999/kal.1", snippet: "Tine length sets the pitch.", sources: ["bing"] },
+    { title: "Another paper", url: "https://doi.org/10.1016/j.x.2020.1", snippet: "Elsevier prefix is in the page table.", sources: ["bing"] },
+    { title: "Unknown prefix, no answer yet", url: "https://doi.org/10.8888/z.2", snippet: "Stays doi.org.", sources: ["bing"] },
+  ];
+  const { items, errors } = await run("kalimba physics", { res, type: "science", pubw: [["doi.org/10.9999/kal.1", "Acme Press"], ["doi.org/10.1016/j.x.2020.1", "Elsevier BV"]] });
+  expect(errors).toEqual([]);
+  const cites = items.map((el) => el.querySelector(".result-cite").textContent.trim());
+  expect(cites).toEqual(["Acme Press", "Elsevier", "doi.org"]);
+});
+test("page: a tab tapped before degoog can take it is tapped again until it takes it, then stops", async () => {
+  const { document, win } = await run("kalimba", { res: [{ title: "Kalimba", url: "https://example.com/k", snippet: "A thumb piano.", sources: ["bing"] }] });
+  const bar = document.createElement("div"); bar.id = "results-tabs";
+  bar.innerHTML = '<a class="results-tab active" data-type="web">Web</a><a class="results-tab" data-type="images">Images</a>';
+  document.body.append(bar);
+  const [web, img] = bar.querySelectorAll(".results-tab");
+  let taps = 0; const t0 = Date.now();
+  // degoog ignores taps for the first ~700 ms (no current search yet), then takes them and marks the tab active
+  img.addEventListener("click", () => { taps++; if (Date.now() - t0 > 700) { web.classList.remove("active"); img.classList.add("active"); } });
+  img.click();
+  await new Promise((r) => setTimeout(r, 1700));
+  expect(img.classList.contains("active")).toBe(true);
+  expect(taps).toBeGreaterThanOrEqual(2);
+  const n = taps;
+  await new Promise((r) => setTimeout(r, 1000));
+  expect(taps).toBe(n); // stopped once taken
 });

@@ -898,7 +898,38 @@ const funcOk = (w, c) => !isFunc(c) || (w.length === c.length && slip(w, c));
 // Names: words your results write with a capital mid-title ("AI", "PuTTY", "Asura") are never treated as typos
 // ...and names from Wikipedia's article titles ("openai", "asura", "ai"), so it knows them without learning anything
 const NAMES = new Set();
-const isName = (w) => NAMES.has(w) || (learned.cap && learned.cap[w] || 0) >= 2;
+// Trending names: Wikipedia's 1,000 most-read articles of the last day count as known words, refreshed twice a day, so a
+// name that is suddenly everywhere (a new person, show, game, product) is never "corrected" into a dictionary word.
+// Only words are kept (trend.json: words + the time), no counts and nothing about your searches.
+const TREND = new Set();
+let trendAt = 0, trendLoaded = false;
+const trendLoad = () => { if (trendLoaded) return; trendLoaded = true; try { const j = JSON.parse(fs.readFileSync(`${DIR}/trend.json`, "utf8")); for (const w of j.w || []) TREND.add(w); trendAt = Number(j.at) || 0; } catch {} };
+export const trendWords = (titles) => {
+  const out = new Set();
+  for (const t of titles) {
+    if (!t || /^(?:Main_Page|Special:|Wikipedia:|Portal:|Help:|File:|Category:|Template:|Talk:)/.test(t)) continue;
+    for (const p of String(t).replace(/_\([^)]*\)$/, "").split(/[^\p{L}\p{N}]+/u)) { if (p.length >= 3 && !/^\d+$/.test(p) || (p.length === 2 && p === p.toUpperCase() && /\p{L}/u.test(p))) out.add(p.toLowerCase()); }
+  }
+  return [...out].slice(0, 6000);
+};
+const trendRefresh = async () => {
+  trendLoad();
+  if (Date.now() - trendAt < 20 * 3600000) return;
+  for (const back of [1, 2, 3]) {
+    const d = new Date(Date.now() - back * 86400000), pad = (n) => String(n).padStart(2, "0");
+    const r = await net(`https://wikimedia.org/api/rest_v1/metrics/pageviews/top/en.wikipedia/all-access/${d.getUTCFullYear()}/${pad(d.getUTCMonth() + 1)}/${pad(d.getUTCDate())}`, { timeout: 10000, accept: "application/json", headers: WD_UA });
+    let titles = [];
+    try { titles = JSON.parse(r.text).items[0].articles.map((a) => a.article); } catch {}
+    const w = trendWords(titles);
+    if (w.length >= 100) {
+      TREND.clear(); for (const x of w) TREND.add(x); trendAt = Date.now();
+      try { fs.writeFileSync(`${DIR}/trend.json.tmp`, JSON.stringify({ at: trendAt, w })); fs.renameSync(`${DIR}/trend.json.tmp`, `${DIR}/trend.json`); } catch {}
+      return;
+    }
+  }
+};
+const trendSchedule = () => { trendLoad(); const run = () => trendRefresh().catch(() => {}); const a = setTimeout(run, 120000), b = setInterval(run, 12 * 3600000); if (a.unref) a.unref(); if (b.unref) b.unref(); };
+const isName = (w) => NAMES.has(w) || TREND.has(w) || (learned.cap && learned.cap[w] || 0) >= 2;
 // Settings > Clean Titles > "Learn from my search results" (off: nothing about your searches is stored or used)
 let LEARN = false;
 // Settings > Clean Titles: which of Sitelinks / Discussions / Videos / Top stories to show (all on unless turned off)
@@ -1109,7 +1140,7 @@ const slip = (a, b) => {
 };
 const localFix = (qn, extra) => {
   load();
-  const known = (w) => WORDS.has(w) || NAMES.has(w) || (learned.w[w] || 0) >= 2 || !!learned.keep[w] || extra.has(w);
+  const known = (w) => WORDS.has(w) || NAMES.has(w) || TREND.has(w) || (learned.w[w] || 0) >= 2 || !!learned.keep[w] || extra.has(w);
   const mine = (w) => (learned.w[w] || 0) >= 2 || extra.has(w);
   const pop = (w) => Math.log10((WORDS.get(w) || 0) + 10) + 4 * Math.log2((learned.w[w] || 0) + 1) + (extra.has(w) ? 4 : 0);
   // How well two words go together: common English pairs ("how to") and pairs from your results ("asura scans")
@@ -1316,30 +1347,76 @@ const jsonOut = (o) => new Response(JSON.stringify(o), { headers: { "Content-Typ
 
 // Results hook (installed into degoog's search step by inline.js): before a web/Forums/News/Science search is sent,
 // the answer AI (reranker on the GPU) scores every result for how well it fits the search (ctRel, 0..1), and for
-// question-like searches each top result's best sentence (ctBest {s, p}) for the featured snippet. 700 ms budget;
+// question-like searches each top result's best sentence (ctBest {s, p}) for the featured snippet. 1.6 s wait (a slower answer is kept for the next request);
 // no AI or too slow -> results go out unchanged and the page uses its word rules. Same search again: from memory.
 const AIC = new Map();
 const stripT = (t) => String(t || "").replace(/<[^>]+>/g, " ").replace(/&nbsp;|&#160;/g, " ").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/\s+/g, " ").trim();
 const sentences = (t) => stripT(t).replace(/^[A-Z][a-z]{2,8}\.? \d{1,2}, \d{4}\s*(?:\.\.\.|…|·|-|—)\s*/, "").split(/(?<=[.!?])\s+(?=["“(]?[A-Z0-9])/).map((x) => x.trim()).filter((x) => x.length >= 25 && x.length <= 400 && !/(?:\.\.\.|…)$/.test(x));
 const QLIKE = /\?\s*$|^(?:what|whats|what's|how|who|whom|whose|when|where|why|which|is|are|was|were|can|could|does|do|did|should|will|would)\b/i;
+// doi.org results show the publisher, not "doi.org": the page knows ~40 big publishers by DOI prefix; any other prefix
+// is looked up here in Crossref's prefix list (10.xxxx -> owner name), once per prefix, kept in doi-prefixes.json
+// (prefix and name only) and added to the results (ctPub) before they leave the server, so it is there at first paint.
+const DOIP = new Map(), DOI_MISS = new Map();
+let doiLoaded = false;
+const doiLoad = () => { if (doiLoaded) return; doiLoaded = true; try { for (const [k, v] of Object.entries(JSON.parse(fs.readFileSync(`${DIR}/doi-prefixes.json`, "utf8")))) if (typeof v === "string" && v) DOIP.set(k, v); } catch {} };
+const doiSave = () => { try { fs.writeFileSync(`${DIR}/doi-prefixes.json.tmp`, JSON.stringify(Object.fromEntries(DOIP))); fs.renameSync(`${DIR}/doi-prefixes.json.tmp`, `${DIR}/doi-prefixes.json`); } catch {} };
+export const doiNice = (n) => {
+  let t = String(n || "").replace(/\s+/g, " ").trim();
+  const a = /\(([A-Z][A-Za-z0-9&.-]{1,9})\)\s*$/.exec(t);
+  if (a) return a[1];
+  t = t.replace(/\s*\([^)]*\)\s*$/, "").replace(/[,\s]+(?:B\.?V\.?|Ltd\.?|Limited|Inc\.?|LLC|L\.L\.C\.|GmbH|AG|S\.?A\.?|Co\.?|Corp\.?|Corporation|Verlag)$/i, "").trim();
+  return t.slice(0, 40);
+};
+export const doiPrefixOf = (url) => { try { const u = new URL(url); if (!/^(?:dx\.)?doi\.org$/.test(u.hostname.replace(/^www\./, ""))) return ""; const m = /^\/(10\.\d{4,9})\//.exec(decodeURIComponent(u.pathname)); return m ? m[1] : ""; } catch { return ""; } };
+const doiAsk = async (p) => {
+  if (DOIP.has(p) || (DOI_MISS.get(p) || 0) > Date.now()) return;
+  const r = await net(`https://api.crossref.org/prefixes/${encodeURIComponent(p)}`, { timeout: 4000, accept: "application/json", headers: WD_UA });
+  let name = "";
+  try { name = doiNice(JSON.parse(r.text).message.name); } catch {}
+  if (name) { DOIP.set(p, name); doiSave(); } else DOI_MISS.set(p, Date.now() + 3600000);
+};
+const doiNames = async (rs) => {
+  doiLoad();
+  const need = new Set();
+  for (const r of rs) { const p = doiPrefixOf(r.url); if (p && !DOIP.has(p)) need.add(p); }
+  if (need.size) await Promise.race([Promise.all([...need].slice(0, 12).map((p) => doiAsk(p).catch(() => {}))), new Promise((r) => { const t = setTimeout(r, 900); if (t.unref) t.unref(); })]);
+  let n = 0;
+  for (const r of rs) { const p = doiPrefixOf(r.url); if (p && DOIP.has(p)) { r.ctPub = DOIP.get(p); n++; } }
+  return n;
+};
+// A slow answer is never thrown away: the rank call keeps running past the wait below and fills AIC when it lands, so
+// the very next request for the same results (a tab switch, a reload) already has it. Same request twice at once
+// shares one run (INFL).
+const INFL = new Map();
+const RANK_WAIT_MS = 1600, RANK_RUN_MS = 6000;
 globalThis.__ctResults = async (result, query, params) => {
   const type = String((params && params.type) || "web");
   if (!result || !Array.isArray(result.results) || !query || /^(images|videos)$/.test(type)) return;
   const q = String(query).trim().slice(0, 300);
   const rs = result.results.slice(0, 60);
   if (!rs.length || q.startsWith("!")) return;
+  try { if (await doiNames(result.results)) result.ctPub = 1; } catch {}
   const key = `${type}|${q}|${rs.map((r) => r.url).join("|")}`;
   let got = AIC.get(key);
   if (!got) {
-    const docs = rs.map((r) => `${stripT(r.title)}. ${stripT(r.snippet)}`.slice(0, 1200));
-    const sents = [];
-    if (type === "web" && (QLIKE.test(q) || q.split(/\s+/).length >= 2)) rs.slice(0, 6).forEach((r, i) => sentences(r.snippet).slice(0, 4).forEach((x) => sents.push([i, x])));
-    const j = await vis("/rank", { q, docs: docs.concat(sents.map(([, x]) => x)) }, 700);
-    if (!j || !Array.isArray(j.s)) return;
-    got = { rel: j.s.slice(0, docs.length), best: {} };
-    sents.forEach(([i, x], k) => { const v = j.s[docs.length + k]; if (typeof v === "number" && (!got.best[i] || v > got.best[i].p)) got.best[i] = { s: x, p: v }; });
-    AIC.set(key, got);
-    if (AIC.size > 500) AIC.delete(AIC.keys().next().value);
+    let run = INFL.get(key);
+    if (!run) {
+      const docs = rs.map((r) => `${stripT(r.title)}. ${stripT(r.snippet)}`.slice(0, 1200));
+      const sents = [];
+      if (type === "web" && (QLIKE.test(q) || q.split(/\s+/).length >= 2)) rs.slice(0, 6).forEach((r, i) => sentences(r.snippet).slice(0, 4).forEach((x) => sents.push([i, x])));
+      run = (async () => {
+        const j = await vis("/rank", { q, docs: docs.concat(sents.map(([, x]) => x)) }, RANK_RUN_MS);
+        if (!j || !Array.isArray(j.s)) return null;
+        const g = { rel: j.s.slice(0, docs.length), best: {} };
+        sents.forEach(([i, x], k) => { const v = j.s[docs.length + k]; if (typeof v === "number" && (!g.best[i] || v > g.best[i].p)) g.best[i] = { s: x, p: v }; });
+        AIC.set(key, g);
+        if (AIC.size > 500) AIC.delete(AIC.keys().next().value);
+        return g;
+      })().finally(() => INFL.delete(key));
+      INFL.set(key, run);
+    }
+    got = await Promise.race([run, new Promise((r) => { const t = setTimeout(() => r(null), RANK_WAIT_MS); if (t.unref) t.unref(); })]);
+    if (!got) return;
   }
   rs.forEach((r, i) => { if (typeof got.rel[i] === "number") r.ctRel = got.rel[i]; if (got.best[i]) r.ctBest = got.best[i]; });
   result.ctAi = 1;
@@ -1655,7 +1732,7 @@ export default {
     if (ctx && ctx.dir) DIR = ctx.dir;
     if (ctx && typeof ctx.signProxyUrl === "function") _sign = ctx.signProxyUrl;
     if (ctx && typeof ctx.fetch === "function") _fetch = ctx.fetch;
-    if (!process.env.CT_NO_TIMERS) { aiSchedule(); fxSchedule(); const t = setTimeout(() => ensureData(), 90000); if (t.unref) t.unref(); }
+    if (!process.env.CT_NO_TIMERS) { aiSchedule(); fxSchedule(); trendSchedule(); const t = setTimeout(() => ensureData(), 90000); if (t.unref) t.unref(); }
   },
 
   // Bridge: the page reaches the routes above through degoog's command address (/api/command),
@@ -1680,7 +1757,7 @@ export default {
 };
 '@)
 [IO.File]::WriteAllText("$t\script.js", @'
-// clean-titles v50
+// clean-titles v51
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -2999,6 +3076,7 @@ const _fetch0 = window.fetch.bind(window);
 // The answer AI's verdicts ride along in degoog's own search answers (ctRel per result, ctBest = its best sentence):
 // read here, before degoog draws the results, so relevance and the featured snippet use them in the same pass
 const AIW = globalThis.__ctAIW || (globalThis.__ctAIW = new Map());
+const PUBW = globalThis.__ctPUBW || (globalThis.__ctPUBW = new Map()); // doi.org result -> publisher name (server, Crossref)
 const aiKey = (u) => { try { const x = new URL(u, location.href); return (x.host.replace(/^www\./, "") + x.pathname.replace(/\/$/, "") + x.search).toLowerCase(); } catch { return String(u || ""); } };
 window.fetch = async (input, init) => {
   let path = "", search = false;
@@ -3012,7 +3090,10 @@ window.fetch = async (input, init) => {
     try {
       if (r.ok) {
         const j = await r.clone().json();
-        if (j && j.ctAi && Array.isArray(j.results)) for (const x of j.results) if (x && x.url && typeof x.ctRel === "number") AIW.set(aiKey(x.url), { p: x.ctRel, best: x.ctBest || null });
+        if (j && (j.ctAi || j.ctPub) && Array.isArray(j.results)) for (const x of j.results) if (x && x.url) {
+          if (typeof x.ctRel === "number") AIW.set(aiKey(x.url), { p: x.ctRel, best: x.ctBest || null });
+          if (x.ctPub) PUBW.set(aiKey(x.url), String(x.ctPub));
+        }
         if (AIW.size > 3000) for (const k of [...AIW.keys()].slice(0, 1000)) AIW.delete(k);
       }
     } catch {}
@@ -3444,7 +3525,7 @@ const row = (el) => {
   try { site = new URL(el.dataset.resultUrl || a.href).hostname.replace(/^www\./, ""); } catch {}
   // Forum threads (any tab): the community is the source ("r/Jersey", "Stack Overflow"), not repeated in the title,
   // and Reddit's "Archived post. New comments cannot be posted..." filler is dropped from the description
-  const pub = CT.doiPublisher(el.dataset.resultUrl || a.href);
+  const pub = CT.doiPublisher(el.dataset.resultUrl || a.href) || PUBW.get(aiKey(el.dataset.resultUrl || a.href)) || "";
   if (pub) site = pub; // "Elsevier" instead of doi.org (the address still shows on hover)
   const fn = u ? forumName(u, site) : "";
   if (fn) {
@@ -5032,7 +5113,27 @@ const kpPass = () => {
 };
 
 const safe = (name, fn) => { try { fn(); } catch (e) { console.error(`clean-titles ${name}:`, e); } };
+// A tab tapped while degoog's first search is still starting is ignored by degoog (it has no current search yet), so the
+// page seemed stuck until it finished loading. The tap is kept and repeated until degoog takes it (its tab turns
+// active); degoog then drops the search that was loading and opens the tab. A later tap on another tab cancels it.
+let rescueId = 0, repeating = false;
+const tabRescue = () => {
+  document.addEventListener("click", (e) => {
+    const tab = e.target && e.target.closest ? e.target.closest("#results-tabs .results-tab") : null;
+    if (!tab || repeating) return; // our own repeated taps never start another rescue
+    const id = ++rescueId;
+    const t0 = Date.now();
+    const tick = () => {
+      if (id !== rescueId || !tab.isConnected || tab.classList.contains("active") || Date.now() - t0 > 12000) return;
+      repeating = true; try { tab.click(); } finally { repeating = false; }
+      setTimeout(tick, 450);
+    };
+    setTimeout(tick, 450);
+  }, true);
+};
+
 const init = () => {
+  safe("tabrescue", tabRescue);
   safe("query", readQuery);
   safe("early", earlyStart);
   safe("usage", () => noUsage(document.body));
@@ -6300,6 +6401,15 @@ async def ensure(urls, budget):
             for (u, _), e in zip(ok, embs): IMG.put(u, e)
     return [IMG.get1(u) for u in urls]
 
+@app.on_event("startup")
+async def warm():
+    # First GPU calls compile kernels and take seconds; do that now, not on the first search
+    try:
+        async with lock:
+            await asyncio.to_thread(rerank, "warm up", ["warm up passage about a warm up query " * 12] * 16)
+    except Exception:
+        pass
+
 @app.get("/health")
 async def health():
     return {"ok": True, "device": dev, "gpu": gpu, "model": MODEL, "rerank": RERANK, "cached": len(IMG)}
@@ -6367,7 +6477,7 @@ for i in $(docker images ct-vision --format '{{.Repository}}:{{.Tag}}'); do [ "$
 echo "ct-vision ready: $TAG"
 
 '@).Replace("`r", ""))
-[IO.File]::WriteAllText("$vd\tag", "afe4b38cd397")
+[IO.File]::WriteAllText("$vd\tag", "066652c85584")
 docker network inspect ct-net 2>&1 | Out-Null; if ($LASTEXITCODE -ne 0) { docker network create ct-net | Out-Null }
 docker network connect ct-net $c 2>&1 | Out-Null
 docker rm -f ct-vision-setup 2>&1 | Out-Null
@@ -6379,7 +6489,7 @@ docker restart $c | Out-Null
 $null = docker exec $c sh -c 'for i in $(seq 1 40); do curl -fs -o /dev/null http://127.0.0.1:${DEGOOG_PORT:-4444}/readyz && exit 0; sleep 1; done'
 
 $ss = docker exec $c cat /app/data/server-settings.json | Out-String | ConvertFrom-Json
-"plugin code inside the page (should be v50): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
+"plugin code inside the page (should be v51): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
 "page files (should be a ct and a psl file): " + (docker exec $c sh -c 'ls /app/src/public/ct/')
 "progressive results off (should be False): $($ss.settings.streamingEnabled -eq $true)"
 "typo fixer word list (should be about 82800): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/words.txt')
@@ -6584,6 +6694,11 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
   let n = 0;
   for (let i = 0; i < 12 && !n; i++) { try { n = (JSON.parse(fs.readFileSync(`${DIR}/ai-images.json`, "utf8")).list || []).length; } catch {} if (!n) await sleep(5000); }
   row("AI-image blocklist (Images tab)", n >= 300, n ? `${n} sites` : "");
+  // DOI publisher names (Crossref prefix list) and trending names (Wikipedia's most-read articles; first refresh ~2 min after start)
+  try { const r = await fetch("https://api.crossref.org/prefixes/10.1016", { headers: { Accept: "application/json", "User-Agent": "degoog-clean-titles/51 (+https://github.com/degoog-org/degoog)" }, signal: AbortSignal.timeout(8000) }); const j = await r.json(); row("DOI publisher names (Crossref)", /elsevier/i.test(String(j.message && j.message.name)), String(j.message && j.message.name || r.status)); } catch (e) { row("DOI publisher names (Crossref)", false, String(e.message || e).slice(0, 60)); }
+  let tn = 0;
+  for (let i = 0; i < 30 && !tn; i++) { try { tn = (JSON.parse(fs.readFileSync(`${DIR}/trend.json`, "utf8")).w || []).length; } catch {} if (!tn) await sleep(5000); }
+  row("Trending names (Wikipedia)", tn >= 100, tn ? `${tn} words` : "no trend.json after 150 s");
 
   const w = Math.max(...rows.map((r) => r[0].length));
   console.log("");

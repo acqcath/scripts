@@ -1,4 +1,6 @@
 ## FIRST, EVERY RUN: read the user's memory before anything else
+
+**Start with QUICKSTART.md (short). This file is the long log.**
 Call mcp__memory__memory_read on /preferences.md and /topics/priorities.md (and /areas/degoog.md). They hold the user's principles and how they want replies and work done; they apply to every run and every message. This file only adds project facts. (2026-11-23: a whole live session skipped this and broke several of those rules.)
 
 # clean-titles v50: build notes (branch v50-wip)
@@ -256,3 +258,11 @@ Everything else in FEATURES 1-15, RULES, LOADING and DESIGN SYSTEM is built and 
 
 ## Featured snippet test set (user, live, 2026-11-23 ~14:40 UTC)
 User wants to see which of these actually get a snippet. Still needs their server's recorded results for these (same format as rec/ct-recordings.json.gz) before the picker can be judged; WAITING stays until those or the self-check table arrive.
+
+## v51 (2026-11-25, live chat with the user)
+- First-load snippet missing until a tab switch: the rank call had a 700 ms wait and a slow answer was thrown away, so the first request had no ctBest/ctRel and the next (warm) one did. Now the wait is 1.6 s, a slower answer keeps running (6 s) and fills AIC for the next identical request, and one in-flight run is shared (INFL). ct-vision warms the reranker at start (first GPU call compiles kernels). *Cause not measured on the user's server (no access from here); self-check/timing is the check.*
+- Tabs stuck while loading: degoog's tab handler needs state.currentQuery, which is only set after /api/commands + streaming config return, so an early tap did nothing. script.js `tabRescue` repeats the tap every 450 ms (up to 12 s) until degoog marks that tab active; another tap cancels. Tests: page.test.js.
+- doi.org source name: page table covers ~40 prefixes; server hook asks Crossref's prefix list for any other (`doiNames`, kept in doi-prefixes.json, ctPub on the result, page reads it via PUBW before paint). Verified shape: api.crossref.org/prefixes/10.1016 -> message.name "Elsevier BV" (WebFetch); not reachable from the sandbox shell.
+- Trending names: Wikipedia top-pageviews (1000 articles, per day) -> trend.json words, refreshed twice a day, count as known words in the typo fixer (`TREND`). Endpoint shape from Wikimedia's docs/clients, NOT fetched live (WebFetch got url_not_found for the 2026 dates): the self-check row "Trending names (Wikipedia)" is the live check.
+- Release method: build_installer.py's v49 skeleton (9daedd5) is gone from the repo history; `CT_VERSION=v51 python3 build.py && python3 patch_installer.py v51` patches the installer on main in place and checks every embedded file round-trips.
+- Not done (needs the user): the "2x category picker" in Images/Science (could not identify from the screenshots: no picker visible in either), and the Web-tab "disjoint" look (needs a screenshot of the part).

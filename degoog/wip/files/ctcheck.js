@@ -193,6 +193,11 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
   let n = 0;
   for (let i = 0; i < 12 && !n; i++) { try { n = (JSON.parse(fs.readFileSync(`${DIR}/ai-images.json`, "utf8")).list || []).length; } catch {} if (!n) await sleep(5000); }
   row("AI-image blocklist (Images tab)", n >= 300, n ? `${n} sites` : "");
+  // DOI publisher names (Crossref prefix list) and trending names (Wikipedia's most-read articles; first refresh ~2 min after start)
+  try { const r = await fetch("https://api.crossref.org/prefixes/10.1016", { headers: { Accept: "application/json", "User-Agent": "degoog-clean-titles/51 (+https://github.com/degoog-org/degoog)" }, signal: AbortSignal.timeout(8000) }); const j = await r.json(); row("DOI publisher names (Crossref)", /elsevier/i.test(String(j.message && j.message.name)), String(j.message && j.message.name || r.status)); } catch (e) { row("DOI publisher names (Crossref)", false, String(e.message || e).slice(0, 60)); }
+  let tn = 0;
+  for (let i = 0; i < 30 && !tn; i++) { try { tn = (JSON.parse(fs.readFileSync(`${DIR}/trend.json`, "utf8")).w || []).length; } catch {} if (!tn) await sleep(5000); }
+  row("Trending names (Wikipedia)", tn >= 100, tn ? `${tn} words` : "no trend.json after 150 s");
 
   const w = Math.max(...rows.map((r) => r[0].length));
   console.log("");
