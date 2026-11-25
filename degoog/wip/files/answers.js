@@ -811,3 +811,17 @@ export const featuredSnippet = (q, results) => {
   }
   return null;
 };
+
+// ----- People also ask: is a page about the question? -----
+// A question's own words (not "why", "is", "my"…) must be in the page's title or description: at least one, and two
+// once the question has three or more. Word stems compared (nostrils ~ nostril, hurts ~ hurt).
+export const QA_LEAD = /^(?:why|what|whats|how|who|whos|when|where|which|is|are|was|were|can|could|do|does|did|should|will|would)$/;
+const QA_STOP = new Set("the and for with that this from your you my his her its our their they them about into over than then there what when where which while who why how are was were does did can could should would will have has had been being not too very so it is am be do of in on at to by or an a me i we us get got feel feels".split(" "));
+const qaStem = (w) => w.replace(/(?:ies|es|s|ing|ed|ly)$/, "").slice(0, 6);
+export const qaAbout = (question, text) => {
+  const ws = [...new Set(String(question || "").toLowerCase().match(/[\p{L}\p{N}]+/gu) || [])].filter((w) => w.length >= 3 && !QA_STOP.has(w)).map(qaStem);
+  if (!ws.length) return true;
+  const hay = new Set((String(text || "").toLowerCase().replace(/<[^>]+>/g, " ").match(/[\p{L}\p{N}]+/gu) || []).map(qaStem));
+  const n = ws.filter((w) => hay.has(w)).length;
+  return n >= (ws.length >= 3 ? 2 : 1);
+};

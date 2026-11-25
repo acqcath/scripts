@@ -185,3 +185,11 @@ test("knowledge panel: product searches (model numbers, specs/price/release date
   expect(A.kpMatch("IPhone 15 Pro", ["https://support.apple.com/kb/x"], ["apple.com"]).ok).toBe(true);
   expect(A.kpMatch("IPhone 15 Pro", ["https://notapple.com/x"], ["apple.com"]).ok).toBe(false);
 });
+
+test("people also ask: an answer must be about the question's own words, not its question word", () => {
+  const dict = "WHY - English meaning When we ask for reasons in speaking, we can use the phrase why is that? In informal conversations we often say why's that?";
+  for (const q of ["Why is my nose dry and stuffy?", "Why is my nose so dry it hurts?", "Why do my nostrils feel dry?"]) expect([q, A.qaAbout(q, dict)]).toEqual([q, false]);
+  expect(A.qaAbout("Why is my nose dry and stuffy?", "Dry, stuffy nose: causes include low humidity and allergies")).toBe(true);
+  expect(A.qaAbout("Why do my nostrils feel dry?", "Dry nostrils are common in winter when indoor air is dry")).toBe(true);
+  expect(A.QA_LEAD.test("why") && !A.QA_LEAD.test("nose")).toBe(true);
+});

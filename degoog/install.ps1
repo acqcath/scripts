@@ -3151,7 +3151,21 @@ const featuredSnippet = (q, results) => {
   return null;
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, related, topicOf, tidyTitle, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippetAI, featuredSnippet };
+// ----- People also ask: is a page about the question? -----
+// A question's own words (not "why", "is", "my"…) must be in the page's title or description: at least one, and two
+// once the question has three or more. Word stems compared (nostrils ~ nostril, hurts ~ hurt).
+const QA_LEAD = /^(?:why|what|whats|how|who|whos|when|where|which|is|are|was|were|can|could|do|does|did|should|will|would)$/;
+const QA_STOP = new Set("the and for with that this from your you my his her its our their they them about into over than then there what when where which while who why how are was were does did can could should would will have has had been being not too very so it is am be do of in on at to by or an a me i we us get got feel feels".split(" "));
+const qaStem = (w) => w.replace(/(?:ies|es|s|ing|ed|ly)$/, "").slice(0, 6);
+const qaAbout = (question, text) => {
+  const ws = [...new Set(String(question || "").toLowerCase().match(/[\p{L}\p{N}]+/gu) || [])].filter((w) => w.length >= 3 && !QA_STOP.has(w)).map(qaStem);
+  if (!ws.length) return true;
+  const hay = new Set((String(text || "").toLowerCase().replace(/<[^>]+>/g, " ").match(/[\p{L}\p{N}]+/gu) || []).map(qaStem));
+  const n = ws.filter((w) => hay.has(w)).length;
+  return n >= (ws.length >= 3 ? 2 : 1);
+};
+
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, related, topicOf, tidyTitle, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippetAI, featuredSnippet, QA_LEAD, qaAbout };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -4303,7 +4317,9 @@ const paa = () => {
       // mid-sentence most of the time (names); title case ("Day Old Tea") never counts
       const cased = new Map(), mid = new Map();
       const add = (m, k, w) => { const x = m.get(k) || new Map(); x.set(w, (x.get(w) || 0) + 1); m.set(k, x); };
-      for (const r of document.querySelectorAll("#results-list .result-item :is(.result-title, .result-snippet)")) for (const w of r.textContent.match(/[\p{L}\p{N}][\p{L}\p{N}'+.#-]*/gu) || []) if (/\p{Lu}/u.test(w.slice(1))) add(cased, w.toLowerCase(), w);
+      // ALL-CAPS in a title is shouting ("WHY - English meaning"), not how the word is spelled: titles teach only
+      // mixed forms (PuTTY, iPhone); acronyms (NASA) are learned from the descriptions
+      for (const r of document.querySelectorAll("#results-list .result-item :is(.result-title, .result-snippet)")) { const ttl = r.classList.contains("result-title"); for (const w of r.textContent.match(/[\p{L}\p{N}][\p{L}\p{N}'+.#-]*/gu) || []) if (/\p{Lu}/u.test(w.slice(1)) && !(ttl && w === w.toUpperCase())) add(cased, w.toLowerCase(), w); }
       for (const r of document.querySelectorAll("#results-list .result-item .result-snippet")) {
         const toks = r.textContent.split(/\s+/);
         for (let i = 1; i < toks.length; i++) { const w = toks[i].replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""); if (w && !/[.!?:…]$/.test(toks[i - 1])) add(mid, w.toLowerCase(), w); }
@@ -4320,6 +4336,7 @@ const paa = () => {
         const k = w.toLowerCase(), m = mid.get(k);
         const lowMostly = m && [...m].filter(([x]) => x === k).reduce((n, [, v]) => n + v, 0) * 2 > [...m].reduce((n, [, v]) => n + v, 0);
         const best = pick(k) || (lowMostly ? k : w); // no evidence either way: as the suggestion wrote it
+        if (i === 0 && CT.QA_LEAD.test(k)) return k[0].toUpperCase() + k.slice(1); // "Why", never "WHY"
         return i === 0 ? best[0].toUpperCase() + best.slice(1) : best;
       });
       // Answers are fetched as the box comes near the screen, so a tap shows one at once; a question no page answers
@@ -4329,7 +4346,8 @@ const paa = () => {
       // best; too weak an answer = no answer. Without the AI: the first result with a description.
       const get = (text) => ans.get(text) || ans.set(text, fetch(`/api/search?q=${encodeURIComponent(text)}`).then((r) => (r.ok ? r.json() : null))
         .then(async (sj) => {
-          const c = (sj && Array.isArray(sj.results) ? sj.results : []).filter((x) => x && x.url && x.snippet).slice(0, 8);
+          // Only results about the question's own words ("nose", "dry"), not just its question word ("why")
+          const c = (sj && Array.isArray(sj.results) ? sj.results : []).filter((x) => x && x.url && x.snippet).slice(0, 8).filter((x) => CT.qaAbout(text, `${x.title || ""} ${x.snippet}`));
           if (!c.length) return null;
           const strip = (t) => String(t || "").replace(/<[^>]+>/g, "").trim();
           const j = await bridge("rank", {}, JSON.stringify({ q: text, d: c.map((x) => `${strip(x.title)}. ${strip(x.snippet)}`) })).catch(() => null);
@@ -4338,6 +4356,9 @@ const paa = () => {
           j.s.forEach((v, i) => { if (typeof v === "number" && (bi < 0 || v > j.s[bi])) bi = i; });
           return bi >= 0 && j.s[bi] >= 0.02 ? c[bi] : null; // the best of them unless none is about the question at all
         }).catch(() => null)).get(text);
+      // One page answers one question: a page already answering another question isn't repeated under this one
+      const used = new Map();
+      const own = (text) => (top) => { if (!top) return null; const u = used.get(top.url); if (u && u !== text) return null; used.set(top.url, text); return top; };
       const drop = (d) => { d.remove(); if (box.querySelectorAll("details").length < 2) { box.remove(); if (paaBox === box) paaBox = null; } }; // gone for good (not put back after a redraw)
       const items = [];
       for (const raw of j.q) {
@@ -4353,7 +4374,7 @@ const paa = () => {
           if (!d.open || body.dataset.done) return;
           body.dataset.done = "1";
           body.textContent = "Loading…";
-          get(text).then((top) => {
+          get(text).then(own(text)).then((top) => {
             body.textContent = "";
             if (!top) { drop(d); return; }
             // Same order and look as a result: answer, then site icon + name, then the page title
@@ -4383,7 +4404,7 @@ const paa = () => {
       const io = "IntersectionObserver" in window ? new IntersectionObserver((es) => {
         if (!es.some((e) => e.isIntersecting)) return;
         io.disconnect();
-        for (const [d, text] of items) get(text).then((top) => { if (!top && !d.open) drop(d); });
+        for (const [d, text] of items) get(text).then(own(text)).then((top) => { if (!top && !d.open) drop(d); });
       }, { rootMargin: "600px 0px" }) : null;
       if (io) io.observe(box);
       paaBox = fadeIn(box);
