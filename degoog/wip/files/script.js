@@ -162,8 +162,10 @@ const cleanTitle = (raw, href) => {
 };
 
 let href = "", webTab = true, wantsDict = true, qWords = [], qIdent = false;
-// Dictionary pages only when the search is about a word (Bing adds them for words like "under" or "fix")
-const DICT = /(^|\.)(merriam-webster\.com|thefreedictionary\.com|dictionary\.cambridge\.org|dictionary\.com|collinsdictionary\.com|oxfordlearnersdictionaries\.com|vocabulary\.com|wordreference\.com|yourdictionary\.com|wiktionary\.org|urbandictionary\.com)$/i;
+// Dictionary, spelling and grammar pages only when the search is one word or asks about words (Bing adds them for
+// any word of a search: "using dbr 12 on a pole" got "Useing or Using – Which Spelling Is Correct?")
+const DICT = /(^|\.)(merriam-webster\.com|thefreedictionary\.com|dictionary\.cambridge\.org|dictionary\.com|collinsdictionary\.com|oxfordlearnersdictionaries\.com|vocabulary\.com|wordreference\.com|yourdictionary\.com|wiktionary\.org|urbandictionary\.com|thesaurus\.com|grammartribe\.com|grammarist\.com|grammarly\.com|writingexplained\.org|wordhippo\.com|ludwig\.guru|dictionary\.law\.com|macmillandictionary\.com|englishclub\.com|grammar-monster\.com|grammarbook\.com|differencebetween\.net|thecontentauthority\.com|onelook\.com|lexico\.com|definitions\.net|howtopronounce\.com|youglish\.com|sentencedict\.com)$/i;
+const DICT_TITLE = /\b(?:which spelling|spelling|correct spelling|definition|definitions|meaning of|english meaning|synonyms?|antonyms?|how to pronounce|pronunciation|grammar rules?|in a sentence|use .{1,20} in a sentence)\b/i;
 const readQuery = () => {
   if (location.href === href) return;
   href = location.href;
@@ -172,7 +174,7 @@ const readQuery = () => {
   try { qWords = CT.relWords(new URL(href).searchParams.get("q") || ""); } catch { qWords = []; }
   try {
     const q = (new URL(href).searchParams.get("q") || "").trim();
-    wantsDict = q.split(/\s+/).length <= 2 || /\b(define|definition|meaning|means?|synonyms?|antonyms?|pronounc\w*|spell\w*|dictionary|word|etymology|slang)\b/i.test(q);
+    wantsDict = q.split(/\s+/).length === 1 || /\b(define|definition|meaning|means?|synonyms?|antonyms?|pronounc\w*|spell\w*|dictionary|word|etymology|slang)\b/i.test(q);
   } catch { wantsDict = true; }
 };
 // Results the page never shows: dictionary pages for non-word searches (Bing adds them for words like "under")
@@ -181,7 +183,7 @@ const junk = (el) => {
   if (!a) return false;
   let h = "";
   try { h = new URL(a.href).hostname; } catch {}
-  return !wantsDict && DICT.test(h.replace(/^www\./, ""));
+  return !wantsDict && (DICT.test(h.replace(/^www\./, "")) || DICT_TITLE.test(a.textContent || ""));
 };
 
 // ===== List pass (Web tab): dedupe -> site prefs -> 2 per site with folds, planned by core.js before paint =====
@@ -250,19 +252,23 @@ const tabPass = () => {
 // in, folded under "N unrelated results ⌄" (one tap shows them). Decided before paint; nothing is filtered by topic.
 const relPlanned = new WeakSet();
 const AI_LOW = 0.02; // answer AI: below this a result isn't about the search (first result always stays)
-let RP = { key: "", n: 0, rel: [] };
+let RP = { key: "", n: 0, rel: [], core: null };
 const relPass = () => {
   const list = document.getElementById("results-list");
   if (!list) return;
   const fresh = [...list.children].filter((el) => el.classList.contains("result-item") && !relPlanned.has(el));
   if (!fresh.length) return;
   const key = searchId(location.href);
-  if (RP.key !== key) RP = { key, n: 0, rel: [] };
+  if (RP.key !== key) RP = { key, n: 0, rel: [], core: null };
   // Words of the corrected search too, when degoog searched a typo fix ("Showing results for …")
   const words = [...new Set([...qWords, ...CT.relWords(document.querySelector("#ct-fix a")?.textContent || "")])];
   let q0 = "";
   try { q0 = new URL(location.href).searchParams.get("q") || ""; } catch {}
   if (!CT.relJudgeable(q0)) { fresh.forEach((el) => relPlanned.add(el)); return; }
+  // The search's core words: those most of the results share ("dbr12" for "using dbr 12 on a pole"). A result needs
+  // one of them, even when it shares a common word ("using") or the answer AI gave it a weak yes
+  if (!RP.core) { const txt = fresh.map((el) => `${el.dataset.resultUrl || el.querySelector("a.result-title")?.href || ""} ${el.querySelector("a.result-title")?.textContent || ""} ${el.querySelector(".result-snippet")?.textContent || ""}`); if (txt.length >= 5) RP.core = CT.relCore(words, txt); }
+  const core = RP.core || [];
   let out = [];
   for (const el of fresh) {
     relPlanned.add(el);
@@ -275,12 +281,15 @@ const relPass = () => {
     // The answer AI's verdict when it has one (reads meaning, not shared words); the word rule otherwise
     const ai = AIW.get(aiKey(el.dataset.resultUrl || a.href));
     if (ai) r.ai = true;
-    const ok = ai ? ai.p >= AI_LOW || pos === 0 : CT.related(words, qIdent, `${el.dataset.resultUrl || a.href} ${r.title} ${r.snippet}`, el.querySelectorAll(".result-engine-tag").length, pos);
+    const txt = `${el.dataset.resultUrl || a.href} ${r.title} ${r.snippet}`;
+    const coreOk = CT.matchShare(core, txt) > 0;
+    if (!coreOk) r.core = false;
+    const ok = pos === 0 || (coreOk && (ai ? ai.p >= AI_LOW : CT.related(words, qIdent, txt, el.querySelectorAll(".result-engine-tag").length, pos)));
     if (anchor || ok) RP.rel.push(r);
     else out.push([el, r]);
   }
   // Second look: results that use other words for the same topic as the related ones stay (core topicOf)
-  if (out.length) { const same = CT.topicOf(RP.rel, words); out = out.filter(([, r]) => r.ai || !same(r)); }
+  if (out.length) { const same = CT.topicOf(RP.rel, words); out = out.filter(([, r]) => (r.ai && r.core !== false) || !same(r)); }
   out = out.map(([el]) => el);
   const shown = fresh.filter((el) => !out.includes(el) && el.style.display !== "none" && !el.classList.contains("ct-grouped"));
   if (!out.length || !shown.length) return;

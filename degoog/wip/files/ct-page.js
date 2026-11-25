@@ -457,7 +457,12 @@ const tabLow = (tab, host, title, seen) => {
 const REL_STOP = new Set("the and for with from what whats how who whos why when where which this that these those are was were you your can does did will about into than then there many much".split(" "));
 // "15-213", "10.1038" are one token (digit groups joined); words match by shared start (love / loves / lover)
 const relToks = (t) => String(t || "").toLowerCase().replace(/(\d)[-.\/](?=\d)/g, "$1").split(/[^\p{L}\p{N}]+/u).filter(Boolean);
-const relWords = (q) => [...new Set(relToks(q).filter((w) => (/\p{L}/u.test(w) ? w.length >= 3 && !REL_STOP.has(w) : w.length >= 4)))];
+// A model name split by a space ("dbr 12", "rtx 4090", "galaxy s 24") also counts written together ("dbr12")
+const relWords = (q) => {
+  const t = relToks(q), joined = [];
+  for (let i = 0; i + 1 < t.length; i++) if (/^\p{L}+$/u.test(t[i]) && /^\d+$/.test(t[i + 1]) && t[i].length <= 6) joined.push(t[i] + t[i + 1]);
+  return [...new Set([...t.filter((w) => (/\p{L}/u.test(w) ? w.length >= 3 && !REL_STOP.has(w) : w.length >= 4)), ...joined])];
+};
 const relIdent = (q) => { const t = relToks(q); return t.length > 0 && t.every((w) => /\d/.test(w)); };
 const relHit = (w, t) => t === w || (w.length >= 4 && t.length >= 4 && (t.startsWith(w) || w.startsWith(t)));
 const matchShare = (words, text) => {
@@ -467,6 +472,16 @@ const matchShare = (words, text) => {
 };
 // A search made mostly of common words (a quote, "who are you who do you work for") can't be judged by its words: no check
 const relJudgeable = (q) => { const t = relToks(q); return t.length > 0 && relWords(q).length * 2 >= t.length; };
+// Core words: the search's words that 40%+ of the first results share (at least 3 of them). Empty = no core (every
+// result is judged as before). Words found in nearly every result but too common to say anything still qualify:
+// they are then simply shared by the related results too.
+const relCore = (words, texts) => {
+  const n = (texts || []).length;
+  if (n < 5 || !words.length) return [];
+  const toks = texts.map((x) => [...new Set(relToks(x))]);
+  const need = Math.max(3, Math.ceil(n * 0.4));
+  return words.filter((w) => toks.filter((ts) => ts.some((t) => relHit(w, t))).length >= need);
+};
 const related = (words, ident, text, engines, pos) => matchShare(words, text) > 0 || engines >= 2 || (ident && pos < 3);
 // Second look before a result is folded: words the related results share (in 15%+ of them, at least 3; one also in
 // 2+ of their titles) are the topic of this search ("tracking", "package" for a UPS number; "attention", "encoder"
@@ -1316,7 +1331,7 @@ const qaAbout = (question, text) => {
   return n >= (ws.length >= 3 ? 2 : 1);
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, related, topicOf, tidyTitle, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippetAI, featuredSnippet, QA_LEAD, qaAbout };
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, relCore, related, topicOf, tidyTitle, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippetAI, featuredSnippet, QA_LEAD, qaAbout };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -1482,8 +1497,10 @@ const cleanTitle = (raw, href) => {
 };
 
 let href = "", webTab = true, wantsDict = true, qWords = [], qIdent = false;
-// Dictionary pages only when the search is about a word (Bing adds them for words like "under" or "fix")
-const DICT = /(^|\.)(merriam-webster\.com|thefreedictionary\.com|dictionary\.cambridge\.org|dictionary\.com|collinsdictionary\.com|oxfordlearnersdictionaries\.com|vocabulary\.com|wordreference\.com|yourdictionary\.com|wiktionary\.org|urbandictionary\.com)$/i;
+// Dictionary, spelling and grammar pages only when the search is one word or asks about words (Bing adds them for
+// any word of a search: "using dbr 12 on a pole" got "Useing or Using – Which Spelling Is Correct?")
+const DICT = /(^|\.)(merriam-webster\.com|thefreedictionary\.com|dictionary\.cambridge\.org|dictionary\.com|collinsdictionary\.com|oxfordlearnersdictionaries\.com|vocabulary\.com|wordreference\.com|yourdictionary\.com|wiktionary\.org|urbandictionary\.com|thesaurus\.com|grammartribe\.com|grammarist\.com|grammarly\.com|writingexplained\.org|wordhippo\.com|ludwig\.guru|dictionary\.law\.com|macmillandictionary\.com|englishclub\.com|grammar-monster\.com|grammarbook\.com|differencebetween\.net|thecontentauthority\.com|onelook\.com|lexico\.com|definitions\.net|howtopronounce\.com|youglish\.com|sentencedict\.com)$/i;
+const DICT_TITLE = /\b(?:which spelling|spelling|correct spelling|definition|definitions|meaning of|english meaning|synonyms?|antonyms?|how to pronounce|pronunciation|grammar rules?|in a sentence|use .{1,20} in a sentence)\b/i;
 const readQuery = () => {
   if (location.href === href) return;
   href = location.href;
@@ -1492,7 +1509,7 @@ const readQuery = () => {
   try { qWords = CT.relWords(new URL(href).searchParams.get("q") || ""); } catch { qWords = []; }
   try {
     const q = (new URL(href).searchParams.get("q") || "").trim();
-    wantsDict = q.split(/\s+/).length <= 2 || /\b(define|definition|meaning|means?|synonyms?|antonyms?|pronounc\w*|spell\w*|dictionary|word|etymology|slang)\b/i.test(q);
+    wantsDict = q.split(/\s+/).length === 1 || /\b(define|definition|meaning|means?|synonyms?|antonyms?|pronounc\w*|spell\w*|dictionary|word|etymology|slang)\b/i.test(q);
   } catch { wantsDict = true; }
 };
 // Results the page never shows: dictionary pages for non-word searches (Bing adds them for words like "under")
@@ -1501,7 +1518,7 @@ const junk = (el) => {
   if (!a) return false;
   let h = "";
   try { h = new URL(a.href).hostname; } catch {}
-  return !wantsDict && DICT.test(h.replace(/^www\./, ""));
+  return !wantsDict && (DICT.test(h.replace(/^www\./, "")) || DICT_TITLE.test(a.textContent || ""));
 };
 
 // ===== List pass (Web tab): dedupe -> site prefs -> 2 per site with folds, planned by core.js before paint =====
@@ -1570,19 +1587,23 @@ const tabPass = () => {
 // in, folded under "N unrelated results ⌄" (one tap shows them). Decided before paint; nothing is filtered by topic.
 const relPlanned = new WeakSet();
 const AI_LOW = 0.02; // answer AI: below this a result isn't about the search (first result always stays)
-let RP = { key: "", n: 0, rel: [] };
+let RP = { key: "", n: 0, rel: [], core: null };
 const relPass = () => {
   const list = document.getElementById("results-list");
   if (!list) return;
   const fresh = [...list.children].filter((el) => el.classList.contains("result-item") && !relPlanned.has(el));
   if (!fresh.length) return;
   const key = searchId(location.href);
-  if (RP.key !== key) RP = { key, n: 0, rel: [] };
+  if (RP.key !== key) RP = { key, n: 0, rel: [], core: null };
   // Words of the corrected search too, when degoog searched a typo fix ("Showing results for …")
   const words = [...new Set([...qWords, ...CT.relWords(document.querySelector("#ct-fix a")?.textContent || "")])];
   let q0 = "";
   try { q0 = new URL(location.href).searchParams.get("q") || ""; } catch {}
   if (!CT.relJudgeable(q0)) { fresh.forEach((el) => relPlanned.add(el)); return; }
+  // The search's core words: those most of the results share ("dbr12" for "using dbr 12 on a pole"). A result needs
+  // one of them, even when it shares a common word ("using") or the answer AI gave it a weak yes
+  if (!RP.core) { const txt = fresh.map((el) => `${el.dataset.resultUrl || el.querySelector("a.result-title")?.href || ""} ${el.querySelector("a.result-title")?.textContent || ""} ${el.querySelector(".result-snippet")?.textContent || ""}`); if (txt.length >= 5) RP.core = CT.relCore(words, txt); }
+  const core = RP.core || [];
   let out = [];
   for (const el of fresh) {
     relPlanned.add(el);
@@ -1595,12 +1616,15 @@ const relPass = () => {
     // The answer AI's verdict when it has one (reads meaning, not shared words); the word rule otherwise
     const ai = AIW.get(aiKey(el.dataset.resultUrl || a.href));
     if (ai) r.ai = true;
-    const ok = ai ? ai.p >= AI_LOW || pos === 0 : CT.related(words, qIdent, `${el.dataset.resultUrl || a.href} ${r.title} ${r.snippet}`, el.querySelectorAll(".result-engine-tag").length, pos);
+    const txt = `${el.dataset.resultUrl || a.href} ${r.title} ${r.snippet}`;
+    const coreOk = CT.matchShare(core, txt) > 0;
+    if (!coreOk) r.core = false;
+    const ok = pos === 0 || (coreOk && (ai ? ai.p >= AI_LOW : CT.related(words, qIdent, txt, el.querySelectorAll(".result-engine-tag").length, pos)));
     if (anchor || ok) RP.rel.push(r);
     else out.push([el, r]);
   }
   // Second look: results that use other words for the same topic as the related ones stay (core topicOf)
-  if (out.length) { const same = CT.topicOf(RP.rel, words); out = out.filter(([, r]) => r.ai || !same(r)); }
+  if (out.length) { const same = CT.topicOf(RP.rel, words); out = out.filter(([, r]) => (r.ai && r.core !== false) || !same(r)); }
   out = out.map(([el]) => el);
   const shown = fresh.filter((el) => !out.includes(el) && el.style.display !== "none" && !el.classList.contains("ct-grouped"));
   if (!out.length || !shown.length) return;
