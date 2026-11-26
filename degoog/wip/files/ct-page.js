@@ -1,4 +1,4 @@
-// clean-titles v54
+// clean-titles v55
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -549,6 +549,22 @@ const topicOf = (rel, words) => {
   return (r) => { const hits = [...new Set(topicToks(`${r.title} ${r.snippet || ""}`))].filter((t) => topic.has(t)); return hits.length >= 2 && hits.some((t) => titled.has(t)); };
 };
 const tidyTitle = (t) => tidyText(t).replace(/^[\s|·•:,;–—-]+|[\s|·•:,;–—-]+$/g, "");
+
+
+// ===== ⚑ Report: the text the Claude Code session opens with (Claude's link takes about 14,000 characters: snippets
+// are dropped first, then the oldest waiting flags; the flag being reported always stays) =====
+const flagPrompt = (flags, issue, max = 12000) => {
+  const head = "degoog clean-titles: fix what my degoog reported. Read degoog/wip/QUICKSTART.md in acqcath/scripts first and follow its \"Flags\" steps: " +
+    "commit the flags below to the private repo acqcath/degoog-flags, then fix the code so these searches come out right, release and merge. " +
+    "Keep my searches out of the public repo.\n";
+  const body = (fl, snip) => JSON.stringify({ flags: fl.map((f) => ({ at: new Date(f.t).toISOString(), q: f.q, tab: f.type, note: f.note, top: (f.top || []).map((r) => (snip ? { title: r.title, url: r.url, snippet: r.snippet } : { title: r.title, url: r.url })) })), updateIssue: issue || null });
+  let fl = (flags || []).slice(-20);
+  for (;;) {
+    for (const snip of [true, false]) { const s = head + body(fl, snip); if (s.length <= max || fl.length <= 1) { if (s.length <= max || !snip) return s.slice(0, max); } }
+    if (fl.length <= 1) return (head + body(fl, false)).slice(0, max);
+    fl = fl.slice(1);
+  }
+};
 
 // ===== Answer card, local part (no network): math, units incl. cooking, tip / percent, date math, patterns =====
 // answer(q, now) -> null, or { kind, label, value | title + href, detail, copy, swatch? }. Pure: the page draws it in
@@ -1378,7 +1394,7 @@ const qaAbout = (question, text) => {
   return n >= (ws.length >= 3 ? 2 : 1);
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, navName, navDist, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, relCore, related, topicOf, tidyTitle, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippetAI, featuredSnippet, QA_LEAD, qaAbout };
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, navName, navDist, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, relCore, related, topicOf, tidyTitle, flagPrompt, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippetAI, featuredSnippet, QA_LEAD, qaAbout };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -2700,6 +2716,81 @@ const tools = () => {
   });
 };
 
+
+// ⚑ at the right end of the tab row (phone and PC) opens "What's wrong? (optional)" and one Report button. Report keeps
+// the search, your note and its top 10 results on your server and opens a Claude Code session (the Claude app on the
+// phone) filled with them and anything waiting (an update problem from the PC); you tap send there.
+// The link is a real link built before the tap, so phones open the Claude app (a link opened after a wait is blocked).
+const CLAUDE_REPO = "acqcath/scripts";
+const flagTop = () => {
+  const out = [];
+  for (const el of document.querySelectorAll("#results-list .result-item, #results-list .image-card, #results-list .video-card")) {
+    if (el.style.display === "none") continue;
+    const a = el.querySelector("a.result-title") || el.querySelector("a[href]");
+    const url = el.dataset.resultUrl || (a && a.href) || "";
+    if (!/^https?:/.test(url)) continue;
+    out.push({ url, title: (((el.querySelector("a.result-title, .image-title, .video-title") || a || {}).textContent) || "").trim().slice(0, 200), snippet: (el.querySelector(".result-snippet")?.textContent || "").trim().slice(0, 300) });
+    if (out.length >= 10) break;
+  }
+  return out;
+};
+const curType = () => { try { return new URL(location.href).searchParams.get("type") || "web"; } catch { return "web"; } };
+const flagBox = (btn) => {
+  let box = document.getElementById("ct-flagbox");
+  if (box) { box.remove(); btn.setAttribute("aria-expanded", "false"); return; }
+  btn.setAttribute("aria-expanded", "true");
+  box = document.createElement("div");
+  box.id = "ct-flagbox";
+  const l = mk("label", "", "");
+  const t = document.createElement("textarea");
+  t.rows = 2; t.maxLength = 1000; t.setAttribute("autocapitalize", "sentences");
+  l.append(mk("span", "", "What's wrong? (optional)"), t);
+  const go = mk("a", "ct-flag-go", "Report");
+  go.target = "_blank"; go.rel = "noopener";
+  const extra = mk("div", "ct-flag-st", "");
+  box.append(l, go, extra);
+  let wait = { flags: [], issue: "" };
+  const cur = () => ({ t: Date.now(), q: curQ(), type: curType(), note: t.value.trim(), top: flagTop() });
+  const link = () => {
+    const u = new URL("https://claude.ai/code/new");
+    u.searchParams.set("q", CT.flagPrompt([...wait.flags, cur()], wait.issue));
+    u.searchParams.set("repo", CLAUDE_REPO);
+    u.searchParams.set("branch", "main");
+    go.href = u.toString();
+  };
+  link();
+  t.addEventListener("input", link);
+  go.addEventListener("pointerdown", link);
+  bridge("flags", {}, "{}").then((j) => {
+    if (!j || !box.isConnected) return;
+    wait = { flags: Array.isArray(j.flags) ? j.flags : [], issue: String(j.issue || "") };
+    const n = wait.flags.length + (wait.issue ? 1 : 0);
+    if (n) extra.textContent = wait.issue && !wait.flags.length ? "Also sends the PC's last update problem." : `Also sends ${n} earlier report${n > 1 ? "s" : ""}.`;
+    link();
+  }).catch(() => {});
+  go.addEventListener("click", () => {
+    const c = cur();
+    bridge("flag", {}, JSON.stringify(c)).catch(() => {}); // keepalive: still lands as the page hands over to Claude
+    setTimeout(() => { box.remove(); btn.setAttribute("aria-expanded", "false"); }, 400);
+  });
+  (document.getElementById("ct-adv") || document.getElementById("results-tabs")).after(box);
+  if (!PHONE.matches) t.focus();
+};
+const flagBtn = () => {
+  const tabs = document.getElementById("results-tabs");
+  if (!tabs || !tabs.firstElementChild || document.getElementById("ct-flag") || !curQ()) return;
+  const f = document.createElement("button");
+  f.type = "button";
+  f.id = "ct-flag";
+  f.textContent = "⚑";
+  f.title = "Report a problem with these results";
+  f.setAttribute("aria-label", "Report a problem with these results");
+  f.setAttribute("aria-expanded", "false");
+  f.addEventListener("click", () => flagBox(f));
+  tabs.append(f);
+  tabsEdge();
+};
+
 // Image loading skeleton: degoog always draws 4 columns; match the real grid's 3/4/5/6 by width
 const skel = (root) => {
   const g = root.matches?.(".skeleton-image-grid") ? root : root.querySelector?.(".skeleton-image-grid");
@@ -3491,7 +3582,7 @@ const init = () => {
   safe("rel", relPass);
   safe("scan", () => scan(document.body));
   safe("skeleton", () => skel(document.body));
-  safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools);
+  safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("flag", flagBtn);
   safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass);
   safe("drawn", markDrawn);
   // Runs right after degoog inserts results and before the screen updates; only looks inside what was added
@@ -3503,7 +3594,7 @@ const init = () => {
     safe("tabs", tabPass);
     safe("rel", relPass);
     for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { safe("scan", () => scan(n)); safe("skeleton", () => skel(n)); safe("usage", () => noUsage(n)); }
-    safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("card", glance);
+    safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("flag", flagBtn); safe("card", glance);
     safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass); safe("preview", previewPass);
     safe("drawn", markDrawn);
     safe("ai", () => { const g = document.getElementById("at-a-glance"); if (g) aiPass(g, searchId(location.href)); });

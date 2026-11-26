@@ -1471,6 +1471,17 @@ const doiNames = async (rs) => {
   for (const r of rs) { const p = doiPrefixOf(r.url); if (p && DOIP.has(p)) { r.ctPub = DOIP.get(p); n++; } }
   return n;
 };
+// ===== ⚑ Flags: "what's wrong with these results?" from the ⚑ in the tab row =====
+// Report in the ⚑ box keeps each flag (the search, the tab, your note, its top 10 results) in flags.json on this
+// server only, and opens a Claude Code session filled with it (core flagPrompt), plus anything not handed over yet:
+// the updater's last problem (update-issue.txt, written by the PC's hourly job). That session fixes the code.
+const flagsFile = () => `${DIR}/flags.json`, issueFile = () => `${DIR}/update-issue.txt`;
+let FLAGS = null;
+const readFlags = () => { if (FLAGS) return FLAGS; try { const j = JSON.parse(fs.readFileSync(flagsFile(), "utf8")); FLAGS = j && Array.isArray(j.list) ? j : { list: [], issueAt: 0 }; } catch { FLAGS = { list: [], issueAt: 0 }; } return FLAGS; };
+const saveFlags = () => { try { fs.writeFileSync(`${flagsFile()}.tmp`, JSON.stringify(FLAGS)); fs.renameSync(`${flagsFile()}.tmp`, flagsFile()); } catch {} };
+const flagIssue = () => { try { const st = fs.statSync(issueFile()); const t = st.mtimeMs; const text = fs.readFileSync(issueFile(), "utf8").trim(); return text && t > (readFlags().issueAt || 0) ? { t, text: text.slice(-3000) } : null; } catch { return null; } };
+const flagOpen = () => readFlags().list.filter((f) => !f.handed);
+
 // A slow answer is never thrown away: the rank call keeps running past the wait below and fills AIC when it lands, so
 // the very next request for the same results (a tab switch, a reload) already has it. Same request twice at once
 // shares one run (INFL).
@@ -1510,6 +1521,30 @@ globalThis.__ctResults = async (result, query, params) => {
 };
 
 export const routes = [
+  {
+    // ⚑ Report: {q, type, note, top: [{title, url, snippet}]} is kept, and it and everything waiting go to Claude
+    method: "post",
+    path: "/flag",
+    async handler(req) {
+      let b = {};
+      try { b = await req.json(); } catch {}
+      const F = readFlags(), issue = flagIssue(), now = Date.now();
+      for (const f of flagOpen()) f.handed = now;
+      if (issue) F.issueAt = issue.t;
+      const q = String(b.q || "").trim().slice(0, 300);
+      if (q) F.list.push({ id: now, t: now, handed: now, q, type: String(b.type || "web").slice(0, 40), note: String(b.note || "").trim().slice(0, 1000),
+        top: (Array.isArray(b.top) ? b.top : []).slice(0, 10).map((r) => ({ title: String((r && r.title) || "").slice(0, 200), url: String((r && r.url) || "").slice(0, 500), snippet: String((r && r.snippet) || "").slice(0, 300) })).filter((r) => /^https?:\/\//.test(r.url)) });
+      if (F.list.length > 500) F.list = F.list.slice(-500);
+      saveFlags();
+      return jsonOut({ ok: 1 });
+    },
+  },
+  {
+    // ⚑ What else goes along with the next Report: {flags: [not handed over], issue: the updater's last problem}
+    method: "post",
+    path: "/flags",
+    handler: () => { const i = flagIssue(); return jsonOut({ flags: flagOpen(), issue: i ? i.text : "" }); },
+  },
   {
     // Image AI: {q, u: [image addresses]} -> {p: [0..1 or null]} (how well each picture shows the search)
     method: "post",

@@ -14,6 +14,17 @@ function Notify($text) {
     [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe').Show([Windows.UI.Notifications.ToastNotification]::new($x))
   } catch {}
 }
+# A problem goes onto the degoog server (update-issue.txt in the plugin folder), where the flag box in degoog offers
+# "Fix in Claude" with it filled in; an all-PASS update clears it
+function Issue($text) {
+  try {
+    $c = docker ps -q | Where-Object { (docker inspect $_ --format '{{range .Mounts}}{{.Destination}} {{end}}') -match '/app/data' } | Select-Object -First 1
+    if (-not $c) { return }
+    if ($text) { $f = Join-Path $env:TEMP 'ct-issue.txt'; [IO.File]::WriteAllText($f, "$(Get-Date -Format s)`n$text"); docker cp $f "${c}:/app/data/plugins/clean-titles/update-issue.txt" | Out-Null; Remove-Item -Force $f }
+    else { docker exec $c rm -f /app/data/plugins/clean-titles/update-issue.txt | Out-Null }
+  } catch {}
+}
+function Tail($t) { if ($t.Length -gt 2800) { $t.Substring($t.Length - 2800) } else { $t } }
 # Checks every hour (one small GitHub request; installs only when something changed), so a fix reaches the PC
 # within the hour. The job switches its own task to hourly once.
 try {
@@ -37,9 +48,9 @@ try {
   # The image/answer AI builds in the background on its first install: while the check says it isn't up yet, this
   # version isn't marked done, so tomorrow's run installs it again and records the AI's real numbers
   $aiPending = $out -match 'not answering yet|not active yet'
-  if ($out -match 'All PASS \(clean-titles self-check\)') { if (-not $aiPending) { Set-Content -Path $mark -Value $sha } }
-  elseif ($out -match '(\d+) FAIL \(clean-titles self-check\)') { if (-not $aiPending) { Set-Content -Path $mark -Value $sha }; Notify "$($Matches[1]) check(s) failed after updating. Paste $log into the chat." }
-  else { Notify "The update didn't finish (it will try again tomorrow). Details: $log" }
+  if ($out -match 'All PASS \(clean-titles self-check\)') { if (-not $aiPending) { Set-Content -Path $mark -Value $sha }; Issue '' }
+  elseif ($out -match '(\d+) FAIL \(clean-titles self-check\)') { $n = $Matches[1]; if (-not $aiPending) { Set-Content -Path $mark -Value $sha }; Issue "self-check after updating to ${sha}: $n FAIL`n$(Tail $out)"; Notify "$n check(s) failed after updating. In degoog: tap the flag, then Fix in Claude." }
+  else { Issue "the update to $sha didn't finish`n$(Tail $out)"; Notify "The update didn't finish (it tries again next hour). In degoog: tap the flag, then Fix in Claude." }
 } catch {
   "update check failed $(Get-Date -Format s): $($_.Exception.Message)" | Add-Content -Path $log
 }

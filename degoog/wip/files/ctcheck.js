@@ -44,6 +44,8 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
   // Bridge round trip (the page's only way to the server)
   const p0 = await bridge("prefs");
   row("Page-to-server bridge", !!(p0.j && typeof p0.j === "object"), ms(p0));
+  const fl = await bridge("flags", {}, "{}");
+  row("Flag Report store (flags + update problem)", !!(fl.j && Array.isArray(fl.j.flags)), fl.j && fl.j.issue ? "an update problem is waiting for Report" : "");
 
   // Currency (ECB): fx.json fills ~30 s after start; wait up to 90 s
   let fx = null;
