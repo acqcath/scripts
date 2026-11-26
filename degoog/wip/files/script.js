@@ -355,7 +355,7 @@ const listPass = () => {
     r.alts.forEach((x, i) => { if (i) box.append(" · "); const l = mk("a", "", x.label); l.href = x.url; box.append(l); });
     (r.el.querySelector(".result-snippet") || r.el.querySelector("a.result-title"))?.after(box);
   }
-  for (const [site, f] of p.folds) { LP.pend.push({ site, after: f.after.el, els: f.items.map((r) => r.el) }); }
+  for (const [site, f] of p.folds) { LP.pend.push({ site, label: f.label, after: f.after.el, els: f.items.map((r) => r.el) }); }
 };
 // Folds go in after the boxes (sitelinks, Discussions) took what they use, in the same pass, so counts are final
 const foldPass = () => {
@@ -366,7 +366,7 @@ const foldPass = () => {
     const els = f.els.filter((el) => el.isConnected && !el.classList.contains("ct-grouped"));
     if (!els.length || !f.after.isConnected || f.after.classList.contains("ct-grouped") || f.after.dataset.ctUnrel) continue;
     const row = mk("div", "ct-fold");
-    const b = mk("button", "ct-fold-b", `${els.length} more from ${f.site}`);
+    const b = mk("button", "ct-fold-b", f.label ? `${els.length} more from ${f.label}` : `${els.length} more from ${f.site}`);
     b.type = "button";
     b.setAttribute("aria-expanded", "false");
     b.append(mk("span", "ct-chev", "⌄"));

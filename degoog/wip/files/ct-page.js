@@ -1,4 +1,4 @@
-// clean-titles v53
+// clean-titles v54
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -186,7 +186,36 @@ const capSites = (items, q, psl, cap = 2) => {
 // ===== One page of results, planned before paint =====
 // The page script applies the plan; it keeps no logic of its own. ctx lives for one search (endless scroll pages
 // reuse it): listCtx(q, psl, prefs) with prefs = {site: "prefer" | "lower" | "hide"} (missing = normal).
-const listCtx = (q, psl, prefs = {}) => ({ add: deduper(psl), named: namedSites(q, psl), count: new Map(), prefs, cap: 2, docs: docsFor(q), docsDone: false });
+const listCtx = (q, psl, prefs = {}) => ({ add: deduper(psl), named: namedSites(q, psl), count: new Map(), prefs, cap: 2, docs: docsFor(q), docsDone: false, nav: navName(q), navDone: false });
+// ===== Site searches ("asura scans", "asurascaxs") =====
+// A search of 1-3 words whose letters, joined, are a site's name (its domain's first label), allowing 1-2 typos
+// for longer names. The site with that name that has the most results on the page is the one meant: its top result
+// goes first with the rest of it folded under it, and other sites with nearly the same name (copies, mirrors:
+// asurascanz.com, asurascans.my) are folded under it too as "look-alike sites".
+const navName = (q) => {
+  const s = String(q || "").toLowerCase().trim();
+  if (!s || /[?:]|^!|\bsite:/.test(s)) return "";
+  const w = s.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  if (!w.length || w.length > 3) return "";
+  const j = w.join("");
+  return j.length >= 4 && j.length <= 30 && /\p{L}/u.test(j) ? j : "";
+};
+const lev = (a, b) => {
+  if (Math.abs(a.length - b.length) > 2) return 9;
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let k = 1; k <= b.length; k++) cur[k] = Math.min(prev[k] + 1, cur[k - 1] + 1, prev[k - 1] + (a[i - 1] === b[k - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[b.length];
+};
+const navDist = (name, site) => {
+  const l = String(site || "").toLowerCase().split(".")[0].replace(/-/g, "");
+  if (!name || !l) return 9;
+  if (l === name) return 0;
+  return name.length >= 6 ? lev(name, l) : 9;
+};
 
 // ===== Same-shape results (spec 8) =====
 // A search that names a type of result gets a plain list of that type: no boxes, rows, panels or AI on top.
@@ -236,11 +265,29 @@ const planPage = (items, ctx) => {
     const i = kept.findIndex((r) => { const h = hostOf(r.url); return ctx.docs.some((d) => h === d || h.endsWith(`.${d}`)); });
     if (i > 0 && ctx.prefs[kept[i].site] !== "lower") kept.unshift(kept.splice(i, 1)[0]);
   }
+  // Site search (first page only): the site meant first, one result of it shown, its look-alikes folded under it
+  let navSite = "", alike = new Set();
+  if (ctx.nav && !ctx.navDone) {
+    ctx.navDone = true;
+    const m = new Map();
+    kept.forEach((r, i) => { const d = navDist(ctx.nav, r.site); if (d <= 2 && ctx.prefs[r.site] !== "lower") { const x = m.get(r.site) || { d, n: 0, i }; x.n++; m.set(r.site, x); } });
+    const best = [...m].sort((a, b) => b[1].n - a[1].n || a[1].d - b[1].d || a[1].i - b[1].i)[0];
+    if (best) {
+      navSite = best[0];
+      alike = new Set([...m.keys()].filter((s) => s !== navSite));
+      ctx.navSite = navSite;
+      kept.unshift(kept.splice(best[1].i, 1)[0]);
+    }
+  }
   const shown = [], folds = new Map();
   for (const r of kept) {
+    if (navSite && alike.has(r.site)) {
+      const head = shown.find((x) => x.site === navSite);
+      if (head) { if (!folds.has("~alike")) folds.set("~alike", { after: head, items: [], label: "look-alike sites" }); folds.get("~alike").items.push(r); continue; }
+    }
     const c = ctx.count.get(r.site) || 0;
     ctx.count.set(r.site, c + 1);
-    if (c < ctx.cap || ctx.prefs[r.site] === "prefer" || siteNamed(r.site, ctx.named)) { shown.push(r); continue; }
+    if ((r.site === navSite ? c < 1 : c < ctx.cap || ctx.prefs[r.site] === "prefer" || siteNamed(r.site, ctx.named))) { shown.push(r); continue; }
     // Folds only under a result of the same page: one placed on an earlier page would push down what's on screen
     const lastHere = [...shown].reverse().find((x) => x.site === r.site);
     if (!lastHere) { capped.push(r); continue; }
@@ -1331,7 +1378,7 @@ const qaAbout = (question, text) => {
   return n >= (ws.length >= 3 ? 2 : 1);
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, relCore, related, topicOf, tidyTitle, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippetAI, featuredSnippet, QA_LEAD, qaAbout };
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, navName, navDist, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, relCore, related, topicOf, tidyTitle, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippetAI, featuredSnippet, QA_LEAD, qaAbout };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -1690,7 +1737,7 @@ const listPass = () => {
     r.alts.forEach((x, i) => { if (i) box.append(" · "); const l = mk("a", "", x.label); l.href = x.url; box.append(l); });
     (r.el.querySelector(".result-snippet") || r.el.querySelector("a.result-title"))?.after(box);
   }
-  for (const [site, f] of p.folds) { LP.pend.push({ site, after: f.after.el, els: f.items.map((r) => r.el) }); }
+  for (const [site, f] of p.folds) { LP.pend.push({ site, label: f.label, after: f.after.el, els: f.items.map((r) => r.el) }); }
 };
 // Folds go in after the boxes (sitelinks, Discussions) took what they use, in the same pass, so counts are final
 const foldPass = () => {
@@ -1701,7 +1748,7 @@ const foldPass = () => {
     const els = f.els.filter((el) => el.isConnected && !el.classList.contains("ct-grouped"));
     if (!els.length || !f.after.isConnected || f.after.classList.contains("ct-grouped") || f.after.dataset.ctUnrel) continue;
     const row = mk("div", "ct-fold");
-    const b = mk("button", "ct-fold-b", `${els.length} more from ${f.site}`);
+    const b = mk("button", "ct-fold-b", f.label ? `${els.length} more from ${f.label}` : `${els.length} more from ${f.site}`);
     b.type = "button";
     b.setAttribute("aria-expanded", "false");
     b.append(mk("span", "ct-chev", "⌄"));
