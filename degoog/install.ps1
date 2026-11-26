@@ -1714,6 +1714,21 @@ export const routes = [
     },
   },
   {
+    // One-look health for Claude (one JS call in the browser pane, since each pane action needs the user's approval):
+    // {ver, pageMissing, ai, aiMs, flags, issue, up}
+    method: "get",
+    path: "/status",
+    async handler() {
+      let ver = "";
+      try { const h = fs.readFileSync(PAGE_FILE, "utf8"); const m = /\/public\/ct\/(ct\.[0-9a-f]+\.js)/.exec(h); if (m) ver = (/^\/\/ clean-titles (\S+)/.exec(fs.readFileSync(`/app/src/public/ct/${m[1]}`, "utf8").slice(0, 80)) || [])[1] || ""; } catch {}
+      const t0 = Date.now();
+      let ai = false;
+      try { const r = await fetch(VIS + "/health", { signal: AbortSignal.timeout(1500) }); ai = r.ok; } catch {}
+      const i = flagIssue();
+      return jsonOut({ ver, pageMissing: PAGE_MISSING, ai, aiMs: Date.now() - t0, flags: flagOpen().length, issue: i ? i.text.split("\n").slice(0, 3).join(" | ").slice(0, 300) : "", up: Math.round(process.uptime()) });
+    },
+  },
+  {
     // What this search needs: {n: {f, n, b, ms, cut}} (null when the AI is off); one batched GPU pass, cached per search
     method: "get",
     path: "/needs",
@@ -2047,8 +2062,8 @@ export default {
 };
 '@)
 [IO.File]::WriteAllText("$t\script.js", @'
-// clean-titles v64
-const CT_VER = "v64";
+// clean-titles v65
+const CT_VER = "v65";
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -7232,7 +7247,7 @@ docker restart $c | Out-Null
 $null = docker exec $c sh -c 'for i in $(seq 1 40); do curl -fs -o /dev/null http://127.0.0.1:${DEGOOG_PORT:-4444}/readyz && exit 0; sleep 1; done'
 
 $ss = docker exec $c cat /app/data/server-settings.json | Out-String | ConvertFrom-Json
-"plugin code inside the page (should be v64): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
+"plugin code inside the page (should be v65): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
 "page files (should be a ct and a psl file): " + (docker exec $c sh -c 'ls /app/src/public/ct/')
 "progressive results off (should be False): $($ss.settings.streamingEnabled -eq $true)"
 "typo fixer word list (should be about 82800): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/words.txt')

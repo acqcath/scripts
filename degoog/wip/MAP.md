@@ -2,7 +2,7 @@
 
 Every section, function and route in degoog/wip/files with its line. Read the lines you need (`sed -n A,Bp file`), not whole files.
 
-## index.js (2044 lines)
+## index.js (2059 lines)
   - `braveOriginal` :13
   - `upgrade` :33
 - **Typo fixing and related searches, without Google** :57
@@ -175,30 +175,31 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - route `/flag` :1666
   - route `/flags` :1684
   - route `/vis` :1704
-  - route `/needs` :1716
-  - route `/cut` :1722
-  - route `/rank` :1728
-  - route `/near` :1739
-  - route `/fix` :1749
-  - route `/qs` :1769
-  - route `/relay` :1780
-  - route `/sites` :1800
-  - route `/why` :1818
-  - route `/wd` :1823
-  - route `/qv` :1832
-  - route `/qvs` :1840
-  - route `/arch` :1849
-  - route `/kp` :1857
-  - route `/sports` :1865
-  - route `/cmu` :1873
-  - route `/eol` :1881
-  - route `/aiimg` :1891
-  - route `/seo` :1901
-  - route `/prefs` :1911
-  - route `/perf` :1917
-  - route `/learn` :1933
-  - route `/yt` :1946
-  - route `/hd` :1956
+  - route `/status` :1717
+  - route `/needs` :1731
+  - route `/cut` :1737
+  - route `/rank` :1743
+  - route `/near` :1754
+  - route `/fix` :1764
+  - route `/qs` :1784
+  - route `/relay` :1795
+  - route `/sites` :1815
+  - route `/why` :1833
+  - route `/wd` :1838
+  - route `/qv` :1847
+  - route `/qvs` :1855
+  - route `/arch` :1864
+  - route `/kp` :1872
+  - route `/sports` :1880
+  - route `/cmu` :1888
+  - route `/eol` :1896
+  - route `/aiimg` :1906
+  - route `/seo` :1916
+  - route `/prefs` :1926
+  - route `/perf` :1932
+  - route `/learn` :1948
+  - route `/yt` :1961
+  - route `/hd` :1971
 
 ## script.js (2401 lines)
   - `bridge` :2

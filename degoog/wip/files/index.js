@@ -1711,6 +1711,21 @@ export const routes = [
     },
   },
   {
+    // One-look health for Claude (one JS call in the browser pane, since each pane action needs the user's approval):
+    // {ver, pageMissing, ai, aiMs, flags, issue, up}
+    method: "get",
+    path: "/status",
+    async handler() {
+      let ver = "";
+      try { const h = fs.readFileSync(PAGE_FILE, "utf8"); const m = /\/public\/ct\/(ct\.[0-9a-f]+\.js)/.exec(h); if (m) ver = (/^\/\/ clean-titles (\S+)/.exec(fs.readFileSync(`/app/src/public/ct/${m[1]}`, "utf8").slice(0, 80)) || [])[1] || ""; } catch {}
+      const t0 = Date.now();
+      let ai = false;
+      try { const r = await fetch(VIS + "/health", { signal: AbortSignal.timeout(1500) }); ai = r.ok; } catch {}
+      const i = flagIssue();
+      return jsonOut({ ver, pageMissing: PAGE_MISSING, ai, aiMs: Date.now() - t0, flags: flagOpen().length, issue: i ? i.text.split("\n").slice(0, 3).join(" | ").slice(0, 300) : "", up: Math.round(process.uptime()) });
+    },
+  },
+  {
     // What this search needs: {n: {f, n, b, ms, cut}} (null when the AI is off); one batched GPU pass, cached per search
     method: "get",
     path: "/needs",
