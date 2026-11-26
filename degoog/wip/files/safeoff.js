@@ -67,6 +67,13 @@ for (const d of dirs) {
   store[key] = { ...cur, ...want };
   tuned.push(`${d.replace(/^degoog-org-official-extensions-/, "")} (${diff.map(([k, v]) => `${k} ${cur[k] ?? "default"} -> ${v}`).join(", ")})`);
 }
+// AI summary for every search, not only ones ending in "?" (user's choice, 2026-11-26): the page shows it at the top
+// unless an answer, featured snippet or the phone's knowledge panel card takes that spot
+const AK = Object.keys(store).find((k) => k.toLowerCase() === "ai-summary-slot");
+if (AK && store[AK] && typeof store[AK] === "object" && (store[AK].questionMarkOnly === true || store[AK].questionMarkOnly === "true")) {
+  store[AK] = { ...store[AK], questionMarkOnly: false };
+  tuned.push("ai-summary (questions only -> every search)");
+}
 if (tuned.length) changed.push("");
 if (changed.length) {
   fs.writeFileSync(SF + ".ct-tmp", JSON.stringify(store, null, 2));

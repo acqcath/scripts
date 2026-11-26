@@ -1847,7 +1847,7 @@ export default {
 };
 '@)
 [IO.File]::WriteAllText("$t\script.js", @'
-// clean-titles v52
+// clean-titles v53
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -4834,7 +4834,9 @@ const AI_WORDS = /^(?:why|how (?:does|do|did|is|are|can|come)|explain|what(?:'s|
 const TYPE_WORDS = /\b(?:pdf|paper|reddit|docs|documentation|recipe|github|lab|lecture|slides|video|videos|youtube|wiki|wikipedia)\b/i;
 const aiWanted = (q) => {
   if (!AI_ON.on || !q || q.startsWith("!") || (AI_ON.qmark && !q.trim().endsWith("?"))) return false;
-  if (!AI_WORDS.test(q) || TYPE_WORDS.test(q) || shaped(q) || /\bbest buy\b/i.test(q)) return false;
+  // Every search gets the AI spot at the top unless something else fills it (an answer, a featured snippet, the
+  // phone's knowledge panel card: they take its place) or the search wants a plain list (type words, site, shape)
+  if (TYPE_WORDS.test(q) || shaped(q) || bangFor(q) || /\bbest buy\b/i.test(q)) return false;
   if (CT.eolQuery(q) || CT.wdQuery(q)) return false; // a fact or version answer comes first
   try { if (CT.namedSites(q, PSL()).size) return false; } catch {}
   return true;
@@ -4991,7 +4993,7 @@ const ansPass = () => {
   }
   // Network answers (endoflife.date...): only in the pass that draws the results, and only if already in hand;
   // later than that they're dropped for this page (the server keeps them for the next search)
-  if (!ansVal && !aiVal && drawnFor !== key && document.querySelector("#results-list .result-item")) {
+  if (!ansVal && drawnFor !== key && document.querySelector("#results-list .result-item")) {
     let q = "";
     try { q = new URL(key).searchParams.get("q") || ""; } catch {}
     const j = ready("eol", key), w = ready("wd", key), cm = ready("cmu", key);
@@ -5009,6 +5011,8 @@ const ansPass = () => {
       if (f) ansVal = { ...f, label: `From ${f.h}` };
     }
   }
+  // An answer or snippet found in the results pass takes the AI spot (same pass, before paint: nothing moves)
+  if (ansVal && aiVal) { aiVal = false; g.querySelectorAll(".ct-ai").forEach((x) => x.remove()); }
   aiPass(g, key);
   if (!ansVal || g.querySelector(".ct-ans")) return;
   g.style.display = "";
@@ -5186,7 +5190,7 @@ const meanPass = () => {
 // at the top of the list, drawn only in the pass that draws the results.
 const KP_WIDE = "(min-width: 1180px)";
 const kpWanted = (q) => {
-  if (!webTab || !CT.kpQuery(q) || shaped(q) || bangFor(q) || TYPE_WORDS.test(q) || CT.answer(q, Date.now(), { fx: FX }) || aiWanted(q) || AI_WORDS.test(q)) return false;
+  if (!webTab || !CT.kpQuery(q) || shaped(q) || bangFor(q) || TYPE_WORDS.test(q) || CT.answer(q, Date.now(), { fx: FX }) || AI_WORDS.test(q)) return false;
   try { if (CT.namedSites(q, PSL()).size) return false; } catch {}
   return true;
 };
@@ -5241,7 +5245,10 @@ const kpPass = () => {
   const d = ready("kp", key), kp = d && d.kp;
   if (!kp || !kp.title || !kp.name) return;
   const late = drawnFor === key, wide = !!(window.matchMedia && matchMedia(KP_WIDE).matches);
-  if (late && !wide) return; // on top of the list, after the results are on screen: would push them down
+  // Phones: on top of the list. Late (after the results are on screen) only in place of the AI spot, so the list
+  // moves by the small difference in height instead of the whole card
+  const spot = !wide ? document.querySelector("#at-a-glance > .ct-ai") : null;
+  if (late && !wide && !spot) return;
   const rows = [...list.querySelectorAll(".result-item")];
   if (!rows.length) return;
   const m = CT.kpMatch(kp.title, rows.map((r) => r.querySelector("a.result-title")?.href || ""), kp.hosts);
@@ -5249,6 +5256,7 @@ const kpPass = () => {
   if (!late) for (const i of m.wiki) rows[i].dataset.ctKp = "1"; // the panel replaces that result (before paint only)
   const card = kpCard(kp, wide);
   list.prepend(card);
+  if (!wide && aiVal) { aiVal = false; document.querySelectorAll("#at-a-glance > .ct-ai").forEach((x) => x.remove()); const g = document.getElementById("at-a-glance"); if (g) aiPass(g, key); } // the panel is what's on top now
   card.querySelectorAll(".ct-fit").forEach(fitLine);
   if (fitRO) fitRO.observe(card);
 };
@@ -6407,6 +6415,13 @@ for (const d of dirs) {
   store[key] = { ...cur, ...want };
   tuned.push(`${d.replace(/^degoog-org-official-extensions-/, "")} (${diff.map(([k, v]) => `${k} ${cur[k] ?? "default"} -> ${v}`).join(", ")})`);
 }
+// AI summary for every search, not only ones ending in "?" (user's choice, 2026-11-26): the page shows it at the top
+// unless an answer, featured snippet or the phone's knowledge panel card takes that spot
+const AK = Object.keys(store).find((k) => k.toLowerCase() === "ai-summary-slot");
+if (AK && store[AK] && typeof store[AK] === "object" && (store[AK].questionMarkOnly === true || store[AK].questionMarkOnly === "true")) {
+  store[AK] = { ...store[AK], questionMarkOnly: false };
+  tuned.push("ai-summary (questions only -> every search)");
+}
 if (tuned.length) changed.push("");
 if (changed.length) {
   fs.writeFileSync(SF + ".ct-tmp", JSON.stringify(store, null, 2));
@@ -6630,7 +6645,7 @@ docker restart $c | Out-Null
 $null = docker exec $c sh -c 'for i in $(seq 1 40); do curl -fs -o /dev/null http://127.0.0.1:${DEGOOG_PORT:-4444}/readyz && exit 0; sleep 1; done'
 
 $ss = docker exec $c cat /app/data/server-settings.json | Out-String | ConvertFrom-Json
-"plugin code inside the page (should be v52): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
+"plugin code inside the page (should be v53): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
 "page files (should be a ct and a psl file): " + (docker exec $c sh -c 'ls /app/src/public/ct/')
 "progressive results off (should be False): $($ss.settings.streamingEnabled -eq $true)"
 "typo fixer word list (should be about 82800): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/words.txt')
