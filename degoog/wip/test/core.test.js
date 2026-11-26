@@ -282,3 +282,17 @@ test("relevance: core words most results share; a common shared word isn't enoug
   expect(C.matchShare(core, texts[3])).toBeGreaterThan(0);
   expect(C.relCore(words, texts.slice(0, 3))).toEqual([]);
 });
+
+test("site search: the site meant goes first with one result shown, its other results and look-alikes folded under it", () => {
+  const psl = (h) => h.split(".").slice(-2).join(".");
+  const it = (u, t) => ({ url: u, title: t });
+  const items = [it("https://www.reddit.com/r/mangapiracy/x", "[Asura Scans]"), it("https://asurascans.com/", "Asura Novels"), it("https://asurascans.com/browse", "Browse | Asura Scans"), it("https://asurascans.com/series/a", "A"), it("https://asurascanz.com/", "Asura Scans – Read Comics"), it("https://asurascans.my/", "Asura Scans manhua"), it("https://en.wikipedia.org/wiki/Asura", "Asura")];
+  for (const q of ["asura scans", "asurascaxs"]) {
+    const p = C.planPage(items, C.listCtx(q, psl));
+    expect([q, p.shown.map((r) => r.url)]).toEqual([q, ["https://asurascans.com/", "https://www.reddit.com/r/mangapiracy/x", "https://en.wikipedia.org/wiki/Asura"]]);
+    expect(p.folds.get("asurascans.com").items.length).toBe(2);
+    expect(p.folds.get("~alike").items.map((r) => r.site)).toEqual(["asurascanz.com", "asurascans.my"]);
+  }
+  expect(C.navName("how do i reset my airpods")).toBe("");
+  expect(C.navName("what is asura?")).toBe("");
+});
