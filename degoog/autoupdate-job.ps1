@@ -50,9 +50,11 @@ process.stdout.write(String(j.html || "").replace(/&lt;/g, "<").replace(/&gt;/g,
     $nag = Join-Path $dir 'signin-nag.txt'
     $ready = (Get-Command git -ErrorAction SilentlyContinue) -and (Get-Command claude -ErrorAction SilentlyContinue)
     if (-not $ready) {
+      # Installs what's missing by itself (the user asked for no manual installs), at most once a day
       if (-not (Test-Path $nag) -or (Get-Item $nag).LastWriteTime -lt (Get-Date).AddHours(-20)) {
         Set-Content -Path $nag -Value (Get-Date -Format s)
-        Notify "degoog has $($w.n) report(s) to send to Claude. One-time setup in PowerShell: winget install Git.Git; irm https://claude.ai/install.ps1 | iex; claude"
+        if (-not (Get-Command git -ErrorAction SilentlyContinue)) { winget install -e --id Git.Git --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null }
+        if (-not (Get-Command claude -ErrorAction SilentlyContinue)) { try { Invoke-RestMethod https://claude.ai/install.ps1 | Invoke-Expression 2>&1 | Out-Null } catch {} }
       }
       return
     }
@@ -71,7 +73,9 @@ process.stdout.write(String(j.html || "").replace(/&lt;/g, "<").replace(/&gt;/g,
       "$(Get-Date -Format s) reports not sent: $res" | Add-Content -Path $log
       if (-not (Test-Path $nag) -or (Get-Item $nag).LastWriteTime -lt (Get-Date).AddHours(-20)) {
         Set-Content -Path $nag -Value (Get-Date -Format s)
-        Notify "degoog has $($w.n) report(s) waiting. To let them go to Claude by themselves, sign in once: open PowerShell, run claude"
+        # Not signed in yet: open Claude's sign-in once a day; approving it in the browser is the only step left
+        Start-Process powershell -ArgumentList '-NoExit', '-Command', 'claude'
+        Notify "degoog: approve the Claude sign-in that just opened (one time)."
       }
     }
   } catch {
@@ -105,8 +109,8 @@ try {
   # version isn't marked done, so tomorrow's run installs it again and records the AI's real numbers
   $aiPending = $out -match 'not answering yet|not active yet'
   if ($out -match 'All PASS \(clean-titles self-check\)') { if (-not $aiPending) { Set-Content -Path $mark -Value $sha }; Issue '' }
-  elseif ($out -match '(\d+) FAIL \(clean-titles self-check\)') { $n = $Matches[1]; if (-not $aiPending) { Set-Content -Path $mark -Value $sha }; Issue "self-check after updating to ${sha}: $n FAIL`n$(Tail $out)"; Notify "$n check(s) failed after updating. In degoog: tap the flag, then Fix in Claude." }
-  else { Issue "the update to $sha didn't finish`n$(Tail $out)"; Notify "The update didn't finish (it tries again next hour). In degoog: tap the flag, then Fix in Claude." }
+  elseif ($out -match '(\d+) FAIL \(clean-titles self-check\)') { $n = $Matches[1]; if (-not $aiPending) { Set-Content -Path $mark -Value $sha }; Issue "self-check after updating to ${sha}: $n FAIL`n$(Tail $out)" }
+  else { Issue "the update to $sha didn't finish`n$(Tail $out)" }
 } catch {
   "update check failed $(Get-Date -Format s): $($_.Exception.Message)" | Add-Content -Path $log
 }

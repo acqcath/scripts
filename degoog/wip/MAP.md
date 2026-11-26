@@ -189,133 +189,133 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - route `/yt` :1865
   - route `/hd` :1875
 
-## script.js (2272 lines)
+## script.js (2268 lines)
   - `bridge` :2
   - `aiKey` :21
   - `fadeIn` :72
   - `tabsEdge` :74
-  - `lineUp` :80
-  - `searchId` :95
-  - `sameSearch` :96
-  - `curQ` :99
-  - `shaped` :100
-  - `nameLike` :109
-  - `stripTail` :110
-  - `cleanTitle` :121
-  - `readQuery` :169
-  - `junk` :181
-- **List pass (Web tab): dedupe -> site prefs -> 2 per site with folds, planned by core.js before paint** :189
-  - `PSL` :193
-  - `saveSites` :200
-  - `takeSites` :206
-  - `sitePrefs` :216
-  - `tabPass` :223
-  - `relPass` :257
-  - `listPass` :309
-  - `foldPass` :362
-  - `canHD` :387
-  - `sizeHint` :399
-  - `lowres` :407
-  - `hdImg` :408
-  - `picKey` :454
-  - `row` :462
-  - `aiImg` :528
-- **Image AI (ct-vision on the PC's GPU, through this plugin's server)** :532
-  - `origOf` :536
-  - `VISON` :538
-  - `visThr` :540
-  - `visAsk` :546
-  - `visQueue` :551
-  - `visFlush` :561
-  - `visKey` :570
-  - `visRow` :572
-  - `visApply` :577
-  - `mediaRel` :596
-  - `mediaFold` :611
-  - `mediaFoldAdd` :618
-  - `previewPass` :650
-  - `relatedStrip` :664
-  - `relOk` :711
-  - `card` :712
-  - `handle` :732
-  - `scan` :741
-  - `bangFor` :765
-  - `markDrawn` :786
-  - `glance` :787
-  - `ask` :820
-  - `ready` :825
-  - `earlyStart` :827
-  - `nearWord` :881
-  - `lower` :892
-  - `extras` :894
-- **Site choices, People also ask, and search Tools** :1001
-  - `goTo` :1002
-  - `rowHost` :1008
-- **Sites: Prefer / Normal / Lower / Hide, one rounded group in each result's menu (replaces Rank / Block)** :1009
-  - `siteOf` :1014
-  - `siteItems` :1015
-  - `settingsFetch` :1067
-  - `saveSite` :1075
-  - `paaAnchor` :1126
-  - `paa` :1129
-  - `advParse` :1257
-  - `tools` :1269
-  - `flagTop` :1329
-  - `curType` :1341
-  - `flagMark` :1342
-  - `flagSend` :1348
-  - `flagBox` :1372
-  - `flagBtn` :1402
-  - `skel` :1418
-  - `noUsage` :1429
-- **Sitelinks, Discussions and forums, Videos, Top stories** :1438
-  - `ytId` :1443
-  - `VIDEO_URL` :1450
-  - `forumName` :1454
-  - `when` :1467
-  - `ago` :1475
-  - `fresh` :1486
-  - `hot` :1490
-  - `qHash` :1494
-  - `hashStore` :1495
-  - `info` :1513
-  - `mk` :1536
-  - `favImg` :1537
-  - `moreBtn` :1544
-  - `scroller` :1553
-  - `section` :1565
-  - `forumRow` :1568
-  - `siteName` :1581
-  - `videoCard` :1582
-  - `storyCard` :1604
-  - `used` :1621
-  - `shown` :1622
-  - `groups` :1623
-- **Answer card, local answers (core answers.js: math, units, cooking, tip/percent, dates, patterns)** :1736
-  - `cmuQ` :1742
-  - `aiWanted` :1747
-  - `aiBox` :1763
-  - `aiPass` :1776
-  - `ansCard` :1803
-  - `livePoll` :1866
-  - `fitLine` :1885
-  - `ansPass` :1894
-  - `ansCopy` :1937
-  - `onlyPass` :1951
-- **Quick view (spec 11): your tap opens it under the result (it grows: your action), tap again to close** :1974
-  - `qvBox` :1976
-  - `qvs` :2042
-  - `starsWanted` :2043
-  - `starsPass` :2045
-  - `meanPass` :2077
-- **Knowledge panel (spec 3)** :2096
-  - `kpWanted` :2104
-  - `kpCard` :2110
-  - `kpPass` :2153
-  - `safe` :2176
-  - `tabRescue` :2181
-  - `init` :2196
-- **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :2228
+  - `lineUp` :82
+  - `searchId` :97
+  - `sameSearch` :98
+  - `curQ` :101
+  - `shaped` :102
+  - `nameLike` :111
+  - `stripTail` :112
+  - `cleanTitle` :123
+  - `readQuery` :171
+  - `junk` :183
+- **List pass (Web tab): dedupe -> site prefs -> 2 per site with folds, planned by core.js before paint** :191
+  - `PSL` :195
+  - `saveSites` :202
+  - `takeSites` :208
+  - `sitePrefs` :218
+  - `tabPass` :225
+  - `relPass` :259
+  - `listPass` :311
+  - `foldPass` :364
+  - `canHD` :389
+  - `sizeHint` :401
+  - `lowres` :409
+  - `hdImg` :410
+  - `picKey` :456
+  - `row` :464
+  - `aiImg` :530
+- **Image AI (ct-vision on the PC's GPU, through this plugin's server)** :534
+  - `origOf` :538
+  - `VISON` :540
+  - `visThr` :542
+  - `visAsk` :548
+  - `visQueue` :553
+  - `visFlush` :563
+  - `visKey` :572
+  - `visRow` :574
+  - `visApply` :579
+  - `mediaRel` :598
+  - `mediaFold` :613
+  - `mediaFoldAdd` :620
+  - `previewPass` :652
+  - `relatedStrip` :666
+  - `relOk` :713
+  - `card` :714
+  - `handle` :734
+  - `scan` :743
+  - `bangFor` :767
+  - `markDrawn` :788
+  - `glance` :789
+  - `ask` :822
+  - `ready` :827
+  - `earlyStart` :829
+  - `nearWord` :883
+  - `lower` :894
+  - `extras` :896
+- **Site choices, People also ask, and search Tools** :1003
+  - `goTo` :1004
+  - `rowHost` :1010
+- **Sites: Prefer / Normal / Lower / Hide, one rounded group in each result's menu (replaces Rank / Block)** :1011
+  - `siteOf` :1016
+  - `siteItems` :1017
+  - `settingsFetch` :1069
+  - `saveSite` :1077
+  - `paaAnchor` :1128
+  - `paa` :1131
+  - `advParse` :1259
+  - `tools` :1271
+  - `flagTop` :1328
+  - `curType` :1340
+  - `flagBox` :1341
+  - `flagBtn` :1369
+  - `skel` :1385
+  - `noUsage` :1396
+- **Sitelinks, Discussions and forums, Videos, Top stories** :1405
+  - `ytId` :1410
+  - `VIDEO_URL` :1417
+  - `forumName` :1421
+  - `when` :1434
+  - `ago` :1442
+  - `fresh` :1453
+  - `hot` :1457
+  - `qHash` :1461
+  - `hashStore` :1462
+  - `info` :1480
+  - `mk` :1503
+  - `favImg` :1504
+  - `moreBtn` :1511
+  - `scroller` :1520
+  - `section` :1532
+  - `forumRow` :1535
+  - `siteName` :1548
+  - `videoCard` :1549
+  - `storyCard` :1571
+  - `used` :1588
+  - `shown` :1589
+  - `groups` :1590
+- **Answer card, local answers (core answers.js: math, units, cooking, tip/percent, dates, patterns)** :1703
+  - `cmuQ` :1709
+  - `aiWanted` :1714
+  - `aiBox` :1730
+  - `aiPass` :1743
+  - `ansCard` :1770
+  - `livePoll` :1833
+  - `fitLine` :1852
+  - `ansPass` :1861
+  - `ansCopy` :1904
+  - `onlyPass` :1918
+- **Quick view (spec 11): your tap opens it under the result (it grows: your action), tap again to close** :1941
+  - `qvBox` :1943
+  - `qvs` :2009
+  - `starsWanted` :2010
+  - `starsPass` :2012
+  - `meanPass` :2044
+- **Knowledge panel (spec 3)** :2063
+  - `kpWanted` :2071
+  - `kpCard` :2077
+  - `kpPass` :2120
+  - `tabKind` :2147
+  - `tabKeep` :2148
+  - `safe` :2172
+  - `tabRescue` :2177
+  - `init` :2192
+- **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :2224
 
 ## core.js (566 lines)
 - **Sites: registrable domain via the public suffix list** :4
@@ -479,7 +479,7 @@ Every section, function and route in degoog/wip/files with its line. Read the li
 
 ## setcss.js (12 lines)
 
-## custom.css (842 lines)
+## custom.css (840 lines)
 - Catppuccin Mocha colors :1
 - DESCRIPTION SIZE :22
 - v50 :24
@@ -541,28 +541,28 @@ Every section, function and route in degoog/wip/files with its line. Read the li
 - Tools :614
 - Tools lives with the search it changes :615
 - ⚑ Flag :627
-- ===== Answer card (local answers) :653
-- Featured snippet :667
-- ===== AI summary spot :678
-- The panel over the 3 lines :691
-- Opened with ⌄ (your tap) :699
-- CMU card details :707
-- Sports card :714
-- Knowledge panel (spec 3) :731
-- Wide screens :751
-- Same-shape results (spec 8) :765
-- "Only reddit :767
-- "Open archived copy" :770
-- Images row (spec 12) :774
-- Quick view :782
-- Meaning line :795
-- Site icons are back (user, 2026-11-23) :802
-- Menu lines are tap targets :805
-- ===== Vertical rhythm (one scale, by how things belong together) ===== :808
-- Line breaks that read well, for every piece of text :821
-- Phones :829
-- Image/video preview :835
-- Image AI :839
+- ===== Answer card (local answers) :651
+- Featured snippet :665
+- ===== AI summary spot :676
+- The panel over the 3 lines :689
+- Opened with ⌄ (your tap) :697
+- CMU card details :705
+- Sports card :712
+- Knowledge panel (spec 3) :729
+- Wide screens :749
+- Same-shape results (spec 8) :763
+- "Only reddit :765
+- "Open archived copy" :768
+- Images row (spec 12) :772
+- Quick view :780
+- Meaning line :793
+- Site icons are back (user, 2026-11-23) :800
+- Menu lines are tap targets :803
+- ===== Vertical rhythm (one scale, by how things belong together) ===== :806
+- Line breaks that read well, for every piece of text :819
+- Phones :827
+- Image/video preview :833
+- Image AI :837
 
 ## other
 - ../autoupdate-job.ps1: the PC's hourly update job (Issue() puts update problems on the server for ⚑ Report)
