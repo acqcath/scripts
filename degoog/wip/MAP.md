@@ -189,7 +189,7 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - route `/yt` :1865
   - route `/hd` :1875
 
-## script.js (2268 lines)
+## script.js (2280 lines)
   - `bridge` :2
   - `aiKey` :21
   - `fadeIn` :72
@@ -245,77 +245,78 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - `ask` :822
   - `ready` :827
   - `earlyStart` :829
-  - `nearWord` :883
-  - `lower` :894
-  - `extras` :896
-- **Site choices, People also ask, and search Tools** :1003
-  - `goTo` :1004
-  - `rowHost` :1010
-- **Sites: Prefer / Normal / Lower / Hide, one rounded group in each result's menu (replaces Rank / Block)** :1011
-  - `siteOf` :1016
-  - `siteItems` :1017
-  - `settingsFetch` :1069
-  - `saveSite` :1077
-  - `paaAnchor` :1128
-  - `paa` :1131
-  - `advParse` :1259
-  - `tools` :1271
-  - `flagTop` :1328
-  - `curType` :1340
-  - `flagBox` :1341
-  - `flagBtn` :1369
-  - `skel` :1385
-  - `noUsage` :1396
-- **Sitelinks, Discussions and forums, Videos, Top stories** :1405
-  - `ytId` :1410
-  - `VIDEO_URL` :1417
-  - `forumName` :1421
-  - `when` :1434
-  - `ago` :1442
-  - `fresh` :1453
-  - `hot` :1457
-  - `qHash` :1461
-  - `hashStore` :1462
-  - `info` :1480
-  - `mk` :1503
-  - `favImg` :1504
-  - `moreBtn` :1511
-  - `scroller` :1520
-  - `section` :1532
-  - `forumRow` :1535
-  - `siteName` :1548
-  - `videoCard` :1549
-  - `storyCard` :1571
-  - `used` :1588
-  - `shown` :1589
-  - `groups` :1590
-- **Answer card, local answers (core answers.js: math, units, cooking, tip/percent, dates, patterns)** :1703
-  - `cmuQ` :1709
-  - `aiWanted` :1714
-  - `aiBox` :1730
-  - `aiPass` :1743
-  - `ansCard` :1770
-  - `livePoll` :1833
-  - `fitLine` :1852
-  - `ansPass` :1861
-  - `ansCopy` :1904
-  - `onlyPass` :1918
-- **Quick view (spec 11): your tap opens it under the result (it grows: your action), tap again to close** :1941
-  - `qvBox` :1943
-  - `qvs` :2009
-  - `starsWanted` :2010
-  - `starsPass` :2012
-  - `meanPass` :2044
-- **Knowledge panel (spec 3)** :2063
-  - `kpWanted` :2071
-  - `kpCard` :2077
-  - `kpPass` :2120
-  - `tabKind` :2147
-  - `tabKeep` :2148
-  - `safe` :2172
-  - `tabRescue` :2177
-  - `init` :2192
-- **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :2224
+  - `nearWord` :884
+  - `lower` :895
+  - `extras` :897
+- **Site choices, People also ask, and search Tools** :1004
+  - `goTo` :1005
+  - `rowHost` :1011
+- **Sites: Prefer / Normal / Lower / Hide, one rounded group in each result's menu (replaces Rank / Block)** :1012
+  - `siteOf` :1017
+  - `siteItems` :1018
+  - `settingsFetch` :1070
+  - `saveSite` :1078
+  - `paaAnchor` :1129
+  - `paa` :1132
+  - `advParse` :1260
+  - `tools` :1272
+  - `flagTop` :1329
+  - `curType` :1341
+  - `flagBox` :1342
+  - `flagBtn` :1370
+  - `skel` :1386
+  - `noUsage` :1397
+- **Sitelinks, Discussions and forums, Videos, Top stories** :1406
+  - `ytId` :1411
+  - `VIDEO_URL` :1418
+  - `forumName` :1422
+  - `when` :1435
+  - `ago` :1443
+  - `fresh` :1454
+  - `hot` :1458
+  - `qHash` :1462
+  - `hashStore` :1463
+  - `mediaLearn` :1482
+  - `info` :1489
+  - `mk` :1512
+  - `favImg` :1513
+  - `moreBtn` :1520
+  - `scroller` :1529
+  - `section` :1541
+  - `forumRow` :1544
+  - `siteName` :1557
+  - `videoCard` :1558
+  - `storyCard` :1580
+  - `used` :1597
+  - `shown` :1598
+  - `groups` :1599
+- **Answer card, local answers (core answers.js: math, units, cooking, tip/percent, dates, patterns)** :1715
+  - `cmuQ` :1721
+  - `aiWanted` :1726
+  - `aiBox` :1742
+  - `aiPass` :1755
+  - `ansCard` :1782
+  - `livePoll` :1845
+  - `fitLine` :1864
+  - `ansPass` :1873
+  - `ansCopy` :1916
+  - `onlyPass` :1930
+- **Quick view (spec 11): your tap opens it under the result (it grows: your action), tap again to close** :1953
+  - `qvBox` :1955
+  - `qvs` :2021
+  - `starsWanted` :2022
+  - `starsPass` :2024
+  - `meanPass` :2056
+- **Knowledge panel (spec 3)** :2075
+  - `kpWanted` :2083
+  - `kpCard` :2089
+  - `kpPass` :2132
+  - `tabKind` :2159
+  - `tabKeep` :2160
+  - `safe` :2184
+  - `tabRescue` :2189
+  - `init` :2204
+- **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :2236
 
 ## core.js (566 lines)
 - **Sites: registrable domain via the public suffix list** :4
@@ -388,7 +389,7 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - `tidyTitle` :549
   - `flagPrompt` :554
 
-## answers.js (828 lines)
+## answers.js (880 lines)
 - **Answer card, local part (no network): math, units incl. cooking, tip / percent, date math, patterns** :1
   - `fmtNum` :10
   - `exact` :23
@@ -443,20 +444,23 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - `meanWords` :653
   - `meaningLine` :654
   - `visualQ` :684
-  - `deeplUrl` :689
-  - `answer` :699
-- **Featured snippet (spec 2): fact and how-to wording only, from a result's own snippet** :706
-  - `snipStem` :716
-  - `snipQuery` :717
-  - `snipSentences` :726
-  - `HAS_NUM` :749
-  - `HAS_DATE` :750
-  - `mentions` :751
-  - `snipBlocked` :753
-  - `featuredSnippetAI` :771
-  - `featuredSnippet` :786
-  - `qaStem` :820
-  - `qaAbout` :821
+  - `mediaNeed` :705
+  - `mediaOrder` :727
+  - `learnClick` :729
+  - `deeplUrl` :741
+  - `answer` :751
+- **Featured snippet (spec 2): fact and how-to wording only, from a result's own snippet** :758
+  - `snipStem` :768
+  - `snipQuery` :769
+  - `snipSentences` :778
+  - `HAS_NUM` :801
+  - `HAS_DATE` :802
+  - `mentions` :803
+  - `snipBlocked` :805
+  - `featuredSnippetAI` :823
+  - `featuredSnippet` :838
+  - `qaStem` :872
+  - `qaAbout` :873
 
 ## ctcheck.js (210 lines)
   - `row` :8
