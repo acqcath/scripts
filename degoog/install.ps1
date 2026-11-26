@@ -1503,7 +1503,7 @@ export const flagPromptS = (flags, issue, max = 12000) => {
   const head = "degoog clean-titles: fix what my degoog reported. Read degoog/wip/QUICKSTART.md in acqcath/scripts first and follow its \"Flags\" steps: " +
     "commit the flags below to the private repo acqcath/degoog-flags, then fix the code so these searches come out right, release and merge. " +
     "Keep my searches out of the public repo.\n";
-  const body = (fl, snip) => JSON.stringify({ flags: fl.map((f) => ({ at: new Date(f.t).toISOString(), q: f.q, tab: f.type, cats: f.cats || [], note: f.note, ctx: f.ctx || null, top: (f.top || []).map((r) => (snip ? { title: r.title, url: r.url, snippet: r.snippet } : { title: r.title, url: r.url })) })), updateIssue: issue || null });
+  const body = (fl, snip) => JSON.stringify({ flags: fl.map((f) => ({ at: new Date(f.t).toISOString(), q: f.q, tab: f.type, cats: f.cats || [], note: f.note, ctx: f.ctx || null, top: (f.top || []).map((r) => (snip ? { ai: r.ai ?? null, title: r.title, url: r.url, snippet: r.snippet } : { ai: r.ai ?? null, title: r.title, url: r.url })) })), updateIssue: issue || null });
   let fl = (flags || []).slice(-20);
   for (;;) {
     for (const snip of [true, false]) { const s = head + body(fl, snip); if (s.length <= max || fl.length <= 1) { if (s.length <= max || !snip) return s.slice(0, max); } }
@@ -1569,6 +1569,51 @@ const flagJudge = () => (_judging ||= (async () => {
 const judgeNow = () => { const F = readFlags(), key = flagOpen().map((f) => f.id).join(","); return F.judge && F.judge.key === key ? F.judge : null; };
 const flagCount = () => flagOpen().length + (flagIssue() ? 1 : 0);
 
+// ===== What a search needs (user, 2026-11-26): ONE batched reranker pass per search, before the results arrive, so
+// the page can fetch and place blocks (Videos, Images, Forums, Top stories, Papers, info panel, answer card) on one
+// scale with the results. Each question is a described option scored with its own instruction; no word lists.
+// Groups: f = format shares (sum 1), n = needs (each 0..1, independent), b = block fits (each 0..1). Cached per search.
+const NEED_TASK = "Given a web search query, judge whether the searcher needs this to be satisfied";
+const FMT_TASK = "Given a web search query, judge whether this kind of result is the best way to give the searcher what they need";
+const BLOCK_TASK = "Given a web search query, judge whether this block of results would help the searcher";
+export const NEEDS = {
+  f: [FMT_TASK, { video: "A video that shows it being done or demonstrated, step by step, in motion", image: "Pictures, photos, diagrams or charts that show what it looks like", text: "A written web page that explains or answers it in words" }],
+  n: [NEED_TASK, { fresh: "Recent information: what is new, current or happening now", depth: "An in-depth, thorough explanation rather than a quick fact", trust: "An authoritative, expert or official source the searcher can rely on",
+    people: "First-hand experiences and opinions from real people who tried it", doing: "Instructions to do or make something", knowing: "Information or an answer to understand or know something",
+    question: "A direct answer to a specific question" }],
+  b: [BLOCK_TASK, { forums: "Forum and discussion threads where people share their own experience", news: "Top news stories reporting recent events", papers: "Scientific papers and research studies",
+    info: "A fact panel about one person, place, organization or thing", answer: "A short direct answer shown above the results" }],
+};
+export const needsParse = (s) => {
+  let i = 0;
+  const out = {};
+  for (const [g, [, opts]] of Object.entries(NEEDS)) {
+    out[g] = {};
+    for (const k of Object.keys(opts)) { const v = s[i++]; if (typeof v !== "number") return null; out[g][k] = v; }
+  }
+  const t = out.f.video + out.f.image + out.f.text;
+  if (t > 0) for (const k of Object.keys(out.f)) out.f[k] /= t;
+  return out;
+};
+const NEEDC = new Map(), NEEDI = new Map();
+export const needsFor = async (q) => {
+  q = String(q || "").trim().slice(0, 300);
+  if (!q || q.startsWith("!")) return null;
+  const k = q.toLowerCase();
+  if (NEEDC.has(k)) return NEEDC.get(k);
+  if (NEEDI.has(k)) return NEEDI.get(k);
+  const run = (async () => {
+    const docs = [], tasks = [];
+    for (const [task, opts] of Object.values(NEEDS)) for (const d of Object.values(opts)) { docs.push(d); tasks.push(task); }
+    const j = await vis("/rank", { q, docs, tasks }, 1500);
+    const v = j && Array.isArray(j.s) && j.s.length === docs.length ? needsParse(j.s) : null;
+    if (v) { v.ms = j.ms; NEEDC.set(k, v); if (NEEDC.size > 2000) NEEDC.delete(NEEDC.keys().next().value); }
+    return v;
+  })().finally(() => NEEDI.delete(k));
+  NEEDI.set(k, run);
+  return run;
+};
+
 // A slow answer is never thrown away: the rank call keeps running past the wait below and fills AIC when it lands, so
 // the very next request for the same results (a tab switch, a reload) already has it. Same request twice at once
 // shares one run (INFL).
@@ -1576,7 +1621,7 @@ const INFL = new Map();
 const RANK_WAIT_MS = 1600, RANK_RUN_MS = 6000;
 globalThis.__ctResults = async (result, query, params) => {
   const type = String((params && params.type) || "web");
-  if (!result || !Array.isArray(result.results) || !query || /^(images|videos)$/.test(type)) return;
+  if (!result || !Array.isArray(result.results) || !query || type === "videos") return;
   const q = String(query).trim().slice(0, 300);
   const rs = result.results.slice(0, 60);
   if (!rs.length || q.startsWith("!")) return;
@@ -1586,7 +1631,8 @@ globalThis.__ctResults = async (result, query, params) => {
   if (!got) {
     let run = INFL.get(key);
     if (!run) {
-      const docs = rs.map((r) => `${stripT(r.title)}. ${stripT(r.snippet)}`.slice(0, 1200));
+      const host = (u) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; } };
+      const docs = rs.map((r) => (type === "images" ? `${stripT(r.title)}. Picture from ${host(r.url)}` : `${stripT(r.title)}. ${stripT(r.snippet)}`).slice(0, 1200));
       const sents = [];
       if (type === "web" && (QLIKE.test(q) || q.split(/\s+/).length >= 2)) rs.slice(0, 6).forEach((r, i) => sentences(r.snippet).slice(0, 4).forEach((x) => sents.push([i, x])));
       run = (async () => {
@@ -1619,7 +1665,7 @@ export const routes = [
       if (!q) return jsonOut({ n: flagCount() });
       const F = readFlags(), now = Date.now();
       F.list.push({ id: now, t: now, q, type: String(b.type || "web").slice(0, 40), cats: flagCats(b.cats), note: String(b.note || "").trim().slice(0, 1000), ctx: flagCtxClean(b.ctx),
-        top: (Array.isArray(b.top) ? b.top : []).slice(0, 10).map((r) => ({ title: String((r && r.title) || "").slice(0, 200), url: String((r && r.url) || "").slice(0, 500), snippet: String((r && r.snippet) || "").slice(0, 300) })).filter((r) => /^https?:\/\//.test(r.url)) });
+        top: (Array.isArray(b.top) ? b.top : []).slice(0, 10).map((r) => ({ ai: r && Number.isFinite(+r.ai) && r.ai !== null ? Math.max(0, Math.min(1, +r.ai)) : null, title: String((r && r.title) || "").slice(0, 200), url: String((r && r.url) || "").slice(0, 500), snippet: String((r && r.snippet) || "").slice(0, 300) })).filter((r) => /^https?:\/\//.test(r.url)) });
       if (F.list.length > 500) F.list = F.list.slice(-500);
       saveFlags();
       flagJudge().catch(() => {});
@@ -1657,6 +1703,12 @@ export const routes = [
       const j = await vis("/score", { q, urls, budget: 1.6 }, 2500);
       return jsonOut(j && Array.isArray(j.p) ? { p: j.p, ms: j.ms, d: j.device } : { p: null });
     },
+  },
+  {
+    // What this search needs: {n: {f, n, b, ms}} (null when the AI is off); one batched GPU pass, cached per search
+    method: "get",
+    path: "/needs",
+    async handler(req) { return jsonOut({ n: await needsFor(new URL(req.url).searchParams.get("q") || "") }); },
   },
   {
     // Answer AI: {q, d: [passages]} -> {s: [0..1 or null]} (how well each passage answers the question)
@@ -1980,7 +2032,7 @@ export default {
 };
 '@)
 [IO.File]::WriteAllText("$t\script.js", @'
-// clean-titles v60
+// clean-titles v61
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -2554,7 +2606,7 @@ const flagPrompt = (flags, issue, max = 12000) => {
   const head = "degoog clean-titles: fix what my degoog reported. Read degoog/wip/QUICKSTART.md in acqcath/scripts first and follow its \"Flags\" steps: " +
     "commit the flags below to the private repo acqcath/degoog-flags, then fix the code so these searches come out right, release and merge. " +
     "Keep my searches out of the public repo.\n";
-  const body = (fl, snip) => JSON.stringify({ flags: fl.map((f) => ({ at: new Date(f.t).toISOString(), q: f.q, tab: f.type, cats: f.cats || [], note: f.note, ctx: f.ctx || null, top: (f.top || []).map((r) => (snip ? { title: r.title, url: r.url, snippet: r.snippet } : { title: r.title, url: r.url })) })), updateIssue: issue || null });
+  const body = (fl, snip) => JSON.stringify({ flags: fl.map((f) => ({ at: new Date(f.t).toISOString(), q: f.q, tab: f.type, cats: f.cats || [], note: f.note, ctx: f.ctx || null, top: (f.top || []).map((r) => (snip ? { ai: r.ai ?? null, title: r.title, url: r.url, snippet: r.snippet } : { ai: r.ai ?? null, title: r.title, url: r.url })) })), updateIssue: issue || null });
   let fl = (flags || []).slice(-20);
   for (;;) {
     for (const snip of [true, false]) { const s = head + body(fl, snip); if (s.length <= max || fl.length <= 1) { if (s.length <= max || !snip) return s.slice(0, max); } }
@@ -2562,6 +2614,14 @@ const flagPrompt = (flags, issue, max = 12000) => {
     fl = fl.slice(1);
   }
 };
+
+// ===== One scale for blocks and results (user, 2026-11-26). The needs call (server /needs) gives format shares f
+// (video / image / text, sum 1). An item's worth = its format's share x its fit (AI score 0..1). A box is worth its
+// format's share x the mean fit of its best 3 items and goes before the first result (never the top one) worth less.
+const fmtShares = (p) => { if (!p) return null; const v = Math.max(0, +p.video || 0), i = Math.max(0, +p.image || 0), t = Math.max(0, +p.text || 0), n = v + i + t; return n ? { video: v / n, image: i / n, text: t / n } : null; };
+const boxWorth = (fmt, rels, kind) => { const r = (rels || []).filter((x) => typeof x === "number").sort((a, b) => b - a).slice(0, 3); return fmt && r.length ? fmt[kind] * (r.reduce((a, b) => a + b, 0) / r.length) : null; };
+// index (in the shown results) to insert the box before; resultRels.length = after the last; never 0 (the top result stays first)
+const boxAt = (fmt, resultRels, worth) => { for (let i = 1; i < resultRels.length; i++) if (typeof resultRels[i] === "number" && fmt.text * resultRels[i] < worth) return i; return resultRels.length; };
 
 // ===== Answer card, local part (no network): math, units incl. cooking, tip / percent, date math, patterns =====
 // answer(q, now) -> null, or { kind, label, value | title + href, detail, copy, swatch? }. Pure: the page draws it in
@@ -3391,7 +3451,7 @@ const qaAbout = (question, text) => {
   return n >= (ws.length >= 3 ? 2 : 1);
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, navName, navDist, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, relCore, related, topicOf, tidyTitle, FLAG_CATS, flagCats, flagCtxClean, flagPrompt, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippetAI, featuredSnippet, QA_LEAD, qaAbout };
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, navName, navDist, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, relCore, related, topicOf, tidyTitle, FLAG_CATS, flagCats, flagCtxClean, flagPrompt, fmtShares, boxWorth, boxAt, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippetAI, featuredSnippet, QA_LEAD, qaAbout };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -4254,7 +4314,10 @@ const earlyStart = () => {
     if (!eq && !wq && !cq && (SHOW.kp !== false || SHOW.mean !== false) && kpWanted(q)) ask("kp", key, { q: CT.kpQuery(q) });
     // Images row (spec 12): the image search starts now, in parallel, for clearly visual searches: picture words, or
     // a search you opened the Images tab for in the last 12 h (degoog still has that image search cached)
-    if (SHOW.img !== false && !shaped(q) && (CT.visualQ(q) || visualSeen.has(qHash(q)))) {
+    // ...or when the needs call (one GPU pass, asked now) says pictures serve this search better than an even split
+    // of the formats (1 / number of formats). No AI answer: picture searches only, as before.
+    const imgGo = () => {
+      if (early.get("img")?.key === key) return;
       const e = { key, data: undefined };
       early.set("img", e);
       fetch(`/api/search?q=${encodeURIComponent(q)}&type=images`).then((x) => (x.ok ? x.json() : null))
@@ -4263,6 +4326,17 @@ const earlyStart = () => {
           // Image AI scores the row's pictures now, in parallel with the web results
           if (e.data && VISON) { visKey(); visAsk(q, [...new Set(e.data.results.slice(0, 40).map((x) => origOf(x.thumbnail || "")).filter(Boolean))]).then(visRow); }
         }, () => { e.data = null; });
+    };
+    const pic = SHOW.img !== false && !shaped(q) && (CT.visualQ(q) || visualSeen.has(qHash(q)));
+    if (pic) imgGo();
+    if (!shaped(q)) {
+      const e = { key, data: undefined };
+      early.set("needs", e);
+      bridge("needs", { q }).then((j) => {
+        e.data = j && j.n ? j.n : null;
+        const f = e.data && CT.fmtShares(e.data.f);
+        if (f && SHOW.img !== false && f.image > 1 / Object.keys(f).length) imgGo();
+      }, () => { e.data = null; });
     }
     // Top stories: the News search starts now, in parallel, only for a search that looked like news last time
     if (SHOW.news && !shaped(q) && newsy.has(qHash(q))) {
@@ -4727,7 +4801,8 @@ const flagTop = () => {
     const a = el.querySelector("a.result-title") || el.querySelector("a[href]");
     const url = el.dataset.resultUrl || (a && a.href) || "";
     if (!/^https?:/.test(url)) continue;
-    out.push({ url, title: (((el.querySelector("a.result-title, .image-title, .video-title") || a || {}).textContent) || "").trim().slice(0, 200), snippet: (el.querySelector(".result-snippet")?.textContent || "").trim().slice(0, 300) });
+    const ai = AIW.get(aiKey(url));
+    out.push({ ai: ai && typeof ai.p === "number" ? Math.round(ai.p * 1000) / 1000 : null, url, title: (((el.querySelector("a.result-title, .image-title, .video-title") || a || {}).textContent) || "").trim().slice(0, 200), snippet: (el.querySelector(".result-snippet")?.textContent || "").trim().slice(0, 300) });
     if (out.length >= 10) break;
   }
   return out;
@@ -4746,15 +4821,15 @@ const flagCtx = () => {
       load[k] = Math.max(load[k] || 0, r.duration);
     }
   } catch {}
-  const boxes = [], seen = new Map();
+  const boxes = [];
   for (const id of ["at-a-glance", "results-list"]) {
     const root = document.getElementById(id);
     if (!root) continue;
     for (const el of root.children) {
       if (el.style.display === "none" || el.hidden || !el.getClientRects().length) continue;
       const k = `${id} > ${el.classList[0] || el.id || el.tagName.toLowerCase()}`;
-      if (!seen.has(k)) { const b = { box: k, n: 0 }; seen.set(k, b); boxes.push(b); }
-      seen.get(k).n++;
+      const last = boxes[boxes.length - 1];
+      if (last && last.box === k) last.n++; else boxes.push({ box: k, n: 1 });
     }
   }
   return { vw: innerWidth, vh: innerHeight, dpr: devicePixelRatio, phone: PHONE.matches, load, boxes };
@@ -5055,14 +5130,14 @@ const groups = () => {
   }
   // 2+ of a kind become one box, placed where the first of them ranked (the top result always stays a normal
   // result); up to 4 threads / 8 videos, joined by more as endless scroll loads them
-  const box = (kind, test, max, build, title, tab, label, isRow) => {
+  const box = (kind, test, max, build, title, tab, label, isRow, at) => {
     const c = rows.filter((r) => r !== top && test(r) && !used(r.el) && !r.el.dataset.ctUnrel);
     let s = G[kind];
     if (!s && c.length < 2) return;
     if (!s) {
       s = G[kind] = section(`ct-${kind}`, title);
       if (isRow) { const [wrap, row] = scroller(); s.append(wrap); s.row = row; s.wrap = wrap; } else { s.row = mk("div", "ct-list"); s.append(s.row); }
-      (c.find((r) => r.el.style.display !== "none") || c[0]).el.before(s);
+      if (at && at.before) at.before.before(s); else if (at && at.after) at.after.after(s); else (c.find((r) => r.el.style.display !== "none") || c[0]).el.before(s);
       const m = moreBtn(label, tab); if (m) s.append(m);
     }
     const n = s.row.children.length;
@@ -5071,12 +5146,22 @@ const groups = () => {
   };
   if (shaped()) return; // a plain list of the type asked for: no boxes or rows
   if (SHOW.forum) box("forum", (r) => !!r.forum, 4, forumRow, "Discussions and forums", "forums", "More discussions", false);
-  if (SHOW.video) box("video", (r) => r.video, 8, videoCard, "Videos", "videos", "More videos", true);
+  // Videos box and Images row go where they're worth more than the results (CT.boxAt): the needs call's format
+  // shares for this search x how well their items fit. Without the AI: degoog's own order, as before.
+  const fmt = CT.fmtShares(ready("needs", key)?.f);
+  const place = (worth) => {
+    const v = [...list.querySelectorAll(".result-item")].filter((el) => shown(el) && !info(el)?.video && !used(el));
+    if (!fmt || worth == null || !v.length) return null;
+    const i = CT.boxAt(fmt, v.map((el) => info(el)?.ai), worth);
+    return i >= v.length ? { after: v[v.length - 1] } : { before: v[i] };
+  };
+  if (SHOW.video) box("video", (r) => r.video, 8, videoCard, "Videos", "videos", "More videos", true, place(CT.boxWorth(fmt, rows.filter((r) => r.video).map((r) => r.ai), "video")));
 
   // Images row: drawn after the first result in this same pass, only if the image search is already in hand
   if (!G.img) {
     G.img = true;
     const j = ready("img", key);
+    const at = j && place(CT.boxWorth(fmt, (j.results || []).map((x) => x && x.ctRel), "image"));
     const t = j && [...list.querySelectorAll(".result-item")].find(shown);
     const th = visThr();
     const pics = j ? (j.results || []).filter((x) => x && x.thumbnail && x.url && relOk(x.title, x.url) && !(th && VS.p.get(origOf(x.thumbnail)) < th.low) && !aiImg((() => { try { return new URL(x.url).hostname.replace(/^www\./, ""); } catch { return ""; } })())).slice(0, 12) : [];
@@ -5093,7 +5178,7 @@ const groups = () => {
       }
       s.append(wrap);
       const m = moreBtn("More images", "images"); if (m) s.append(m);
-      t.after(s);
+      if (at && at.before) at.before.before(s); else if (at) at.after.after(s); else t.after(s);
       wrap.upd();
     }
   }
@@ -6848,10 +6933,11 @@ R_TASK = "Given a web search query, retrieve relevant passages that answer the q
 R_MAX = 512
 
 @torch.inference_mode()
-def rerank(q, docs):
+def rerank(q, docs, tasks=None):
+    # tasks: one instruction per doc (None = the default retrieval task), so many different questions share one pass
     out = []
     for i in range(0, len(docs), 16):
-        pairs = [f"<Instruct>: {R_TASK}\n<Query>: {q}\n<Document>: {d}" for d in docs[i:i + 16]]
+        pairs = [f"<Instruct>: {(tasks[i + k] if tasks and tasks[i + k] else R_TASK)}\n<Query>: {q}\n<Document>: {d}" for k, d in enumerate(docs[i:i + 16])]
         enc = rtok(pairs, padding=False, truncation="longest_first", return_attention_mask=False, max_length=R_MAX - len(R_PRE) - len(R_SUF), add_special_tokens=False)
         enc["input_ids"] = [R_PRE + ids + R_SUF for ids in enc["input_ids"]]
         x = rtok.pad(enc, padding=True, return_tensors="pt").to(dev)
@@ -6967,9 +7053,12 @@ async def rank(body: dict):
     t0 = time.perf_counter()
     q = str(body.get("q") or "")[:300]
     docs = [str(d)[:1500] for d in (body.get("docs") or [])][:64]
+    tasks = body.get("tasks")
+    tasks = [str(t or "")[:300] for t in tasks][:len(docs)] if isinstance(tasks, list) else None
+    if tasks is not None: tasks += [""] * (len(docs) - len(tasks))
     if not q or not docs: return {"s": [], "ms": 0}
     async with lock:
-        s = await asyncio.to_thread(rerank, q, docs)
+        s = await asyncio.to_thread(rerank, q, docs, tasks)
     return {"s": [round(x, 4) for x in s], "ms": round((time.perf_counter() - t0) * 1000)}
 
 @app.exception_handler(Exception)
@@ -6997,7 +7086,7 @@ for i in $(docker images ct-vision --format '{{.Repository}}:{{.Tag}}'); do [ "$
 echo "ct-vision ready: $TAG"
 
 '@).Replace("`r", ""))
-[IO.File]::WriteAllText("$vd\tag", "066652c85584")
+[IO.File]::WriteAllText("$vd\tag", "7b97592efbd5")
 docker network inspect ct-net 2>&1 | Out-Null; if ($LASTEXITCODE -ne 0) { docker network create ct-net | Out-Null }
 docker network connect ct-net $c 2>&1 | Out-Null
 docker rm -f ct-vision-setup 2>&1 | Out-Null
@@ -7009,7 +7098,7 @@ docker restart $c | Out-Null
 $null = docker exec $c sh -c 'for i in $(seq 1 40); do curl -fs -o /dev/null http://127.0.0.1:${DEGOOG_PORT:-4444}/readyz && exit 0; sleep 1; done'
 
 $ss = docker exec $c cat /app/data/server-settings.json | Out-String | ConvertFrom-Json
-"plugin code inside the page (should be v60): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
+"plugin code inside the page (should be v61): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
 "page files (should be a ct and a psl file): " + (docker exec $c sh -c 'ls /app/src/public/ct/')
 "progressive results off (should be False): $($ss.settings.streamingEnabled -eq $true)"
 "typo fixer word list (should be about 82800): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/words.txt')
@@ -7065,6 +7154,16 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
   // Bridge round trip (the page's only way to the server)
   const p0 = await bridge("prefs");
   row("Page-to-server bridge", !!(p0.j && typeof p0.j === "object"), ms(p0));
+  // Needs call (one batched GPU pass per search): its time, and the format judge putting video first for a hands-on
+  // how-to but not for a notation question
+  {
+    const na = await bridge("needs", { q: "how to tie a tie" }), nb = await bridge("needs", { q: "kalimba numbers and variance in pitch" });
+    const top = (f) => (f ? Object.entries(f).sort((x, y) => y[1] - x[1])[0][0] : "none");
+    const fa = na.j && na.j.n && na.j.n.f, fb = nb.j && nb.j.n && nb.j.n.f;
+    const note = (f) => (f ? Object.entries(f).map(([k, v]) => `${k} ${Number(v).toFixed(2)}`).join(" ") : "no answer");
+    row("Needs call: format judge (video vs pictures vs text)", !fa ? "SKIP" : top(fa) === "video" && top(fb) !== "video", `tie: ${note(fa)} | kalimba: ${note(fb)}`);
+    row("Needs call: time", !fa ? "SKIP" : true, fa ? `GPU ${na.j.n.ms} ms, round trip ${na.ms} ms` : "AI off or not up yet");
+  }
   const fl = await bridge("flags", {}, "{}");
   row("Flag Report store (flags + update problem)", !!(fl.j && Array.isArray(fl.j.flags)), fl.j && fl.j.issue ? "an update problem is waiting for Report" : "");
 

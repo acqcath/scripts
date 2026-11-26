@@ -570,7 +570,7 @@ export const flagPrompt = (flags, issue, max = 12000) => {
   const head = "degoog clean-titles: fix what my degoog reported. Read degoog/wip/QUICKSTART.md in acqcath/scripts first and follow its \"Flags\" steps: " +
     "commit the flags below to the private repo acqcath/degoog-flags, then fix the code so these searches come out right, release and merge. " +
     "Keep my searches out of the public repo.\n";
-  const body = (fl, snip) => JSON.stringify({ flags: fl.map((f) => ({ at: new Date(f.t).toISOString(), q: f.q, tab: f.type, cats: f.cats || [], note: f.note, ctx: f.ctx || null, top: (f.top || []).map((r) => (snip ? { title: r.title, url: r.url, snippet: r.snippet } : { title: r.title, url: r.url })) })), updateIssue: issue || null });
+  const body = (fl, snip) => JSON.stringify({ flags: fl.map((f) => ({ at: new Date(f.t).toISOString(), q: f.q, tab: f.type, cats: f.cats || [], note: f.note, ctx: f.ctx || null, top: (f.top || []).map((r) => (snip ? { ai: r.ai ?? null, title: r.title, url: r.url, snippet: r.snippet } : { ai: r.ai ?? null, title: r.title, url: r.url })) })), updateIssue: issue || null });
   let fl = (flags || []).slice(-20);
   for (;;) {
     for (const snip of [true, false]) { const s = head + body(fl, snip); if (s.length <= max || fl.length <= 1) { if (s.length <= max || !snip) return s.slice(0, max); } }
@@ -578,3 +578,11 @@ export const flagPrompt = (flags, issue, max = 12000) => {
     fl = fl.slice(1);
   }
 };
+
+// ===== One scale for blocks and results (user, 2026-11-26). The needs call (server /needs) gives format shares f
+// (video / image / text, sum 1). An item's worth = its format's share x its fit (AI score 0..1). A box is worth its
+// format's share x the mean fit of its best 3 items and goes before the first result (never the top one) worth less.
+export const fmtShares = (p) => { if (!p) return null; const v = Math.max(0, +p.video || 0), i = Math.max(0, +p.image || 0), t = Math.max(0, +p.text || 0), n = v + i + t; return n ? { video: v / n, image: i / n, text: t / n } : null; };
+export const boxWorth = (fmt, rels, kind) => { const r = (rels || []).filter((x) => typeof x === "number").sort((a, b) => b - a).slice(0, 3); return fmt && r.length ? fmt[kind] * (r.reduce((a, b) => a + b, 0) / r.length) : null; };
+// index (in the shown results) to insert the box before; resultRels.length = after the last; never 0 (the top result stays first)
+export const boxAt = (fmt, resultRels, worth) => { for (let i = 1; i < resultRels.length; i++) if (typeof resultRels[i] === "number" && fmt.text * resultRels[i] < worth) return i; return resultRels.length; };

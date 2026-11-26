@@ -566,3 +566,14 @@ The iPhone 15 Pro is...`;
   expect(srv.kpInfobox(wt)).toEqual([{ k: "Released", v: "Sep 22, 2023" }, { k: "Discontinued", v: "Sep 9, 2024" }, { k: "Launch price", v: "15 Pro: $999, 15 Pro Max: $1199" }, { k: "Processor", v: "Apple A17 Pro" }, { k: "Memory", v: "8 GB LPDDR5" }, { k: "Storage", v: "128 GB, 256 GB, 512 GB, 1 TB" }, { k: "Weight", v: "187 g" }, { k: "Display", v: "6.1 in" }]);
   expect(srv.kpInfobox("no infobox here")).toEqual([]);
 });
+
+import { NEEDS, needsParse } from "../files/index.js";
+test("needs: one batched pass parses into format shares, needs and block fits", () => {
+  const n = Object.values(NEEDS).reduce((a, [, o]) => a + Object.keys(o).length, 0);
+  const v = needsParse(Array.from({ length: n }, (_, i) => (i === 0 ? 0.6 : 0.2)));
+  expect(v.f.video + v.f.image + v.f.text).toBeCloseTo(1);
+  expect(v.f.video).toBeCloseTo(0.6);
+  expect(Object.keys(v.n)).toContain("fresh");
+  expect(Object.keys(v.b)).toContain("forums");
+  expect(needsParse([0.1])).toBe(null);
+});

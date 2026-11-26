@@ -44,6 +44,16 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
   // Bridge round trip (the page's only way to the server)
   const p0 = await bridge("prefs");
   row("Page-to-server bridge", !!(p0.j && typeof p0.j === "object"), ms(p0));
+  // Needs call (one batched GPU pass per search): its time, and the format judge putting video first for a hands-on
+  // how-to but not for a notation question
+  {
+    const na = await bridge("needs", { q: "how to tie a tie" }), nb = await bridge("needs", { q: "kalimba numbers and variance in pitch" });
+    const top = (f) => (f ? Object.entries(f).sort((x, y) => y[1] - x[1])[0][0] : "none");
+    const fa = na.j && na.j.n && na.j.n.f, fb = nb.j && nb.j.n && nb.j.n.f;
+    const note = (f) => (f ? Object.entries(f).map(([k, v]) => `${k} ${Number(v).toFixed(2)}`).join(" ") : "no answer");
+    row("Needs call: format judge (video vs pictures vs text)", !fa ? "SKIP" : top(fa) === "video" && top(fb) !== "video", `tie: ${note(fa)} | kalimba: ${note(fb)}`);
+    row("Needs call: time", !fa ? "SKIP" : true, fa ? `GPU ${na.j.n.ms} ms, round trip ${na.ms} ms` : "AI off or not up yet");
+  }
   const fl = await bridge("flags", {}, "{}");
   row("Flag Report store (flags + update problem)", !!(fl.j && Array.isArray(fl.j.flags)), fl.j && fl.j.issue ? "an update problem is waiting for Report" : "");
 

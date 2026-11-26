@@ -296,3 +296,14 @@ test("site search: the site meant goes first with one result shown, its other re
   expect(C.navName("how do i reset my airpods")).toBe("");
   expect(C.navName("what is asura?")).toBe("");
 });
+
+test("one scale: format shares, box worth, box position", () => {
+  const f = C.fmtShares({ video: 0.8, image: 0.1, text: 0.1 });
+  expect(f.video).toBeCloseTo(0.8);
+  expect(C.fmtShares(null)).toBe(null);
+  const w = C.boxWorth(f, [0.9, 0.7, 0.8, null, 0.1], "video"); // best 3 mean 0.8 x 0.8
+  expect(w).toBeCloseTo(0.64);
+  expect(C.boxAt(f, [0.99, 0.95, 0.9], w)).toBe(1); // a how-to video beats every text result but the top one
+  const g = C.fmtShares({ video: 0.05, image: 0.05, text: 0.9 });
+  expect(C.boxAt(g, [0.9, 0.8, 0.7], C.boxWorth(g, [0.9], "video"))).toBe(3); // text search: after the last
+});

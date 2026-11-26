@@ -1500,7 +1500,7 @@ export const flagPromptS = (flags, issue, max = 12000) => {
   const head = "degoog clean-titles: fix what my degoog reported. Read degoog/wip/QUICKSTART.md in acqcath/scripts first and follow its \"Flags\" steps: " +
     "commit the flags below to the private repo acqcath/degoog-flags, then fix the code so these searches come out right, release and merge. " +
     "Keep my searches out of the public repo.\n";
-  const body = (fl, snip) => JSON.stringify({ flags: fl.map((f) => ({ at: new Date(f.t).toISOString(), q: f.q, tab: f.type, cats: f.cats || [], note: f.note, ctx: f.ctx || null, top: (f.top || []).map((r) => (snip ? { title: r.title, url: r.url, snippet: r.snippet } : { title: r.title, url: r.url })) })), updateIssue: issue || null });
+  const body = (fl, snip) => JSON.stringify({ flags: fl.map((f) => ({ at: new Date(f.t).toISOString(), q: f.q, tab: f.type, cats: f.cats || [], note: f.note, ctx: f.ctx || null, top: (f.top || []).map((r) => (snip ? { ai: r.ai ?? null, title: r.title, url: r.url, snippet: r.snippet } : { ai: r.ai ?? null, title: r.title, url: r.url })) })), updateIssue: issue || null });
   let fl = (flags || []).slice(-20);
   for (;;) {
     for (const snip of [true, false]) { const s = head + body(fl, snip); if (s.length <= max || fl.length <= 1) { if (s.length <= max || !snip) return s.slice(0, max); } }
@@ -1566,6 +1566,51 @@ const flagJudge = () => (_judging ||= (async () => {
 const judgeNow = () => { const F = readFlags(), key = flagOpen().map((f) => f.id).join(","); return F.judge && F.judge.key === key ? F.judge : null; };
 const flagCount = () => flagOpen().length + (flagIssue() ? 1 : 0);
 
+// ===== What a search needs (user, 2026-11-26): ONE batched reranker pass per search, before the results arrive, so
+// the page can fetch and place blocks (Videos, Images, Forums, Top stories, Papers, info panel, answer card) on one
+// scale with the results. Each question is a described option scored with its own instruction; no word lists.
+// Groups: f = format shares (sum 1), n = needs (each 0..1, independent), b = block fits (each 0..1). Cached per search.
+const NEED_TASK = "Given a web search query, judge whether the searcher needs this to be satisfied";
+const FMT_TASK = "Given a web search query, judge whether this kind of result is the best way to give the searcher what they need";
+const BLOCK_TASK = "Given a web search query, judge whether this block of results would help the searcher";
+export const NEEDS = {
+  f: [FMT_TASK, { video: "A video that shows it being done or demonstrated, step by step, in motion", image: "Pictures, photos, diagrams or charts that show what it looks like", text: "A written web page that explains or answers it in words" }],
+  n: [NEED_TASK, { fresh: "Recent information: what is new, current or happening now", depth: "An in-depth, thorough explanation rather than a quick fact", trust: "An authoritative, expert or official source the searcher can rely on",
+    people: "First-hand experiences and opinions from real people who tried it", doing: "Instructions to do or make something", knowing: "Information or an answer to understand or know something",
+    question: "A direct answer to a specific question" }],
+  b: [BLOCK_TASK, { forums: "Forum and discussion threads where people share their own experience", news: "Top news stories reporting recent events", papers: "Scientific papers and research studies",
+    info: "A fact panel about one person, place, organization or thing", answer: "A short direct answer shown above the results" }],
+};
+export const needsParse = (s) => {
+  let i = 0;
+  const out = {};
+  for (const [g, [, opts]] of Object.entries(NEEDS)) {
+    out[g] = {};
+    for (const k of Object.keys(opts)) { const v = s[i++]; if (typeof v !== "number") return null; out[g][k] = v; }
+  }
+  const t = out.f.video + out.f.image + out.f.text;
+  if (t > 0) for (const k of Object.keys(out.f)) out.f[k] /= t;
+  return out;
+};
+const NEEDC = new Map(), NEEDI = new Map();
+export const needsFor = async (q) => {
+  q = String(q || "").trim().slice(0, 300);
+  if (!q || q.startsWith("!")) return null;
+  const k = q.toLowerCase();
+  if (NEEDC.has(k)) return NEEDC.get(k);
+  if (NEEDI.has(k)) return NEEDI.get(k);
+  const run = (async () => {
+    const docs = [], tasks = [];
+    for (const [task, opts] of Object.values(NEEDS)) for (const d of Object.values(opts)) { docs.push(d); tasks.push(task); }
+    const j = await vis("/rank", { q, docs, tasks }, 1500);
+    const v = j && Array.isArray(j.s) && j.s.length === docs.length ? needsParse(j.s) : null;
+    if (v) { v.ms = j.ms; NEEDC.set(k, v); if (NEEDC.size > 2000) NEEDC.delete(NEEDC.keys().next().value); }
+    return v;
+  })().finally(() => NEEDI.delete(k));
+  NEEDI.set(k, run);
+  return run;
+};
+
 // A slow answer is never thrown away: the rank call keeps running past the wait below and fills AIC when it lands, so
 // the very next request for the same results (a tab switch, a reload) already has it. Same request twice at once
 // shares one run (INFL).
@@ -1573,7 +1618,7 @@ const INFL = new Map();
 const RANK_WAIT_MS = 1600, RANK_RUN_MS = 6000;
 globalThis.__ctResults = async (result, query, params) => {
   const type = String((params && params.type) || "web");
-  if (!result || !Array.isArray(result.results) || !query || /^(images|videos)$/.test(type)) return;
+  if (!result || !Array.isArray(result.results) || !query || type === "videos") return;
   const q = String(query).trim().slice(0, 300);
   const rs = result.results.slice(0, 60);
   if (!rs.length || q.startsWith("!")) return;
@@ -1583,7 +1628,8 @@ globalThis.__ctResults = async (result, query, params) => {
   if (!got) {
     let run = INFL.get(key);
     if (!run) {
-      const docs = rs.map((r) => `${stripT(r.title)}. ${stripT(r.snippet)}`.slice(0, 1200));
+      const host = (u) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; } };
+      const docs = rs.map((r) => (type === "images" ? `${stripT(r.title)}. Picture from ${host(r.url)}` : `${stripT(r.title)}. ${stripT(r.snippet)}`).slice(0, 1200));
       const sents = [];
       if (type === "web" && (QLIKE.test(q) || q.split(/\s+/).length >= 2)) rs.slice(0, 6).forEach((r, i) => sentences(r.snippet).slice(0, 4).forEach((x) => sents.push([i, x])));
       run = (async () => {
@@ -1616,7 +1662,7 @@ export const routes = [
       if (!q) return jsonOut({ n: flagCount() });
       const F = readFlags(), now = Date.now();
       F.list.push({ id: now, t: now, q, type: String(b.type || "web").slice(0, 40), cats: flagCats(b.cats), note: String(b.note || "").trim().slice(0, 1000), ctx: flagCtxClean(b.ctx),
-        top: (Array.isArray(b.top) ? b.top : []).slice(0, 10).map((r) => ({ title: String((r && r.title) || "").slice(0, 200), url: String((r && r.url) || "").slice(0, 500), snippet: String((r && r.snippet) || "").slice(0, 300) })).filter((r) => /^https?:\/\//.test(r.url)) });
+        top: (Array.isArray(b.top) ? b.top : []).slice(0, 10).map((r) => ({ ai: r && Number.isFinite(+r.ai) && r.ai !== null ? Math.max(0, Math.min(1, +r.ai)) : null, title: String((r && r.title) || "").slice(0, 200), url: String((r && r.url) || "").slice(0, 500), snippet: String((r && r.snippet) || "").slice(0, 300) })).filter((r) => /^https?:\/\//.test(r.url)) });
       if (F.list.length > 500) F.list = F.list.slice(-500);
       saveFlags();
       flagJudge().catch(() => {});
@@ -1654,6 +1700,12 @@ export const routes = [
       const j = await vis("/score", { q, urls, budget: 1.6 }, 2500);
       return jsonOut(j && Array.isArray(j.p) ? { p: j.p, ms: j.ms, d: j.device } : { p: null });
     },
+  },
+  {
+    // What this search needs: {n: {f, n, b, ms}} (null when the AI is off); one batched GPU pass, cached per search
+    method: "get",
+    path: "/needs",
+    async handler(req) { return jsonOut({ n: await needsFor(new URL(req.url).searchParams.get("q") || "") }); },
   },
   {
     // Answer AI: {q, d: [passages]} -> {s: [0..1 or null]} (how well each passage answers the question)
