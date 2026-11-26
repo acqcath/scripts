@@ -85,7 +85,7 @@ process.stdout.write(String(j.html || "").replace(/&lt;/g, "<").replace(/&gt;/g,
     if ($c) { docker exec $c rm -f /tmp/ct-flags.js 2>&1 | Out-Null }
   }
 }
-# Log that never grows without end (a failed check can repeat every 5 minutes)
+# Log that never grows without end (a failed check can repeat every minute)
 function Log($line) {
   try {
     Add-Content -Path $log -Value $line
@@ -120,20 +120,29 @@ function Get-Cond($url, $cache, $accept) {
 # last good copy when GitHub can't be reached, so one failed download never skips a run
 $launch = Join-Path $dir 'update.ps1'
 $launcher = @'
+# Asks GitHub which commit main is on (git ls-remote: instant, not cached, not the API's 60-an-hour limit), so a
+# release is seen within a minute; files are then fetched at that exact commit, which no cache can serve stale.
 $d = Join-Path $env:LOCALAPPDATA 'clean-titles'; $j = Join-Path $d 'job.ps1'
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072
-try {
-  $req = [Net.HttpWebRequest]::Create('https://raw.githubusercontent.com/acqcath/scripts/main/degoog/autoupdate-job.ps1')
-  $req.UserAgent = 'degoog-clean-titles-updater'; $req.Timeout = 30000
-  if ((Test-Path $j) -and (Test-Path "$j.etag")) { $req.Headers.Add('If-None-Match', (Get-Content "$j.etag" -Raw).Trim()) }
-  $res = $req.GetResponse(); $sr = New-Object IO.StreamReader($res.GetResponseStream(), [Text.Encoding]::UTF8)
-  $b = $sr.ReadToEnd(); $sr.Close(); $et = $res.Headers['ETag']; $res.Close()
-  if ($b -match 'degoog') { [IO.File]::WriteAllText($j, $b, (New-Object Text.UTF8Encoding $true)); if ($et) { Set-Content -Path "$j.etag" -Value $et } }
-} catch {}
+$git = (Get-Command git -ErrorAction SilentlyContinue).Source
+if (-not $git -and (Test-Path "$env:ProgramFiles\Git\cmd\git.exe")) { $git = "$env:ProgramFiles\Git\cmd\git.exe" }
+$env:CT_MAIN = ''
+if ($git) { try { $env:GIT_TERMINAL_PROMPT = '0'; $l = & $git -c credential.helper= ls-remote https://github.com/acqcath/scripts refs/heads/main 2>$null | Out-String; if ($l -match '^([0-9a-f]{40})') { $env:CT_MAIN = $Matches[1] } } catch {} }
+$have = if (Test-Path "$j.sha") { (Get-Content "$j.sha" -Raw).Trim() } else { '' }
+if (-not $env:CT_MAIN -or $have -ne $env:CT_MAIN -or -not (Test-Path $j)) {
+  try {
+    $ref = if ($env:CT_MAIN) { $env:CT_MAIN } else { 'main' }
+    $req = [Net.HttpWebRequest]::Create("https://raw.githubusercontent.com/acqcath/scripts/$ref/degoog/autoupdate-job.ps1")
+    $req.UserAgent = 'degoog-clean-titles-updater'; $req.Timeout = 30000
+    $res = $req.GetResponse(); $sr = New-Object IO.StreamReader($res.GetResponseStream(), [Text.Encoding]::UTF8)
+    $b = $sr.ReadToEnd(); $sr.Close(); $res.Close()
+    if ($b -match 'degoog') { [IO.File]::WriteAllText($j, $b, (New-Object Text.UTF8Encoding $true)); Set-Content -Path "$j.sha" -Value $env:CT_MAIN }
+  } catch {}
+}
 if (Test-Path $j) { & $j } else { "job download failed $(Get-Date -Format s)" | Add-Content -Path (Join-Path $d 'last-run.txt') }
 '@
 try { if (-not (Test-Path $launch) -or (Get-Content $launch -Raw) -ne $launcher) { [IO.File]::WriteAllText($launch, $launcher, (New-Object Text.UTF8Encoding $true)) } } catch {}
-# The task itself, kept in its best shape by this job: every 5 minutes, all day (daily trigger repeating every 5 min
+# The task itself, kept in its best shape by this job: every minute, all day (daily trigger repeating every minute
 # for 1 day works on every Windows version), started through Windows 11's headless console so no window ever flashes
 # (powershell -WindowStyle Hidden still flashes, and stays open when Windows Terminal is the default). The headless
 # start is tested first (it must leave a marker file); if it fails, the plain hidden start stays and it's retried daily.
@@ -142,7 +151,7 @@ try {
   $tr = $task.Triggers | Select-Object -First 1
   $act = $task.Actions | Select-Object -First 1
   $ps = "powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$launch`""
-  $okTrig = $tr -and $tr.Repetition -and $tr.Repetition.Interval -eq 'PT5M' -and $tr.Repetition.Duration -eq 'P1D' -and $tr.CimClass.CimClassName -eq 'MSFT_TaskDailyTrigger'
+  $okTrig = $tr -and $tr.Repetition -and $tr.Repetition.Interval -eq 'PT1M' -and $tr.Repetition.Duration -eq 'P1D' -and $tr.CimClass.CimClassName -eq 'MSFT_TaskDailyTrigger'
   $okAct = $act -and $act.Execute -match 'conhost' -and $act.Arguments -match [regex]::Escape($launch)
   $newAct = $null
   if (-not $okAct) {
@@ -158,11 +167,11 @@ try {
   }
   if (-not $okTrig -or $newAct) {
     $nt = New-ScheduledTaskTrigger -Daily -At '00:00'
-    $nt.Repetition = (New-ScheduledTaskTrigger -Once -At '00:00' -RepetitionInterval (New-TimeSpan -Minutes 5) -RepetitionDuration (New-TimeSpan -Days 1)).Repetition
+    $nt.Repetition = (New-ScheduledTaskTrigger -Once -At '00:00' -RepetitionInterval (New-TimeSpan -Minutes 1) -RepetitionDuration (New-TimeSpan -Days 1)).Repetition
     $setArgs = @{ TaskName = 'degoog clean-titles update'; Trigger = $nt; ErrorAction = 'Stop' }
     if ($newAct) { $setArgs.Action = $newAct }
     Set-ScheduledTask @setArgs | Out-Null
-    Log "$(Get-Date -Format s) task set: every 5 min$(if ($newAct) { ", start: $($newAct.Execute)" })"
+    Log "$(Get-Date -Format s) task set: every minute$(if ($newAct) { ", start: $($newAct.Execute)" })"
   }
 } catch { Log "task update failed $(Get-Date -Format s): $($_.Exception.Message)" }
 
@@ -182,7 +191,12 @@ function Judge($sha, $out) {
 try {
   # Version = a hash of the installer itself (raw files carry no commit id); unchanged file = 304, nothing to do
   $inst = Join-Path $dir 'installer.ps1'
-  $code = (Get-Cond 'https://raw.githubusercontent.com/acqcath/scripts/main/degoog/install.ps1' $inst '*/*').body
+  # main unchanged since the last look = nothing to do (one git ls-remote a minute, done by the launcher)
+  $seen = Join-Path $dir 'main-seen.txt'
+  $tPend = (Test-Path $tried) -and ((Get-Content $tried -Raw) -notmatch ' ok ')
+  if ($env:CT_MAIN -and -not $tPend -and (Test-Path $seen) -and (Get-Content $seen -Raw).Trim() -eq $env:CT_MAIN -and (Test-Path $inst)) { SendReports; return }
+  $code = if ($env:CT_MAIN) { (Invoke-WebRequest "https://raw.githubusercontent.com/acqcath/scripts/$($env:CT_MAIN)/degoog/install.ps1" -UseBasicParsing -UserAgent 'degoog-clean-titles-updater' -TimeoutSec 60 -ErrorAction Stop).Content } else { (Get-Cond 'https://raw.githubusercontent.com/acqcath/scripts/main/degoog/install.ps1' $inst '*/*').body }
+  if ($env:CT_MAIN) { [IO.File]::WriteAllText($inst, $code, (New-Object Text.UTF8Encoding $true)); Set-Content -Path $seen -Value $env:CT_MAIN }
   if ($code -notmatch 'clean-titles') { SendReports; return }
   $sha = -join ([Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($code)) | Select-Object -First 8 | ForEach-Object { $_.ToString('x2') })
   if ((Test-Path $mark) -and ((Get-Content $mark -Raw).Trim() -eq $sha)) { SendReports; return }
