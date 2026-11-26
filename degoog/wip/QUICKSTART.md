@@ -1,7 +1,7 @@
 # clean-titles: quickstart (read this instead of all of HANDOFF.md; grep HANDOFF.md for details)
 
 ## Every degoog chat, first: Flags
-⚑ (degoog's tab row, every tab) saves reports on the server: the search, tab, the user's note, the top 10 results.
+⚑ (degoog's tab row, every tab) saves reports on the server: the search, tab, chosen problem chips (core FLAG_CATS), optional note, context (viewport, load ms, visible blocks), top 10 results.
 The ⚑ shows nothing else (no count, no send link: the user asked). The PC's hourly job (../autoupdate-job.ps1
 `SendReports`) sends them with `claude --cloud`: an update breakage (`updateIssue`, the self-check output) at once,
 the rest when the local model says they're worth a session; the server marks them sent. The job installs Git and the

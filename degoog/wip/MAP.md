@@ -2,7 +2,7 @@
 
 Every section, function and route in degoog/wip/files with its line. Read the lines you need (`sed -n A,Bp file`), not whole files.
 
-## index.js (1963 lines)
+## index.js (1977 lines)
   - `braveOriginal` :13
   - `upgrade` :33
 - **Typo fixing and related searches, without Google** :57
@@ -155,41 +155,43 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - `saveFlags` :1481
   - `flagIssue` :1482
   - `flagOpen` :1483
-  - `flagPromptS` :1485
-  - `aiAsk` :1499
-  - `judgeParse` :1534
-  - `flagHost` :1539
-  - `flagJudge` :1541
-  - `judgeNow` :1552
-  - `flagCount` :1553
-  - `globalThis.__ctResults` :1560
-  - route `/flag` :1597
-  - route `/flags` :1615
-  - route `/vis` :1635
-  - route `/rank` :1647
-  - route `/near` :1658
-  - route `/fix` :1668
-  - route `/qs` :1688
-  - route `/relay` :1699
-  - route `/sites` :1719
-  - route `/why` :1737
-  - route `/wd` :1742
-  - route `/qv` :1751
-  - route `/qvs` :1759
-  - route `/arch` :1768
-  - route `/kp` :1776
-  - route `/sports` :1784
-  - route `/cmu` :1792
-  - route `/eol` :1800
-  - route `/aiimg` :1810
-  - route `/seo` :1820
-  - route `/prefs` :1830
-  - route `/perf` :1836
-  - route `/learn` :1852
-  - route `/yt` :1865
-  - route `/hd` :1875
+  - `flagCats` :1487
+  - `flagCtxClean` :1489
+  - `flagPromptS` :1499
+  - `aiAsk` :1513
+  - `judgeParse` :1548
+  - `flagHost` :1553
+  - `flagJudge` :1555
+  - `judgeNow` :1566
+  - `flagCount` :1567
+  - `globalThis.__ctResults` :1574
+  - route `/flag` :1611
+  - route `/flags` :1629
+  - route `/vis` :1649
+  - route `/rank` :1661
+  - route `/near` :1672
+  - route `/fix` :1682
+  - route `/qs` :1702
+  - route `/relay` :1713
+  - route `/sites` :1733
+  - route `/why` :1751
+  - route `/wd` :1756
+  - route `/qv` :1765
+  - route `/qvs` :1773
+  - route `/arch` :1782
+  - route `/kp` :1790
+  - route `/sports` :1798
+  - route `/cmu` :1806
+  - route `/eol` :1814
+  - route `/aiimg` :1824
+  - route `/seo` :1834
+  - route `/prefs` :1844
+  - route `/perf` :1850
+  - route `/learn` :1866
+  - route `/yt` :1879
+  - route `/hd` :1889
 
-## script.js (2268 lines)
+## script.js (2305 lines)
   - `bridge` :2
   - `aiKey` :21
   - `fadeIn` :72
@@ -261,63 +263,64 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - `advParse` :1259
   - `tools` :1271
   - `flagTop` :1328
-  - `curType` :1340
-  - `flagBox` :1341
-  - `flagBtn` :1369
-  - `skel` :1385
-  - `noUsage` :1396
-- **Sitelinks, Discussions and forums, Videos, Top stories** :1405
-  - `ytId` :1410
-  - `VIDEO_URL` :1417
-  - `forumName` :1421
-  - `when` :1434
-  - `ago` :1442
-  - `fresh` :1453
-  - `hot` :1457
-  - `qHash` :1461
-  - `hashStore` :1462
-  - `info` :1480
-  - `mk` :1503
-  - `favImg` :1504
-  - `moreBtn` :1511
-  - `scroller` :1520
-  - `section` :1532
-  - `forumRow` :1535
-  - `siteName` :1548
-  - `videoCard` :1549
-  - `storyCard` :1571
-  - `used` :1588
-  - `shown` :1589
-  - `groups` :1590
-- **Answer card, local answers (core answers.js: math, units, cooking, tip/percent, dates, patterns)** :1703
-  - `cmuQ` :1709
-  - `aiWanted` :1714
-  - `aiBox` :1730
-  - `aiPass` :1743
-  - `ansCard` :1770
-  - `livePoll` :1833
-  - `fitLine` :1852
-  - `ansPass` :1861
-  - `ansCopy` :1904
-  - `onlyPass` :1918
-- **Quick view (spec 11): your tap opens it under the result (it grows: your action), tap again to close** :1941
-  - `qvBox` :1943
-  - `qvs` :2009
-  - `starsWanted` :2010
-  - `starsPass` :2012
-  - `meanPass` :2044
-- **Knowledge panel (spec 3)** :2063
-  - `kpWanted` :2071
-  - `kpCard` :2077
-  - `kpPass` :2120
-  - `tabKind` :2147
-  - `tabKeep` :2148
-  - `safe` :2172
-  - `tabRescue` :2177
-  - `init` :2192
-- **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :2224
+  - `flagCtx` :1342
+  - `curType` :1367
+  - `flagBox` :1368
+  - `flagBtn` :1406
+  - `skel` :1422
+  - `noUsage` :1433
+- **Sitelinks, Discussions and forums, Videos, Top stories** :1442
+  - `ytId` :1447
+  - `VIDEO_URL` :1454
+  - `forumName` :1458
+  - `when` :1471
+  - `ago` :1479
+  - `fresh` :1490
+  - `hot` :1494
+  - `qHash` :1498
+  - `hashStore` :1499
+  - `info` :1517
+  - `mk` :1540
+  - `favImg` :1541
+  - `moreBtn` :1548
+  - `scroller` :1557
+  - `section` :1569
+  - `forumRow` :1572
+  - `siteName` :1585
+  - `videoCard` :1586
+  - `storyCard` :1608
+  - `used` :1625
+  - `shown` :1626
+  - `groups` :1627
+- **Answer card, local answers (core answers.js: math, units, cooking, tip/percent, dates, patterns)** :1740
+  - `cmuQ` :1746
+  - `aiWanted` :1751
+  - `aiBox` :1767
+  - `aiPass` :1780
+  - `ansCard` :1807
+  - `livePoll` :1870
+  - `fitLine` :1889
+  - `ansPass` :1898
+  - `ansCopy` :1941
+  - `onlyPass` :1955
+- **Quick view (spec 11): your tap opens it under the result (it grows: your action), tap again to close** :1978
+  - `qvBox` :1980
+  - `qvs` :2046
+  - `starsWanted` :2047
+  - `starsPass` :2049
+  - `meanPass` :2081
+- **Knowledge panel (spec 3)** :2100
+  - `kpWanted` :2108
+  - `kpCard` :2114
+  - `kpPass` :2157
+  - `tabKind` :2184
+  - `tabKeep` :2185
+  - `safe` :2209
+  - `tabRescue` :2214
+  - `init` :2229
+- **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :2261
 
-## core.js (566 lines)
+## core.js (581 lines)
 - **Sites: registrable domain via the public suffix list** :4
   - `pslParse` :6
   - `regDomain` :27
@@ -386,7 +389,9 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - `topicToks` :536
   - `topicOf` :537
   - `tidyTitle` :549
-  - `flagPrompt` :554
+  - `flagCats` :556
+  - `flagCtxClean` :558
+  - `flagPrompt` :569
 
 ## answers.js (828 lines)
 - **Answer card, local part (no network): math, units incl. cooking, tip / percent, date math, patterns** :1
@@ -479,7 +484,7 @@ Every section, function and route in degoog/wip/files with its line. Read the li
 
 ## setcss.js (12 lines)
 
-## custom.css (840 lines)
+## custom.css (846 lines)
 - Catppuccin Mocha colors :1
 - DESCRIPTION SIZE :22
 - v50 :24
@@ -541,28 +546,28 @@ Every section, function and route in degoog/wip/files with its line. Read the li
 - Tools :614
 - Tools lives with the search it changes :615
 - ⚑ Flag :627
-- ===== Answer card (local answers) :651
-- Featured snippet :665
-- ===== AI summary spot :676
-- The panel over the 3 lines :689
-- Opened with ⌄ (your tap) :697
-- CMU card details :705
-- Sports card :712
-- Knowledge panel (spec 3) :729
-- Wide screens :749
-- Same-shape results (spec 8) :763
-- "Only reddit :765
-- "Open archived copy" :768
-- Images row (spec 12) :772
-- Quick view :780
-- Meaning line :793
-- Site icons are back (user, 2026-11-23) :800
-- Menu lines are tap targets :803
-- ===== Vertical rhythm (one scale, by how things belong together) ===== :806
-- Line breaks that read well, for every piece of text :819
-- Phones :827
-- Image/video preview :833
-- Image AI :837
+- ===== Answer card (local answers) :657
+- Featured snippet :671
+- ===== AI summary spot :682
+- The panel over the 3 lines :695
+- Opened with ⌄ (your tap) :703
+- CMU card details :711
+- Sports card :718
+- Knowledge panel (spec 3) :735
+- Wide screens :755
+- Same-shape results (spec 8) :769
+- "Only reddit :771
+- "Open archived copy" :774
+- Images row (spec 12) :778
+- Quick view :786
+- Meaning line :799
+- Site icons are back (user, 2026-11-23) :806
+- Menu lines are tap targets :809
+- ===== Vertical rhythm (one scale, by how things belong together) ===== :812
+- Line breaks that read well, for every piece of text :825
+- Phones :833
+- Image/video preview :839
+- Image AI :843
 
 ## other
 - ../autoupdate-job.ps1: the PC's hourly update job (Issue() puts update problems on the server for ⚑ Report)
