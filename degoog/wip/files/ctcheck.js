@@ -57,6 +57,17 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
     const bc = nc.j && nc.j.n && nc.j.n.b, bd = nd.j && nd.j.n && nd.j.n.b;
     const bn = (b) => (b ? `forums ${Number(b.forums).toFixed(2)} papers ${Number(b.papers).toFixed(2)} web ${Number(b.web).toFixed(2)}` : "no answer");
     row("Needs call: block judge (forums vs papers)", !bc || !bd ? "SKIP" : bc.forums > bc.papers && bd.papers > bd.forums, `keychron: ${bn(bc)} | crispr: ${bn(bd)}`);
+    // Answer shape + contested check (M4): the shape group of the needs call, then ai-summary's model on fixed results
+    const sa = na.j && na.j.n && na.j.n.s, sTop = sa ? Object.entries(sa).sort((x, y) => y[1] - x[1])[0][0] : "";
+    row("Needs call: shape judge (steps for a how-to)", !sa ? "SKIP" : sTop === "steps", sa ? Object.entries(sa).map(([k, v]) => `${k} ${Number(v).toFixed(2)}`).join(" ") : "no shape group");
+    const tie = [["How to tie a tie", "Drape the tie with the wide end longer. Cross the wide end over the narrow end. Bring it up through the neck loop. Pull it down through the knot and tighten."], ["Four-in-hand knot", "Cross wide over narrow, wrap it around once, pull up through the loop, tuck through the front and slide the knot up."]].map(([t, s], i) => ({ t, s, u: `https://example${i}.com/tie` }));
+    const sh = await bridge("shape", {}, JSON.stringify({ q: "how to tie a tie", k: "steps", r: tie })), a = sh.j && sh.j.a;
+    row("Shaped answer (ai-summary's model)", !sh.j ? false : !a ? "SKIP" : a.k === "steps" && Array.isArray(a.steps) && a.steps.length >= 2, a ? `${a.steps.length} steps, ${sh.ms} ms` : "no answer (ai-summary's model off or busy)");
+    const cof = [["Coffee linked to lower heart disease risk", "A large cohort study found 2-3 cups a day was linked to lower risk of heart disease and death."], ["Coffee raises blood pressure", "Caffeine raises blood pressure for hours; researchers advise people with hypertension to limit coffee."]].map(([t, s], i) => ({ t, s, u: `https://news${i}.org/coffee` }));
+    const sd = await bridge("sides", {}, JSON.stringify({ q: "is coffee bad for your heart", r: cof })), d = sd.j && sd.j.d;
+    row("Contested check (ai-summary's model)", !sd.j ? false : !d ? "SKIP" : typeof d.split === "boolean", d ? `split: ${d.split}, ${sd.ms} ms` : "no answer (ai-summary's model off or busy)");
+    const sp = await bridge("speed", {}), v = sp.j || {};
+    row("Search time added by clean-titles", !!sp.j, v.n ? `median ${v.hook} ms over ${v.n} searches; reranker ${v.rank ?? "-"} ms, wait ${v.wait} ms` : "no searches yet");
     const cu = await bridge("cut", {});
     row("First-screen cutoff store", !!(cu.j && "cut" in cu.j), cu.j && cu.j.cut != null ? `median ${Number(cu.j.cut).toFixed(3)}` : "no samples yet (blocks fetched until measured)");
   }
