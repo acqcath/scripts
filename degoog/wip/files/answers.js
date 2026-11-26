@@ -781,7 +781,7 @@ export const featuredSnippetAI = (q, results) => {
     if (b.p < min || PERSONAL.test(b.s) || PER_MODEL.test(b.s) || /\?$/.test(b.s)) continue;
     if (!top || b.p > top.b.p) top = { r, b };
   }
-  return top ? { kind: "snippet", text: top.b.s, href: top.r.href, title: top.r.title || "", h: top.r.h || "" } : null;
+  return top ? { kind: "snippet", text: top.b.s, href: top.r.href, title: top.r.title || "", h: top.r.h || "", p: top.b.p } : null;
 };
 export const featuredSnippet = (q, results) => {
   const sq = typeof q === "string" ? snipQuery(q) : q;

@@ -2,7 +2,7 @@
 
 Every section, function and route in degoog/wip/files with its line. Read the lines you need (`sed -n A,Bp file`), not whole files.
 
-## index.js (2029 lines)
+## index.js (2044 lines)
   - `braveOriginal` :13
   - `upgrade` :33
 - **Typo fixing and related searches, without Google** :57
@@ -164,37 +164,43 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - `flagJudge` :1555
   - `judgeNow` :1566
   - `flagCount` :1567
-  - `needsParse` :1584
-  - `needsFor` :1596
-  - `globalThis.__ctResults` :1619
-  - route `/flag` :1657
-  - route `/flags` :1675
-  - route `/vis` :1695
-  - route `/needs` :1707
-  - route `/rank` :1713
-  - route `/near` :1724
-  - route `/fix` :1734
-  - route `/qs` :1754
-  - route `/relay` :1765
-  - route `/sites` :1785
-  - route `/why` :1803
-  - route `/wd` :1808
-  - route `/qv` :1817
-  - route `/qvs` :1825
-  - route `/arch` :1834
-  - route `/kp` :1842
-  - route `/sports` :1850
-  - route `/cmu` :1858
-  - route `/eol` :1866
-  - route `/aiimg` :1876
-  - route `/seo` :1886
-  - route `/prefs` :1896
-  - route `/perf` :1902
-  - route `/learn` :1918
-  - route `/yt` :1931
-  - route `/hd` :1941
+  - `needsParse` :1585
+  - `cutFile` :1598
+  - `readCuts` :1600
+  - `cutAdd` :1601
+  - `cutNow` :1602
+  - `_cutReset` :1603
+  - `needsFor` :1605
+  - `globalThis.__ctResults` :1628
+  - route `/flag` :1666
+  - route `/flags` :1684
+  - route `/vis` :1704
+  - route `/needs` :1716
+  - route `/cut` :1722
+  - route `/rank` :1728
+  - route `/near` :1739
+  - route `/fix` :1749
+  - route `/qs` :1769
+  - route `/relay` :1780
+  - route `/sites` :1800
+  - route `/why` :1818
+  - route `/wd` :1823
+  - route `/qv` :1832
+  - route `/qvs` :1840
+  - route `/arch` :1849
+  - route `/kp` :1857
+  - route `/sports` :1865
+  - route `/cmu` :1873
+  - route `/eol` :1881
+  - route `/aiimg` :1891
+  - route `/seo` :1901
+  - route `/prefs` :1911
+  - route `/perf` :1917
+  - route `/learn` :1933
+  - route `/yt` :1946
+  - route `/hd` :1956
 
-## script.js (2331 lines)
+## script.js (2401 lines)
   - `bridge` :2
   - `aiKey` :21
   - `fadeIn` :72
@@ -250,80 +256,81 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - `ask` :822
   - `ready` :827
   - `earlyStart` :829
-  - `nearWord` :897
-  - `lower` :908
-  - `extras` :910
-- **Site choices, People also ask, and search Tools** :1017
-  - `goTo` :1018
-  - `rowHost` :1024
-- **Sites: Prefer / Normal / Lower / Hide, one rounded group in each result's menu (replaces Rank / Block)** :1025
-  - `siteOf` :1030
-  - `siteItems` :1031
-  - `settingsFetch` :1083
-  - `saveSite` :1091
-  - `paaAnchor` :1142
-  - `paa` :1145
-  - `advParse` :1273
-  - `tools` :1285
-  - `flagTop` :1342
-  - `flagCtx` :1357
-  - `curType` :1382
-  - `flagBox` :1383
-  - `flagBtn` :1422
-  - `skel` :1438
-  - `noUsage` :1449
-- **Sitelinks, Discussions and forums, Videos, Top stories** :1458
-  - `ytId` :1463
-  - `VIDEO_URL` :1470
-  - `forumName` :1474
-  - `when` :1487
-  - `ago` :1495
-  - `fresh` :1506
-  - `hot` :1510
-  - `qHash` :1514
-  - `hashStore` :1515
-  - `info` :1533
-  - `mk` :1556
-  - `favImg` :1557
-  - `moreBtn` :1564
-  - `scroller` :1573
-  - `section` :1585
-  - `forumRow` :1588
-  - `siteName` :1601
-  - `videoCard` :1602
-  - `storyCard` :1624
-  - `used` :1641
-  - `shown` :1642
-  - `groups` :1643
-- **Answer card, local answers (core answers.js: math, units, cooking, tip/percent, dates, patterns)** :1766
-  - `cmuQ` :1772
-  - `aiWanted` :1777
-  - `aiBox` :1793
-  - `aiPass` :1806
-  - `ansCard` :1833
-  - `livePoll` :1896
-  - `fitLine` :1915
-  - `ansPass` :1924
-  - `ansCopy` :1967
-  - `onlyPass` :1981
-- **Quick view (spec 11): your tap opens it under the result (it grows: your action), tap again to close** :2004
-  - `qvBox` :2006
-  - `qvs` :2072
-  - `starsWanted` :2073
-  - `starsPass` :2075
-  - `meanPass` :2107
-- **Knowledge panel (spec 3)** :2126
-  - `kpWanted` :2134
-  - `kpCard` :2140
-  - `kpPass` :2183
-  - `tabKind` :2210
-  - `tabKeep` :2211
-  - `safe` :2235
-  - `tabRescue` :2240
-  - `init` :2255
-- **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :2287
+  - `nearWord` :906
+  - `lower` :917
+  - `extras` :919
+- **Site choices, People also ask, and search Tools** :1026
+  - `goTo` :1027
+  - `rowHost` :1033
+- **Sites: Prefer / Normal / Lower / Hide, one rounded group in each result's menu (replaces Rank / Block)** :1034
+  - `siteOf` :1039
+  - `siteItems` :1040
+  - `settingsFetch` :1092
+  - `saveSite` :1100
+  - `paaAnchor` :1151
+  - `paa` :1154
+  - `advParse` :1282
+  - `tools` :1294
+  - `flagTop` :1351
+  - `flagCtx` :1366
+  - `curType` :1391
+  - `flagBox` :1392
+  - `flagBtn` :1431
+  - `skel` :1447
+  - `noUsage` :1458
+- **Sitelinks, Discussions and forums, Videos, Top stories** :1467
+  - `ytId` :1472
+  - `VIDEO_URL` :1479
+  - `forumName` :1483
+  - `when` :1496
+  - `ago` :1504
+  - `fresh` :1515
+  - `hot` :1519
+  - `qHash` :1523
+  - `hashStore` :1524
+  - `info` :1542
+  - `mk` :1565
+  - `favImg` :1566
+  - `moreBtn` :1573
+  - `scroller` :1582
+  - `section` :1594
+  - `forumRow` :1597
+  - `siteName` :1610
+  - `videoCard` :1611
+  - `storyCard` :1633
+  - `used` :1650
+  - `shown` :1651
+  - `groups` :1652
+- **Answer card, local answers (core answers.js: math, units, cooking, tip/percent, dates, patterns)** :1818
+  - `cmuQ` :1824
+  - `aiWanted` :1829
+  - `aiBox` :1845
+  - `aiPass` :1858
+  - `ansCard` :1885
+  - `livePoll` :1948
+  - `fitLine` :1967
+  - `byWorth` :1978
+  - `ansPass` :1987
+  - `ansCopy` :2034
+  - `onlyPass` :2048
+- **Quick view (spec 11): your tap opens it under the result (it grows: your action), tap again to close** :2071
+  - `qvBox` :2073
+  - `qvs` :2139
+  - `starsWanted` :2140
+  - `starsPass` :2142
+  - `meanPass` :2174
+- **Knowledge panel (spec 3)** :2193
+  - `kpWanted` :2201
+  - `kpCard` :2207
+  - `kpPass` :2250
+  - `tabKind` :2280
+  - `tabKeep` :2281
+  - `safe` :2305
+  - `tabRescue` :2310
+  - `init` :2325
+- **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :2357
 
-## core.js (589 lines)
+## core.js (599 lines)
 - **Sites: registrable domain via the public suffix list** :4
   - `pslParse` :6
   - `regDomain` :27
@@ -398,6 +405,9 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - `fmtShares` :585
   - `boxWorth` :586
   - `boxAt` :588
+  - `cutMedian` :594
+  - `blockGo` :595
+  - `blockShare` :598
 
 ## answers.js (828 lines)
 - **Answer card, local part (no network): math, units incl. cooking, tip / percent, date math, patterns** :1
@@ -469,7 +479,7 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - `qaStem` :820
   - `qaAbout` :821
 
-## ctcheck.js (220 lines)
+## ctcheck.js (226 lines)
   - `row` :8
   - `parse` :9
   - `bridge` :10

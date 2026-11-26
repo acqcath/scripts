@@ -872,6 +872,14 @@ const earlyStart = () => {
           if (e.data && VISON) { visKey(); visAsk(q, [...new Set(e.data.results.slice(0, 40).map((x) => origOf(x.thumbnail || "")).filter(Boolean))]).then(visRow); }
         }, () => { e.data = null; });
     };
+    // One search of another degoog type (news, forums, science), kept for this page as early[name]
+    const typeGo = (name, type) => {
+      if (early.get(name)?.key === key) return;
+      const e = { key, data: undefined };
+      early.set(name, e);
+      fetch(`/api/search?q=${encodeURIComponent(q)}&type=${type}`).then((x) => (x.ok ? x.json() : null))
+        .then((j) => { e.data = j && Array.isArray(j.results) ? j : null; }, () => { e.data = null; });
+    };
     const pic = SHOW.img !== false && !shaped(q) && (CT.visualQ(q) || visualSeen.has(qHash(q)));
     if (pic) imgGo();
     if (!shaped(q)) {
@@ -881,15 +889,16 @@ const earlyStart = () => {
         e.data = j && j.n ? j.n : null;
         const f = e.data && CT.fmtShares(e.data.f);
         if (f && SHOW.img !== false && f.image > 1 / Object.keys(f).length) imgGo();
+        // Forums, Top stories, papers (M2): fetched only when the block could beat the last result on the first
+        // screen (share x a perfect fit > the server's measured cutoff, core blockGo)
+        const go = (k) => CT.blockGo(CT.blockShare(f, e.data && e.data.b, k), e.data && e.data.cut);
+        if (SHOW.forum !== false && go("forums")) typeGo("forums", "forums");
+        if (SHOW.news !== false && go("news")) typeGo("news", "news");
+        if (SHOW.papers !== false && go("papers")) typeGo("papers", "science");
       }, () => { e.data = null; });
     }
     // Top stories: the News search starts now, in parallel, only for a search that looked like news last time
-    if (SHOW.news && !shaped(q) && newsy.has(qHash(q))) {
-      const e = { key, data: undefined };
-      early.set("news", e);
-      fetch(`/api/search?q=${encodeURIComponent(q)}&type=news`).then((x) => (x.ok ? x.json() : null))
-        .then((j) => { e.data = j && Array.isArray(j.results) ? j : null; }, () => { e.data = null; });
-    }
+    if (SHOW.news && !shaped(q) && newsy.has(qHash(q))) typeGo("news", "news");
   }
 };
 
@@ -1635,7 +1644,7 @@ let G = { key: "" };
 // the results (v49 waited for the server, which could rebuild the list after it was on screen): the last answer is
 // kept in this browser (switch values only), and a change applies from the next page load. Missing = on.
 const SHOW_KEY = "ct-show";
-let SHOW = { sl: true, forum: true, video: true, news: true, ans: true, kp: true, img: true, qv: true, arch: true, mean: true, stars: true, plain: true, pw: true };
+let SHOW = { sl: true, forum: true, video: true, news: true, papers: true, ans: true, kp: true, img: true, qv: true, arch: true, mean: true, stars: true, plain: true, pw: true };
 try { const c = JSON.parse(localStorage.getItem(SHOW_KEY) || "null"); if (c && typeof c === "object") SHOW = { ...SHOW, ...c }; } catch {}
 bridge("prefs", {}).then((j) => { if (j && typeof j === "object") try { localStorage.setItem(SHOW_KEY, JSON.stringify(j)); } catch {} }).catch(() => {});
 const used = (el) => el.classList.contains("ct-grouped");
@@ -1648,9 +1657,9 @@ const groups = () => {
   if (G.key !== key) {
     list.querySelectorAll(".ct-grp, .ct-sl").forEach((x) => x.remove());
     list.querySelectorAll(".ct-grouped").forEach((x) => x.classList.remove("ct-grouped"));
-    G = { key, sl: null, slTop: null, forum: null, video: null, news: false, img: false };
+    G = { key, sl: null, slTop: null, forum: null, video: null, paper: null, news: false, img: false, cut: false };
   }
-  for (const k of ["forum", "video", "sl"]) if (G[k] && !G[k].isConnected) G[k] = null; // degoog redrew the list
+  for (const k of ["forum", "video", "paper", "sl"]) if (G[k] && !G[k].isConnected) G[k] = null; // degoog redrew the list
   const rows = [...list.querySelectorAll(".result-item")].filter((x) => x.style.display !== "none" || x.dataset.ctCap).map(info).filter(Boolean);
   const top = rows.find((r) => shown(r.el));
   if (!top) return;
@@ -1676,31 +1685,72 @@ const groups = () => {
   }
   // 2+ of a kind become one box, placed where the first of them ranked (the top result always stays a normal
   // result); up to 4 threads / 8 videos, joined by more as endless scroll loads them
-  const box = (kind, test, max, build, title, tab, label, isRow, at) => {
-    const c = rows.filter((r) => r !== top && test(r) && !used(r.el) && !r.el.dataset.ctUnrel);
+  // extra: items from a search of that kind fetched for this page (no element; only when the box is first drawn,
+  // so a box never grows after paint because of them)
+  const box = (kind, test, max, build, title, tab, label, isRow, at, extra) => {
+    let c = rows.filter((r) => r !== top && test(r) && !used(r.el) && !r.el.dataset.ctUnrel);
     let s = G[kind];
+    if (!s && extra && extra.length) {
+      const have = new Set(rows.map((r) => r.href.split("#")[0]));
+      c = c.concat(extra.filter((r) => !have.has(r.href.split("#")[0]) && have.add(r.href.split("#")[0])));
+    }
     if (!s && c.length < 2) return;
     if (!s) {
       s = G[kind] = section(`ct-${kind}`, title);
       if (isRow) { const [wrap, row] = scroller(); s.append(wrap); s.row = row; s.wrap = wrap; } else { s.row = mk("div", "ct-list"); s.append(s.row); }
-      if (at && at.before) at.before.before(s); else if (at && at.after) at.after.after(s); else (c.find((r) => r.el.style.display !== "none") || c[0]).el.before(s);
+      const first = c.find((r) => r.el && r.el.style.display !== "none") || c.find((r) => r.el);
+      if (at && at.before) at.before.before(s); else if (at && at.after) at.after.after(s); else if (first) first.el.before(s); else top.el.after(s);
       const m = moreBtn(label, tab); if (m) s.append(m);
     }
     const n = s.row.children.length;
-    for (const r of c.slice(0, Math.max(0, max - n))) { s.row.append(build(r)); r.el.classList.add("ct-grouped"); }
+    for (const r of c.slice(0, Math.max(0, max - n))) { s.row.append(build(r)); r.el?.classList.add("ct-grouped"); }
     s.wrap?.upd();
   };
   if (shaped()) return; // a plain list of the type asked for: no boxes or rows
-  if (SHOW.forum) box("forum", (r) => !!r.forum, 4, forumRow, "Discussions and forums", "forums", "More discussions", false);
-  // Videos box and Images row go where they're worth more than the results (CT.boxAt): the needs call's format
-  // shares for this search x how well their items fit. Without the AI: degoog's own order, as before.
-  const fmt = CT.fmtShares(ready("needs", key)?.f);
+  // Every box goes where it's worth more than the results (CT.boxAt): videos and images by the needs call's format
+  // shares, forums / top stories / papers by their block share (CT.blockShare), each x how well its items fit.
+  // Without the AI: degoog's own order, as before.
+  const needs = ready("needs", key), fmt = CT.fmtShares(needs?.f);
+  const bShare = (k) => CT.blockShare(fmt, needs?.b, k);
   const place = (worth) => {
     const v = [...list.querySelectorAll(".result-item")].filter((el) => shown(el) && !info(el)?.video && !used(el));
     if (!fmt || worth == null || !v.length) return null;
     const i = CT.boxAt(fmt, v.map((el) => info(el)?.ai), worth);
     return i >= v.length ? { after: v[v.length - 1] } : { before: v[i] };
   };
+  const worthOf = (share, rels) => (share == null ? null : CT.boxWorth({ v: share }, rels, "v"));
+  // A fetched search's results as box items (same shape as info()), the AI score riding along as ctRel
+  const fetched = (name, forumOf) => {
+    const j = ready(name, key);
+    return (j && j.results || []).map((x) => {
+      let u; try { u = new URL(x.url); } catch { return null; }
+      const h = u.hostname.replace(/^(www|m|old)\./, "");
+      return { u, h, href: x.url, title: cleanTitle(String(x.title || ""), x.url) || String(x.title || ""), snippet: String(x.snippet || ""), fav: x.favicon || "",
+        w: x.publishedAt ? { t: Date.parse(`${x.publishedAt}T12:00:00Z`), exact: false } : null, ai: typeof x.ctRel === "number" ? x.ctRel : undefined, forum: forumOf(u, h) };
+    }).filter((r) => r && r.title && relOk(r.title, r.href));
+  };
+  if (SHOW.forum) {
+    const ex = G.forum ? [] : fetched("forums", (u, h) => forumName(u, h) || siteName(h));
+    const fs = bShare("forums");
+    box("forum", (r) => !!r.forum, 4, forumRow, "Discussions and forums", "forums", "More discussions", false,
+      fs == null || G.forum ? null : place(worthOf(fs, rows.filter((r) => r.forum && r !== top).map((r) => r.ai).concat(ex.map((r) => r.ai)))), ex);
+  }
+  if (SHOW.papers !== false && !G.paper) {
+    const ex = fetched("papers", (u, h) => siteName(h));
+    const ps = bShare("papers");
+    if (ps != null && ex.length >= 2) box("paper", () => false, 4, forumRow, "Research papers", "science", "More papers", false, place(worthOf(ps, ex.map((r) => r.ai))), ex);
+  }
+  // First-screen cutoff sample for the server (M2): the worth of the last result on screen, once per search,
+  // measured after this pass is laid out, only while the page is still at the top
+  if (fmt && !G.cut) {
+    G.cut = true;
+    requestAnimationFrame(() => {
+      if (scrollY > 40 || searchId(location.href) !== key) return;
+      const v = [...list.querySelectorAll(".result-item")].filter((el) => shown(el) && el.getBoundingClientRect().top < innerHeight);
+      const r = v.length && info(v[v.length - 1]);
+      if (r && typeof r.ai === "number") bridge("cut", { w: (fmt.text * r.ai).toFixed(4) }).catch(() => {});
+    });
+  }
   if (SHOW.video) box("video", (r) => r.video, 8, videoCard, "Videos", "videos", "More videos", true, place(CT.boxWorth(fmt, rows.filter((r) => r.video).map((r) => r.ai), "video")));
 
   // Images row: drawn after the first result in this same pass, only if the image search is already in hand
@@ -1732,7 +1782,8 @@ const groups = () => {
   // News answer started at page load is already in hand; otherwise nothing is added and the search is remembered,
   // so the next visit starts the News search early. Fresh stories only, one per outlet, none already shown.
   if (SHOW.news && !G.news) {
-    if (!hot(rows)) return;
+    const ns = bShare("news");
+    if (ns == null && !hot(rows)) return;
     G.news = true;
     const q = new URLSearchParams(location.search).get("q") || "";
     if (!q) return;
@@ -1746,7 +1797,7 @@ const groups = () => {
       const h = u.hostname.replace(/^(www|m)\./, "");
       const rel = /(\d+)\s+(minute|hour|day)s?\s+ago/i.exec(x.snippet || "");
       const w = rel ? when(rel[0]) : x.publishedAt ? { t: Date.parse(`${x.publishedAt}T12:00:00Z`), exact: false } : null;
-      return { h, href: x.url, title: cleanTitle(String(x.title || ""), x.url) || String(x.title || ""), w, thumb: x.thumbnail || "", fav: x.favicon || "" };
+      return { h, href: x.url, title: cleanTitle(String(x.title || ""), x.url) || String(x.title || ""), w, thumb: x.thumbnail || "", fav: x.favicon || "", ai: x.ctRel };
     // Real News answers carry no date at all (recorded steelers/nvidia: 0 of 55 dated), so undated stories count as
     // current (a News search returns current news) and keep degoog's order; one dated older than fresh() is left out
     }).filter((r) => r && r.title && (!r.w || fresh(r.w)) && !onPage.has(r.href.split("#")[0]) && !seen.has(r.h) && seen.add(r.h)).slice(0, 8);
@@ -1758,7 +1809,8 @@ const groups = () => {
     items.forEach((r) => row.append(storyCard(r)));
     s.append(wrap);
     const m = moreBtn("More news", "news"); if (m) s.append(m);
-    t.after(s);
+    const at = place(worthOf(ns, items.map((r) => r.ai)));
+    if (at && at.before) at.before.before(s); else if (at) at.after.after(s); else t.after(s);
     wrap.upd();
   }
 };
@@ -1921,6 +1973,17 @@ const fitLine = (line) => {
   while (line.scrollWidth > line.clientWidth + 1 && hid < its.length - 1) { its[its.length - 1 - hid].hidden = true; hid++; if (more) { more.hidden = false; more.textContent = `+${hid}`; } }
 };
 const fitRO = typeof ResizeObserver === "function" ? new ResizeObserver((es) => es.forEach((e) => e.target.querySelectorAll(".ct-fit").forEach(fitLine))) : null;
+// Where a card goes on the one scale (answer card, info panel): before the first shown result worth less, or null =
+// on top (also without the AI, or before the results are on the page)
+const byWorth = (kind, fit) => {
+  const list = document.getElementById("results-list"), key = searchId(location.href);
+  const needs = ready("needs", key), fmt = CT.fmtShares(needs?.f), share = CT.blockShare(fmt, needs?.b, kind);
+  if (!list || share == null) return null;
+  const v = [...list.querySelectorAll(".result-item")].filter((el) => el.style.display !== "none" && !el.classList.contains("ct-grouped") && !el.dataset.ctKp);
+  if (!v.length) return null;
+  const i = CT.boxAt(fmt, v.map((el) => info(el)?.ai), share * fit, 0);
+  return i === 0 ? null : i >= v.length ? { after: v[v.length - 1] } : { before: v[i] };
+};
 const ansPass = () => {
   const g = document.getElementById("at-a-glance");
   if (!g) return;
@@ -1932,6 +1995,7 @@ const ansPass = () => {
     ansVal = webTab && page <= 1 && SHOW.ans !== false ? CT.answer(q, Date.now(), { fx: FX }) : null;
     aiVal = webTab && page <= 1 && !ansVal && aiWanted(q);
     g.querySelectorAll(".ct-ans, .ct-ai").forEach((x) => x.remove());
+    document.querySelectorAll("#results-list > .ct-ans").forEach((x) => x.remove());
   }
   // Network answers (endoflife.date...): only in the pass that draws the results, and only if already in hand;
   // later than that they're dropped for this page (the server keeps them for the next search)
@@ -1956,10 +2020,13 @@ const ansPass = () => {
   // An answer or snippet found in the results pass takes the AI spot (same pass, before paint: nothing moves)
   if (ansVal && aiVal) { aiVal = false; g.querySelectorAll(".ct-ai").forEach((x) => x.remove()); }
   aiPass(g, key);
-  if (!ansVal || g.querySelector(".ct-ans")) return;
-  g.style.display = "";
+  if (!ansVal || g.querySelector(".ct-ans") || document.querySelector("#results-list > .ct-ans")) return;
   const card = ansCard(ansVal);
-  g.prepend(card);
+  // Its place by worth (M2), when the results are already here (else on top, as before): the answer share x its fit
+  // (the AI's score for a snippet's sentence; an exact answer fits fully). A live score stays on top (its updates find it there).
+  const at = !ansVal.live && byWorth("answer", typeof ansVal.p === "number" ? ansVal.p : 1);
+  if (at) { if (at.before) at.before.before(card); else at.after.after(card); }
+  else { g.style.display = ""; g.prepend(card); }
   card.querySelectorAll(".ct-fit").forEach(fitLine);
   if (fitRO) fitRO.observe(card);
 };
@@ -2197,7 +2264,10 @@ const kpPass = () => {
   if (!m.ok) return;
   if (!late) for (const i of m.wiki) rows[i].dataset.ctKp = "1"; // the panel replaces that result (before paint only)
   const card = kpCard(kp, wide);
-  list.prepend(card);
+  // Phones: its place by worth (M2): the info share x the AI's score for the page it replaces. PC: the side column.
+  const fit = Math.max(...m.wiki.map((i) => info(rows[i])?.ai).filter((x) => typeof x === "number"));
+  const at = !wide && !late && isFinite(fit) && byWorth("info", fit);
+  if (at) { if (at.before) at.before.before(card); else at.after.after(card); } else list.prepend(card);
   if (!wide && aiVal) { aiVal = false; document.querySelectorAll("#at-a-glance > .ct-ai").forEach((x) => x.remove()); const g = document.getElementById("at-a-glance"); if (g) aiPass(g, key); } // the panel is what's on top now
   card.querySelectorAll(".ct-fit").forEach(fitLine);
   if (fitRO) fitRO.observe(card);

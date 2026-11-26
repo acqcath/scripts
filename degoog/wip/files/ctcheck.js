@@ -52,7 +52,13 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
     const fa = na.j && na.j.n && na.j.n.f, fb = nb.j && nb.j.n && nb.j.n.f;
     const note = (f) => (f ? Object.entries(f).map(([k, v]) => `${k} ${Number(v).toFixed(2)}`).join(" ") : "no answer");
     row("Needs call: format judge (video vs pictures vs text)", !fa ? "SKIP" : top(fa) === "video" && top(fb) !== "video", `tie: ${note(fa)} | kalimba: ${note(fb)}`);
-    row("Needs call: time", !fa ? "SKIP" : true, fa ? `GPU ${na.j.n.ms} ms, round trip ${na.ms} ms` : "AI off or not up yet");
+    row("Needs call: time", !fa ? "SKIP" : true, fa ? `GPU ${na.j.n.ms} ms, round trip ${na.ms} ms` : "AI off or not up yet");    // Blocks on one scale (M2): people's experience -> forums over papers; a research question -> papers over forums
+    const nc = await bridge("needs", { q: "is the keychron k2 worth it opinions" }), nd = await bridge("needs", { q: "crispr off-target effects study" });
+    const bc = nc.j && nc.j.n && nc.j.n.b, bd = nd.j && nd.j.n && nd.j.n.b;
+    const bn = (b) => (b ? `forums ${Number(b.forums).toFixed(2)} papers ${Number(b.papers).toFixed(2)} web ${Number(b.web).toFixed(2)}` : "no answer");
+    row("Needs call: block judge (forums vs papers)", !bc || !bd ? "SKIP" : bc.forums > bc.papers && bd.papers > bd.forums, `keychron: ${bn(bc)} | crispr: ${bn(bd)}`);
+    const cu = await bridge("cut", {});
+    row("First-screen cutoff store", !!(cu.j && "cut" in cu.j), cu.j && cu.j.cut != null ? `median ${Number(cu.j.cut).toFixed(3)}` : "no samples yet (blocks fetched until measured)");
   }
   const fl = await bridge("flags", {}, "{}");
   row("Flag Report store (flags + update problem)", !!(fl.j && Array.isArray(fl.j.flags)), fl.j && fl.j.issue ? "an update problem is waiting for Report" : "");
