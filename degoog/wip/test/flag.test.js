@@ -42,6 +42,7 @@ test("flag: ⚑ box saves; no count, no send link", async () => {
   flag.click();
   const box = document.getElementById("ct-flagbox");
   expect(box.querySelectorAll(".ct-flag-cat").length).toBe(C.FLAG_CATS.length);
+  expect(box.querySelector(".ct-flag-ver").textContent).toMatch(/^clean-titles v\d+/);
   box.querySelector('[data-cat="order"]').click();
   box.querySelector("textarea").value = "nike.com should be first";
   box.dispatchEvent(new win.Event("submit", { cancelable: true }));
@@ -76,7 +77,7 @@ test("⚑ categories and context: server and page agree, junk dropped", () => {
   expect(sCats(["order", "x", "order", "spam"])).toEqual(["order", "spam"]);
   expect(C.flagCats(null)).toEqual([]);
   const raw = { vw: 390.4, vh: 844, dpr: 3, phone: 1, load: { page: 812.6, results: "1500", bad: "x" }, boxes: [{ box: "results-list > result-item", n: 10 }, { box: "" }] };
-  const want = { vw: 390, vh: 844, dpr: 3, phone: true, load: { page: 813, results: 1500 }, boxes: [{ box: "results-list > result-item", n: 10 }] };
+  const want = { ver: "", vw: 390, vh: 844, dpr: 3, phone: true, load: { page: 813, results: 1500 }, boxes: [{ box: "results-list > result-item", n: 10 }] };
   expect(C.flagCtxClean(raw)).toEqual(want);
   expect(sCtx(raw)).toEqual(want);
   const s = C.flagPrompt([{ t: 0, q: "a", type: "web", cats: ["order"], note: "", ctx: want, top: [] }], "");
