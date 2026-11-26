@@ -594,3 +594,19 @@ test("M2: first-screen cutoff store keeps a running median", async () => {
   srv2._cutReset();
   expect(srv2.cutNow()).toBeCloseTo(0.25); // read back from cut.json
 });
+
+test("M4: shaped answers and the contested check are parsed strictly", async () => {
+  const S = await import("../files/index.js");
+  expect(S.shapeParse("steps", 'ok {"steps": ["Cross the wide end", "Loop it", "Pull tight"], "src": [1, 9]}', 3)).toEqual({ k: "steps", steps: ["Cross the wide end", "Loop it", "Pull tight"], src: [0] });
+  expect(S.shapeParse("steps", "{}", 3)).toBe(null);
+  expect(S.shapeParse("compare", '{"cols": ["A", "B"], "rows": [["Price", "$1", "$2"], ["Size", "S", "L"], ["bad", "x"]]}', 3).rows.length).toBe(2);
+  expect(S.shapeParse("chart", '{"unit": "%", "bars": [["a", 10], ["b", "x"], ["c", 5]]}', 3).bars).toEqual([["a", 10], ["c", 5]]);
+  expect(S.shapeParse("timeline", '{"events": [["1933", "Construction starts"], ["1937", "Opens"]]}', 3).events.length).toBe(2);
+  expect(S.shapeParse("nope", '{"steps": ["a", "b"]}', 3)).toBe(null);
+  expect(S.sidesParse('{"split": true, "a": {"claim": "Yes", "src": [1]}, "b": {"claim": "No", "src": [2]}}', 3)).toEqual({ split: true, a: { claim: "Yes", src: [0] }, b: { claim: "No", src: [1] } });
+  expect(S.sidesParse('{"split": true, "a": {"claim": "Yes", "src": [1]}, "b": {"claim": "No", "src": [1]}}', 3)).toEqual({ split: false }); // same source both sides
+  expect(S.sidesParse('{"split": false}', 3)).toEqual({ split: false });
+  expect(S.sidesParse("no json", 3)).toBe(null);
+  const n = S.needsParse(Array.from({ length: Object.values(S.NEEDS).reduce((a, [, o]) => a + Object.keys(o).length, 0) }, () => 0.5));
+  expect(Object.values(n.s).reduce((a, b) => a + b, 0)).toBeCloseTo(1);
+});

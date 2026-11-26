@@ -1841,7 +1841,7 @@ const aiWanted = (q) => {
 // the placeholder lines once it streams. It never grows by itself: ⌄ opens it (your tap). No panel within degoog's
 // slot limit (SLOT_PLUGIN_TIMEOUT_MS 10 s, + 2 s for the trip) after the results, or a failed answer
 // -> "AI summary unavailable" in the same space.
-const AIS = { key: "", got: false, fail: false, open: false, t: 0 };
+const AIS = { key: "", got: false, fail: false, open: false, t: 0, shape: undefined, asked: false };
 const aiBox = () => {
   const box = mk("div", "ct-ai");
   const label = mk("div", "ct-ai-label");
@@ -1856,30 +1856,113 @@ const aiBox = () => {
   return box;
 };
 const aiPass = (g, key) => {
-  if (AIS.key !== key) { clearTimeout(AIS.t); Object.assign(AIS, { key, got: false, fail: false, open: false, t: 0 }); }
+  if (AIS.key !== key) { clearTimeout(AIS.t); Object.assign(AIS, { key, got: false, fail: false, open: false, t: 0, shape: undefined, asked: false }); }
+  // Answer shape (M4): decided by the needs call while ai-summary's panel hasn't come yet; the shaped answer fills
+  // this same spot (same size, so nothing moves) and ai-summary's panel stays hidden. Text from ai-summary's model.
+  if (aiVal && AIS.shape === undefined) { const nd = ready("needs", key); if (AIS.got || nd === null) AIS.shape = ""; else if (nd) AIS.shape = CT.shapePick(nd); }
   let n = 0;
   for (const p of g.querySelectorAll(".glance-ai")) {
     const w = [...g.children].find((c) => c.contains(p)) || p;
-    // Not an AI search (or a second panel): never drawn
-    if (!aiVal || n++) { w.style.display = "none"; w.classList.remove("ct-ai-panel"); continue; }
+    // Not an AI search (or a second panel, or a shaped answer has the spot): never drawn
+    if (!aiVal || AIS.shape || n++) { w.style.display = "none"; w.dataset.ctHid = "1"; w.classList.remove("ct-ai-panel"); continue; }
+    if (w.dataset.ctHid) { delete w.dataset.ctHid; w.style.display = ""; } // shown again after a shaped answer fell through
     w.classList.add("ct-ai-panel");
     AIS.got = true;
     if (p.querySelector('.glance-ai-stream[data-state="error"]')) AIS.fail = true;
   }
   if (!aiVal) return;
-  if (AIS.got && !n) AIS.fail = true; // ai-summary took its panel away ("hide on error")
+  if (!AIS.shape && AIS.got && !n) AIS.fail = true; // ai-summary took its panel away ("hide on error")
+  if (AIS.shape && !AIS.asked && document.querySelector("#results-list .result-item")) shapeAsk(g, key);
   if (!AIS.got && !AIS.t && drawnFor === key) AIS.t = setTimeout(() => { if (!AIS.got && AIS.key === key) { AIS.fail = true; const b = document.querySelector("#at-a-glance > .ct-ai"); if (b) b.classList.add("ct-ai-fail"); } }, 12000);
   let box = [...g.children].find((c) => c.classList.contains("ct-ai"));
   if (!box) { g.style.display = ""; box = aiBox(); g.prepend(box); }
   box.classList.toggle("ct-ai-fail", AIS.fail);
   box.classList.toggle("ct-ai-open", AIS.open && !AIS.fail);
-  g.classList.toggle("ct-ai-opened", AIS.open && !AIS.fail);
+  box.classList.toggle("ct-shape", !!AIS.shape);
+  g.classList.toggle("ct-ai-opened", AIS.open && !AIS.fail && !AIS.shape);
 };
+// The top results as the model sees them (title, snippet, address)
+const topRes = (n) => [...document.querySelectorAll("#results-list .result-item")].filter((el) => el.style.display !== "none" && !el.classList.contains("ct-grouped")).slice(0, n).map(info).filter(Boolean)
+  .map((r) => ({ t: r.title, s: r.snippet, u: r.href, h: r.h }));
+const SHAPE_NAME = { steps: "Steps", compare: "Comparison", timeline: "Timeline", chart: "Chart" };
+const shapeAsk = (g, key) => {
+  AIS.asked = true;
+  AIS.got = true; // the spot is ours now: ai-summary's timeout doesn't apply
+  const q = curQ(), rs = topRes(6), k = AIS.shape;
+  const back = () => { if (AIS.key !== key) return; AIS.shape = ""; AIS.got = false; clearTimeout(AIS.t); AIS.t = 0; aiPass(g, key); }; // no shaped answer: ai-summary's own text shows in the spot
+  bridge("shape", {}, JSON.stringify({ q, k, r: rs })).then((j) => {
+    if (AIS.key !== key) return;
+    const a = j && j.a, box = g.querySelector(":scope > .ct-ai");
+    if (!a || !box) return back();
+    box.querySelector(".ct-ai-label").replaceChildren(mk("span", "ct-ai-star", "✦"), ` AI summary · ${SHAPE_NAME[a.k] || ""}`);
+    box.querySelector(".ct-ai-text").append(shapeBody(a, rs));
+    box.classList.add("ct-shaped");
+  }, back);
+};
+const shapeBody = (a, rs) => {
+  const body = mk("div", "ct-sh");
+  if (a.k === "steps") { const ol = mk("ol", "ct-sh-steps"); a.steps.forEach((x) => ol.append(mk("li", "", x))); body.append(ol); }
+  else if (a.k === "timeline") { const ol = mk("ol", "ct-sh-time"); a.events.forEach(([d, e]) => { const li = mk("li"); li.append(mk("span", "ct-sh-d", d), mk("span", "", e)); ol.append(li); }); body.append(ol); }
+  else if (a.k === "compare") {
+    const t = mk("table", "ct-sh-table"), hd = mk("tr");
+    hd.append(mk("th"), ...a.cols.map((c) => mk("th", "", c)));
+    t.append(hd);
+    a.rows.forEach((r) => { const tr = mk("tr"); tr.append(mk("th", "", r[0]), ...r.slice(1).map((c) => mk("td", "", c))); t.append(tr); });
+    body.append(t);
+  } else if (a.k === "chart") {
+    const max = Math.max(...a.bars.map((b) => b[1])) || 1, box = mk("div", "ct-sh-bars");
+    a.bars.forEach(([l, v]) => { const row = mk("div", "ct-sh-bar"), tr = mk("span", "ct-sh-tr"), fill = mk("span", "ct-sh-fill"); fill.style.width = `${(100 * v) / max}%`; tr.append(fill); row.append(mk("span", "ct-sh-l", l), tr, mk("span", "ct-sh-v", `${v.toLocaleString()}${a.unit ? ` ${a.unit}` : ""}`)); box.append(row); });
+    body.append(box);
+  }
+  const src = (a.src || []).map((i) => rs[i]).filter(Boolean);
+  if (src.length) { const p = mk("div", "ct-sh-src"); p.append("From "); src.forEach((r, i) => { if (i) p.append(" · "); const l = mk("a", "", r.h); l.href = r.u; l.rel = "noopener"; p.append(l); }); body.append(p); }
+  return body;
+};
+
+// ===== Contested check (M4): question-style searches only (needs call). ai-summary's model reads the top results;
+// only when credible ones actually disagree, a both-sides panel goes in below the fold (never above what you see),
+// waiting for a result below the screen if none is there yet. =====
+const SD = { key: "", asked: false, d: null, done: false };
+const sidesPass = () => {
+  const key = searchId(location.href), list = document.getElementById("results-list");
+  if (SD.key !== key) { Object.assign(SD, { key, asked: false, d: null, done: false }); document.querySelectorAll(".ct-sides").forEach((x) => x.remove()); }
+  if (!webTab || SD.done || !list || shaped()) return;
+  if (!SD.asked) {
+    const nd = ready("needs", key);
+    if (nd === undefined || !list.querySelector(".result-item")) return;
+    SD.asked = true;
+    let pg = 1; try { pg = Number(new URL(key).searchParams.get("page") || 1); } catch {}
+    if (!nd || pg > 1 || !CT.questionStyle(nd)) { SD.done = true; return; }
+    const rs = topRes(8);
+    SD.rs = rs;
+    bridge("sides", {}, JSON.stringify({ q: curQ(), r: rs })).then((j) => { if (SD.key !== key) return; SD.d = j && j.d; if (!SD.d || !SD.d.split) SD.done = true; else safe("sides", sidesPass); }, () => { SD.done = true; });
+    return;
+  }
+  if (!SD.d) return;
+  const v = [...list.querySelectorAll(".result-item")].filter((el) => el.style.display !== "none" && !el.classList.contains("ct-grouped"));
+  const below = v.find((el) => el.getBoundingClientRect().top >= innerHeight);
+  if (!below) return; // wait for endless scroll to put a result below the screen
+  SD.done = true;
+  const s = section("ct-sides", "Sources disagree");
+  const cols = mk("div", "ct-sides-cols");
+  for (const side of [SD.d.a, SD.d.b]) {
+    const c = mk("div", "ct-sides-c");
+    c.append(mk("div", "ct-sides-claim", side.claim));
+    const p = mk("div", "ct-sh-src");
+    side.src.map((i) => SD.rs[i]).filter(Boolean).forEach((r, i) => { if (i) p.append(" · "); const l = mk("a", "", r.h); l.href = r.u; l.rel = "noopener"; p.append(l); });
+    c.append(p);
+    cols.append(c);
+  }
+  s.append(cols);
+  below.before(s);
+};
+addEventListener("scroll", () => { if (SD.d && !SD.done) safe("sides", sidesPass); }, { passive: true });
 document.addEventListener("click", (e) => {
   const b = e.target.closest && e.target.closest(".ct-ai-more");
   if (!b || AIS.fail) return;
   const g = document.getElementById("at-a-glance");
   AIS.open = true;
+  if (AIS.shape) { if (g) aiPass(g, AIS.key); return; } // a shaped answer just opens in place
   if (g) { aiPass(g, AIS.key); g.querySelector(".ct-ai-panel .glance-ai-expand")?.click(); } // ai-summary's own "read more": unclamps, opens its follow-up chat
 });
 const ansCard = (a) => {
@@ -2335,7 +2418,7 @@ const init = () => {
   safe("scan", () => scan(document.body));
   safe("skeleton", () => skel(document.body));
   safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("flag", flagBtn); safe("tabkeep", tabKeep);
-  safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass);
+  safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass); safe("sides", sidesPass);
   safe("drawn", markDrawn);
   // Runs right after degoog inserts results and before the screen updates; only looks inside what was added
   new MutationObserver((muts) => {
@@ -2347,7 +2430,7 @@ const init = () => {
     safe("rel", relPass);
     for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { safe("scan", () => scan(n)); safe("skeleton", () => skel(n)); safe("usage", () => noUsage(n)); }
     safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("flag", flagBtn); safe("tabkeep", tabKeep); safe("card", glance);
-    safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass); safe("preview", previewPass);
+    safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass); safe("preview", previewPass); safe("sides", sidesPass);
     safe("drawn", markDrawn);
     safe("ai", () => { const g = document.getElementById("at-a-glance"); if (g) aiPass(g, searchId(location.href)); });
   }).observe(document.body, { childList: true, subtree: true });

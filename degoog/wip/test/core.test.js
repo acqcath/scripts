@@ -348,3 +348,12 @@ test("M3: copies fold into similar pages; variety tie-break is off until measure
   expect(C.varietyOrder(r, 0.001)).toEqual(r);
   expect(C.VARIETY_MARGIN).toBe(null);
 });
+
+test("M4: shape pick and question-style from the needs call", () => {
+  expect(C.shapePick({ s: { steps: 0.4, compare: 0.15, timeline: 0.15, chart: 0.1, plain: 0.2 } })).toBe("steps");
+  expect(C.shapePick({ s: { steps: 0.19, compare: 0.2, timeline: 0.2, chart: 0.2, plain: 0.21 } })).toBe("");
+  expect(C.shapePick({ s: { steps: 0.1, compare: 0.1, timeline: 0.1, chart: 0.1, plain: 0.6 } })).toBe("");
+  expect(C.shapePick(null)).toBe("");
+  expect(C.questionStyle({ n: { question: 0.7, doing: 0.2, knowing: 0.6 } })).toBe(true);
+  expect(C.questionStyle({ n: { question: 0.3, doing: 0.8, knowing: 0.6 } })).toBe(false);
+});
