@@ -1,5 +1,5 @@
-// clean-titles v63
-const CT_VER = "v63";
+// clean-titles v64
+const CT_VER = "v64";
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -187,7 +187,7 @@ const capSites = (items, q, psl, cap = 2) => {
 // ===== One page of results, planned before paint =====
 // The page script applies the plan; it keeps no logic of its own. ctx lives for one search (endless scroll pages
 // reuse it): listCtx(q, psl, prefs) with prefs = {site: "prefer" | "lower" | "hide"} (missing = normal).
-const listCtx = (q, psl, prefs = {}) => ({ add: deduper(psl), named: namedSites(q, psl), count: new Map(), prefs, cap: 2, docs: docsFor(q), docsDone: false, nav: navName(q), navDone: false });
+const listCtx = (q, psl, prefs = {}) => ({ add: deduper(psl), copies: [], named: namedSites(q, psl), count: new Map(), prefs, cap: 2, docs: docsFor(q), docsDone: false, nav: navName(q), navDone: false });
 // ===== Site searches ("asura scans", "asurascaxs") =====
 // A search of 1-3 words whose letters, joined, are a site's name (its domain's first label), allowing 1-2 typos
 // for longer names. The site with that name that has the most results on the page is the one meant: its top result
@@ -282,6 +282,16 @@ const planPage = (items, ctx) => {
   }
   const shown = [], folds = new Map();
   for (const r of kept) {
+    // Copies (M3): same title and snippet after normalizing (one contains the other), any site: folded under the
+    // first one shown as "+N similar pages"; a copy of a result on an earlier page just goes (it's already above)
+    const ck = copyKey(r), orig = ck && (ctx.copies || []).find((x) => sameCopy(x.ck, ck));
+    if (orig) {
+      ctx.copies.push({ ck, r: orig.r }); // a copy of a copy is the same page too
+      if (shown.includes(orig.r)) { const k = `~sim:${orig.r.key}`; if (!folds.has(k)) folds.set(k, { after: orig.r, items: [], sim: true }); folds.get(k).items.push(r); }
+      else dups.push(r);
+      continue;
+    }
+    if (ck && ctx.copies) ctx.copies.push({ ck, r });
     if (navSite && alike.has(r.site)) {
       const head = shown.find((x) => x.site === navSite);
       if (head) { if (!folds.has("~alike")) folds.set("~alike", { after: head, items: [], label: "look-alike sites" }); folds.get("~alike").items.push(r); continue; }
@@ -297,6 +307,32 @@ const planPage = (items, ctx) => {
   }
   return { shown, dups, hidden, capped, folds };
 };
+
+// Copy test (M3): title (titleKey) and snippet as plain lowercase words, a trailing "..." dropped; two results are
+// copies when each part of one contains the same part of the other. Parts shorter than the same-title rule's 12
+// characters can't tell pages apart, so they never match.
+const plainWords = (t) => String(t || "").replace(/(?:\.\.\.|…)\s*$/, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+const copyKey = (r) => { const t = titleKey(r && r.title), n = plainWords(r && r.snippet); return t.length >= 12 && n.length >= 12 ? { t, n } : null; };
+const within = (a, b) => (a.length <= b.length ? b.includes(a) : a.includes(b));
+const sameCopy = (a, b) => !!a && !!b && within(a.t, b.t) && within(a.n, b.n);
+// Variety tie-break (M3, off until ⚑ "wrong order" reports measure the margin): among results whose AI scores are
+// within margin of the best one left, the one least like those already placed (word overlap of title + snippet)
+// goes next. margin null = off: the order is returned as is. No quotas, no novelty bonus.
+const bag = (r) => new Set(plainWords(`${(r && r.title) || ""} ${(r && r.snippet) || ""}`).split(" ").filter(Boolean));
+const jaccard = (a, b) => { let n = 0; for (const w of a) if (b.has(w)) n++; const u = a.size + b.size - n; return u ? n / u : 0; };
+const varietyOrder = (items, margin = null) => {
+  if (margin == null || !(margin > 0) || items.some((r) => typeof r.ai !== "number")) return items.slice();
+  const left = items.map((r) => ({ r, b: bag(r) })), out = [];
+  while (left.length) {
+    const best = Math.max(...left.map((x) => x.r.ai));
+    const near = left.filter((x) => best - x.r.ai <= margin);
+    const like = (x) => (out.length ? Math.max(...out.map((o) => jaccard(x.b, o.b))) : 0);
+    const pick = near.reduce((a, x) => (like(x) < like(a) ? x : a));
+    out.push(pick); left.splice(left.indexOf(pick), 1);
+  }
+  return out.map((x) => x.r);
+};
+const VARIETY_MARGIN = null;
 
 // ===== Sites: Prefer / Normal / Lower / Hide, stored in degoog's own lists =====
 // Hide = a line in domainBlockList; Prefer / Lower = "domain|N" in domainScoreList (N added to each result's score
@@ -1428,7 +1464,7 @@ const qaAbout = (question, text) => {
   return n >= (ws.length >= 3 ? 2 : 1);
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, navName, navDist, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, relCore, related, topicOf, tidyTitle, FLAG_CATS, flagCats, flagCtxClean, flagPrompt, fmtShares, boxWorth, boxAt, cutMedian, blockGo, blockShare, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippetAI, featuredSnippet, QA_LEAD, qaAbout };
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, navName, navDist, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, copyKey, sameCopy, jaccard, varietyOrder, VARIETY_MARGIN, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, relCore, related, topicOf, tidyTitle, FLAG_CATS, flagCats, flagCtxClean, flagPrompt, fmtShares, boxWorth, boxAt, cutMedian, blockGo, blockShare, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippetAI, featuredSnippet, QA_LEAD, qaAbout };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -1760,7 +1796,7 @@ const listPass = () => {
   for (const el of fresh) {
     if (junk(el)) continue;
     const a = el.querySelector("a.result-title");
-    if (a) items.push({ el, url: el.dataset.resultUrl || a.href, title: a.textContent || "" });
+    if (a) items.push({ el, url: el.dataset.resultUrl || a.href, title: a.textContent || "", snippet: (() => { const sn = el.querySelector(".result-snippet"), d = sn && sn.querySelector(".result-date"); return sn ? (sn.textContent || "").replace(d ? d.textContent : "", "").replace(/^\s*·\s*/, "") : ""; })() });
   }
   // Anti-SEO: the first page's results (as degoog ranked them) go to the server, which adds the signs up per site.
   // Worked out after this pass, so it never holds up drawing.
@@ -1775,7 +1811,7 @@ const listPass = () => {
   p.dups.forEach((r) => hide(r, "ctDup"));
   p.hidden.forEach((r) => hide(r, "ctHide"));
   p.capped.forEach((r) => hide(r, "ctCap")); // still usable as sitelinks, like v49
-  for (const f of p.folds.values()) f.items.forEach((r) => hide(r, "ctCap"));
+  for (const f of p.folds.values()) f.items.forEach((r) => hide(r, f.sim ? "ctSim" : "ctCap")); // copies never become sitelinks
   // Prefer / Lower changed the order: put this page's shown results in the planned order (hidden ones stay put)
   const dom = items.map((x) => x.el).filter((el) => el.style.display !== "none");
   if (p.shown.some((r, i) => r.el !== dom[i])) {
@@ -1790,7 +1826,7 @@ const listPass = () => {
     r.alts.forEach((x, i) => { if (i) box.append(" · "); const l = mk("a", "", x.label); l.href = x.url; box.append(l); });
     (r.el.querySelector(".result-snippet") || r.el.querySelector("a.result-title"))?.after(box);
   }
-  for (const [site, f] of p.folds) { LP.pend.push({ site, label: f.label, after: f.after.el, els: f.items.map((r) => r.el) }); }
+  for (const [site, f] of p.folds) { LP.pend.push({ site, label: f.label, sim: f.sim, after: f.after.el, els: f.items.map((r) => r.el) }); }
 };
 // Folds go in after the boxes (sitelinks, Discussions) took what they use, in the same pass, so counts are final
 const foldPass = () => {
@@ -1801,7 +1837,7 @@ const foldPass = () => {
     const els = f.els.filter((el) => el.isConnected && !el.classList.contains("ct-grouped"));
     if (!els.length || !f.after.isConnected || f.after.classList.contains("ct-grouped") || f.after.dataset.ctUnrel) continue;
     const row = mk("div", "ct-fold");
-    const b = mk("button", "ct-fold-b", f.label ? `${els.length} more from ${f.label}` : `${els.length} more from ${f.site}`);
+    const b = mk("button", "ct-fold-b", f.sim ? `+${els.length} similar page${els.length > 1 ? "s" : ""}` : f.label ? `${els.length} more from ${f.label}` : `${els.length} more from ${f.site}`);
     b.type = "button";
     b.setAttribute("aria-expanded", "false");
     b.append(mk("span", "ct-chev", "⌄"));
@@ -1810,7 +1846,7 @@ const foldPass = () => {
     row.after(...els);
     // Tap: the folded results open in place, where the line was
     b.addEventListener("click", () => {
-      for (const el of els) { el.style.display = ""; delete el.dataset.ctCap; fadeIn(el); }
+      for (const el of els) { el.style.display = ""; delete el.dataset.ctCap; delete el.dataset.ctSim; fadeIn(el); }
       row.remove();
     }, { once: true });
   }

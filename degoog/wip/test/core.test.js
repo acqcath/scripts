@@ -94,7 +94,7 @@ const rec = (q) => REC.searches.find((x) => x.q === q && (!x.type || x.type === 
   // Locale copy, m. copy, and a same-title re-upload of the same video on one site
   expect(p.dups.map((x) => x.url).sort()).toEqual(["https://m.youtube.com/watch?v=D0LZz3Zxk00", "https://support.apple.com/en-gb/118531", "https://www.youtube.com/watch?v=8lnlUrHBqOE"]);
   expect(p.shown.length + p.dups.length + p.hidden.length + p.capped.length + [...p.folds.values()].reduce((n, f) => n + f.items.length, 0)).toBe(items.length);
-  for (const [site, f] of p.folds) { expect(p.shown.filter((r) => r.site === site).length).toBe(2); expect(f.after.site).toBe(site); }
+  for (const [site, f] of p.folds) if (!site.startsWith("~")) { expect(p.shown.filter((r) => r.site === site).length).toBe(2); expect(f.after.site).toBe(site); }
   expect(p.folds.get("youtube.com").items.length).toBe(3);
 });
 (HAS_RECS ? test : test.skip)("page plan: the search naming a site lifts its cap (mdn, npm, pip, site:)", () => {
@@ -326,4 +326,25 @@ test("M2: block share against plain web pages", () => {
   expect(C.blockShare(f, { forums: 0.8, web: 0.4 }, "forums")).toBeCloseTo(1.2);
   expect(C.blockShare(f, { forums: 0.8, web: 0 }, "forums")).toBe(null);
   expect(C.blockShare(null, { forums: 0.8, web: 0.4 }, "forums")).toBe(null);
+});
+
+test("M3: copies fold into similar pages; variety tie-break is off until measured", () => {
+  const S = "How to reset your AirPods: put them in the case, close the lid, wait 30 seconds";
+  const items = [
+    { url: "https://a.example.com/reset", title: "How to reset AirPods - Guide", snippet: S },
+    { url: "https://b.example.net/airpods", title: "How to reset AirPods", snippet: S + "..." },
+    { url: "https://c.example.org/x", title: "How to reset AirPods - Copy Site", snippet: S.slice(0, 50) + " ..." },
+    { url: "https://d.example.org/y", title: "AirPods not connecting? Fixes", snippet: "Different page about connection problems and fixes" },
+  ];
+  const p = C.planPage(items, C.listCtx("how to reset airpods", null));
+  expect(p.shown.map((r) => r.url)).toEqual(["https://a.example.com/reset", "https://d.example.org/y"]);
+  const f = p.folds.get(`~sim:${p.shown[0].key}`);
+  expect(f.sim).toBe(true);
+  expect(f.items.length).toBe(2);
+  expect(C.sameCopy(C.copyKey({ title: "Home", snippet: S }), C.copyKey({ title: "Home", snippet: S }))).toBe(false); // too short to tell apart
+  const r = [{ title: "a b c", snippet: "x y z w", ai: 0.9 }, { title: "a b c", snippet: "x y z v", ai: 0.88 }, { title: "q r s", snippet: "t u v w", ai: 0.87 }];
+  expect(C.varietyOrder(r)).toEqual(r); // off
+  expect(C.varietyOrder(r, 0.05).map((x) => x.title)).toEqual(["a b c", "q r s", "a b c"]);
+  expect(C.varietyOrder(r, 0.001)).toEqual(r);
+  expect(C.VARIETY_MARGIN).toBe(null);
 });

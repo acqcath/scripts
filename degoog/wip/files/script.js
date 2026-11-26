@@ -328,7 +328,7 @@ const listPass = () => {
   for (const el of fresh) {
     if (junk(el)) continue;
     const a = el.querySelector("a.result-title");
-    if (a) items.push({ el, url: el.dataset.resultUrl || a.href, title: a.textContent || "" });
+    if (a) items.push({ el, url: el.dataset.resultUrl || a.href, title: a.textContent || "", snippet: (() => { const sn = el.querySelector(".result-snippet"), d = sn && sn.querySelector(".result-date"); return sn ? (sn.textContent || "").replace(d ? d.textContent : "", "").replace(/^\s*·\s*/, "") : ""; })() });
   }
   // Anti-SEO: the first page's results (as degoog ranked them) go to the server, which adds the signs up per site.
   // Worked out after this pass, so it never holds up drawing.
@@ -343,7 +343,7 @@ const listPass = () => {
   p.dups.forEach((r) => hide(r, "ctDup"));
   p.hidden.forEach((r) => hide(r, "ctHide"));
   p.capped.forEach((r) => hide(r, "ctCap")); // still usable as sitelinks, like v49
-  for (const f of p.folds.values()) f.items.forEach((r) => hide(r, "ctCap"));
+  for (const f of p.folds.values()) f.items.forEach((r) => hide(r, f.sim ? "ctSim" : "ctCap")); // copies never become sitelinks
   // Prefer / Lower changed the order: put this page's shown results in the planned order (hidden ones stay put)
   const dom = items.map((x) => x.el).filter((el) => el.style.display !== "none");
   if (p.shown.some((r, i) => r.el !== dom[i])) {
@@ -358,7 +358,7 @@ const listPass = () => {
     r.alts.forEach((x, i) => { if (i) box.append(" · "); const l = mk("a", "", x.label); l.href = x.url; box.append(l); });
     (r.el.querySelector(".result-snippet") || r.el.querySelector("a.result-title"))?.after(box);
   }
-  for (const [site, f] of p.folds) { LP.pend.push({ site, label: f.label, after: f.after.el, els: f.items.map((r) => r.el) }); }
+  for (const [site, f] of p.folds) { LP.pend.push({ site, label: f.label, sim: f.sim, after: f.after.el, els: f.items.map((r) => r.el) }); }
 };
 // Folds go in after the boxes (sitelinks, Discussions) took what they use, in the same pass, so counts are final
 const foldPass = () => {
@@ -369,7 +369,7 @@ const foldPass = () => {
     const els = f.els.filter((el) => el.isConnected && !el.classList.contains("ct-grouped"));
     if (!els.length || !f.after.isConnected || f.after.classList.contains("ct-grouped") || f.after.dataset.ctUnrel) continue;
     const row = mk("div", "ct-fold");
-    const b = mk("button", "ct-fold-b", f.label ? `${els.length} more from ${f.label}` : `${els.length} more from ${f.site}`);
+    const b = mk("button", "ct-fold-b", f.sim ? `+${els.length} similar page${els.length > 1 ? "s" : ""}` : f.label ? `${els.length} more from ${f.label}` : `${els.length} more from ${f.site}`);
     b.type = "button";
     b.setAttribute("aria-expanded", "false");
     b.append(mk("span", "ct-chev", "⌄"));
@@ -378,7 +378,7 @@ const foldPass = () => {
     row.after(...els);
     // Tap: the folded results open in place, where the line was
     b.addEventListener("click", () => {
-      for (const el of els) { el.style.display = ""; delete el.dataset.ctCap; fadeIn(el); }
+      for (const el of els) { el.style.display = ""; delete el.dataset.ctCap; delete el.dataset.ctSim; fadeIn(el); }
       row.remove();
     }, { once: true });
   }

@@ -35,9 +35,12 @@ blocks, videos and results share one scale. Cutoff: page sends the worth of the 
 server keeps 200 in cut.json, `/needs` returns the median as `cut`; no samples = fetch. Papers = degoog type
 science. Answer card / phone info panel: core boxAt from 0 via script.js byWorth (live sports and early exact
 answers stay on top). Self-check rows: "Needs call: block judge", "First-screen cutoff store".
-### M3: copies + variety
+### M3 = v64: copies + variety [done]
 Copies fold into "+N similar pages" when title and snippet match after normalizing (one contains the other).
 Variety tie-break by content similarity, built but off until ⚑ "wrong order" reports give the margin.
+Built: core copyKey/sameCopy in planPage (any site, transitive, ctx.copies across endless-scroll pages; fold key
+`~sim:<doc key>`, page flag ctSim). core varietyOrder(items, margin) + VARIETY_MARGIN = null (off): to turn on, set
+it from the ⚑ "order" flags' ai tie margins and call it on the shown items in listPass.
 ### M4: answer card shape + contested check
 Shape (steps / X-vs-Y table / timeline / chart picture) from the needs call; text from ai-summary's model.
 Contested check: ai-summary's model, question-style searches only (from the needs call); the both-sides panel is
