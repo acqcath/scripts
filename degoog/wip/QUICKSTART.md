@@ -40,3 +40,5 @@ only those lines (`sed -n A,Bp files/x.js`).
 - Fastest clone (~1 s, 3 MB, only degoog/): `git clone --depth 1 --filter=blob:none --sparse https://github.com/acqcath/scripts && git -C scripts sparse-checkout set degoog`. A full `git clone --depth 1` needs a ~10 min timeout. degoog's source: `GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 https://github.com/degoog-org/degoog` (client: src/client; tabs modules/tabs/tabs.ts; search utils/search/actions/search-actions-perform.tsx).
 - The shell can't reach crossref/wikimedia/espn (403 CONNECT); WebFetch can reach some. No pwsh, no degoog container: live checks = the installer's self-check on the user's server.
 - Never read installer.ps1 or HANDOFF.md whole (540 KB / 72 KB): grep, or read the sources in files/.
+- A clone with `-b <branch>` is single-branch: fetch main as `git fetch --depth=10 origin main:refs/remotes/origin/main`; cherry-picking WIP onto main needs depth past the shared parent (else every file conflicts as "both added").
+- Name a release from main's newest version (`git log -3 origin/main`), not from the plan: a side PR can take the next number.
