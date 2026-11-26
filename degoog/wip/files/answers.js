@@ -683,56 +683,21 @@ const VISUAL = /\b(?:pictures?|photos?|photographs?|images?|pics?|wallpapers?|lo
 const NOT_VISUAL = /\b(?:processing|python|javascript|java|css|html|api|upload|resize|crop|compress|convert|converter|format|size|editor|edit|search|generator|ai|dataset|recognition|classification|docker|file|files|link|url|tag|src|alt text|background remover|remove background|to pdf|to text|ocr)\b/i;
 export const visualQ = (q) => { const s = String(q || "").trim(); return !!s && !s.startsWith("!") && s.length <= 100 && VISUAL.test(s) && !NOT_VISUAL.test(s); };
 
-// ----- Which medium helps this search most (user, 2026-11-26): priority, not hiding. Video when something has to be
-// SHOWN moving (a hands-on procedure, a technique, a performance, how a product feels in a review); pictures when the
-// answer is how something LOOKS (a chart, notation, a diagram, a layout, a part, a style); text otherwise. Both boxes
-// stay on the page: the stronger one sits under the first result, the other lower down. Three signals, added up:
-// the words of the search, what the results themselves are, and what this user clicks (learned per word, `learn`).
-const MV = [
-  [/\bhow (?:to|do (?:i|you|we)|does one|can i)\b/i, 1.2],
-  [/\b(?:tutorials?|walk ?through|step by step|diy|install(?:ing|ation)?|set(?:ting)? ?up|repair(?:ing)?|fix(?:ing)?|replac(?:e|ing)|assembl(?:e|y|ing)|disassembl\w*|take apart|tie|fold|knit(?:ting)?|crochet|sew(?:ing)?|solder(?:ing)?|wir(?:e|ing)|clean(?:ing)?|sharpen(?:ing)?|massage)\b/i, 1.4],
-  [/\b(?:workouts?|exercises?|stretch(?:es|ing)?|technique|drills?|form check|choreography|dance|swing|serve|tricks?|strum(?:ming)?|fingerpicking|play(?:ing)? (?:the )?\w+ (?:song|cover))\b/i, 1.6],
-  [/\b(?:reviews?|unboxing|hands[- ]on|first impressions?|sound test|demo|in action)\b/i, 1.6],
-  [/\b(?:videos?|youtube|trailers?|clips?|highlights|music video|live performance|watch)\b/i, 3],
-];
-const MI = [
-  [/\b(?:pictures?|photos?|images?|pics?|wallpapers?|logos?|what does .+ look like|look like|looks like)\b/i, 3],
-  [/\b(?:charts?|diagrams?|notation|numbers|tabs?|tablature|sheet music|chords?|fingering|scales?|layouts?|maps?|floor ?plans?|schematics?|pinouts?|symbols?|signs?|icons?|labels?|parts?|anatomy|sizes? chart|color(?:s|ways)?|colou?rs?|patterns?|styles?|designs?|outfits?|aesthetic|ideas|inspo|tattoos?|hairstyles?|identify|what (?:kind|type) of|species|breeds?)\b/i, 1.4],
-];
-// code/software tasks: text answers, neither box moves up
-const NOT_VIDEO = /\b(?:error|exception|python|javascript|typescript|java|c\+\+|sql|regex|api|code|npm|pip|git|github|bash|powershell|cmd|terminal|excel formula|docker|css|html|json|yaml|bug|stack ?trace)\b/i;
-const MT = /\b(?:what is|what are|why|meaning|define|definition|difference|vs\.?|versus|history|explained?|theory|variance|ratio|formula|price|cost|hours|near me|population|when (?:is|was|did)|who (?:is|was))\b/i;
-export const mediaNeed = (q, top = [], learn = null) => {
-  const s = ` ${String(q || "").toLowerCase()} `;
-  if (!s.trim() || s.trim().startsWith("!") || NOT_VIDEO.test(s)) return { video: 0, image: 0 };
-  let video = 0, image = 0.5; // a little picture lean by default, like Google's Images row
-  for (const [re, w] of MV) if (re.test(s)) video += w;
-  for (const [re, w] of MI) if (re.test(s)) image += w;
-  if (MT.test(s)) { video -= 1; image -= 0.2; }
-  if (NOT_VISUAL.test(s)) image = 0;
-  // the results: many videos in the top 10 = the web thinks it's a video thing (a song, a match); most of them
-  // naming a chart/diagram/photo = a picture thing
-  const n = Math.min(top.length, 10) || 1, t = top.slice(0, 10);
-  video += 2.5 * (t.filter((r) => r && r.video).length / n) - 0.5;
-  image += 1.5 * (t.filter((r) => r && /\b(?:chart|diagram|photos?|pictures?|images?|gallery|map|illustrat\w+|infographic)\b/i.test(`${r.title || ""} ${r.snippet || ""}`)).length / n);
-  // this user's clicks on the Videos box vs the Images row, per word of the search (each word up to ±1)
-  if (learn) for (const w of new Set(s.split(/[^\p{L}\p{N}]+/u).filter((x) => x.length > 2))) {
-    const c = learn[w]; if (!c) continue;
-    const [v, i] = c, tot = v + i;
-    if (tot >= 2) { const d = (v - i) / tot; video += d; image -= d; }
-  }
-  return { video: Math.max(0, video), image: Math.max(0, image) };
-};
-// Where each box goes: the stronger medium after the first result, the weaker after the fifth (both stay on the page)
-export const mediaOrder = (need) => (need.video > need.image ? { video: 1, image: 5 } : { video: 5, image: 1 });
-// Clicks: words -> [videoClicks, imageClicks], newest words kept (max 400)
-export const learnClick = (store, q, kind) => {
-  const m = store && typeof store === "object" ? store : {};
-  for (const w of new Set(String(q || "").toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((x) => x.length > 2))) {
-    const c = m[w] || [0, 0]; c[kind === "video" ? 0 : 1] = Math.min(50, c[kind === "video" ? 0 : 1] + 1); delete m[w]; m[w] = c;
-  }
-  const k = Object.keys(m); for (const w of k.slice(0, Math.max(0, k.length - 400))) delete m[w];
-  return m;
+// ----- Videos box and Images row: placed by what the search needs (user, 2026-11-26), on one scale with the results.
+// The answer AI judges which format serves the search (fmt: video / image / text, summing to 1, from describing each
+// format to the reranker), and how well each item fits (rel 0..1). An item's worth = its format's share x its fit.
+// A box is worth its format x the mean fit of its best 3 items, and goes above the first result (never the top one)
+// that is worth less. Taps steer the format shares (tapBias). No word lists, no fixed slots.
+export const fmtShares = (p) => { const v = Math.max(0, +p.video || 0), i = Math.max(0, +p.image || 0), t = Math.max(0, +p.text || 0), n = v + i + t; return n ? { video: v / n, image: i / n, text: t / n } : null; };
+export const boxWorth = (fmt, rels, kind) => { const r = rels.filter((x) => typeof x === "number").sort((a, b) => b - a).slice(0, 3); return fmt && r.length ? fmt[kind] * (r.reduce((a, b) => a + b, 0) / r.length) : null; };
+// index (in the shown results) to insert the box before; results.length = after the last; never 0 (the top result stays first)
+export const boxAt = (fmt, resultRels, worth) => { for (let i = 1; i < resultRels.length; i++) if (typeof resultRels[i] === "number" && fmt.text * resultRels[i] < worth) return i; return resultRels.length; };
+// Taps: per format, shown and tapped counts -> each format's share scaled by its smoothed tap rate vs the average
+export const tapBias = (fmt, st) => {
+  if (!fmt || !st) return fmt;
+  const rate = (k) => ((st[k]?.t || 0) + 1) / ((st[k]?.s || 0) + 4); // 1 in 4 to start: no effect until there's data
+  const avg = (rate("video") + rate("image")) / 2;
+  return fmtShares({ video: fmt.video * rate("video") / avg, image: fmt.image * rate("image") / avg, text: fmt.text });
 };
 
 // ----- !deepl (spec 14): "!deepl text" or "!deepl de text" -> DeepL's translator with that text (target English

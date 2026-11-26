@@ -47,6 +47,14 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
   const fl = await bridge("flags", {}, "{}");
   row("Flag Report store (flags + update problem)", !!(fl.j && Array.isArray(fl.j.flags)), fl.j && fl.j.issue ? "an update problem is waiting for Report" : "");
 
+  // Format judge (Videos box / Images row placement): the answer AI must put video first for a hands-on how-to and
+  // not for a notation question, answering in time to place the boxes before the page draws
+  const fmtOf = async (q) => { const r = await bridge("fmt", { q }); return { f: r.j && r.j.f, ms: r.ms }; };
+  const fa = await fmtOf("how to tie a tie"), fb = await fmtOf("kalimba numbers and variance in pitch");
+  const top = (f) => f ? Object.entries(f).sort((x, y) => y[1] - x[1])[0][0] : "none";
+  const fmtNote = (f) => f ? Object.entries(f).map(([k, v]) => `${k} ${Number(v).toFixed(2)}`).join(" ") : "no answer";
+  row("Format judge (video vs pictures vs text)", !fa.f ? "SKIP" : top(fa.f) === "video" && top(fb.f) !== "video", `tie: ${fmtNote(fa.f)} | kalimba: ${fmtNote(fb.f)} | ${fb.ms} ms`);
+
   // Currency (ECB): fx.json fills ~30 s after start; wait up to 90 s
   let fx = null;
   for (let i = 0; i < 18 && !(fx && fx.rates); i++) { const s = await bridge("sites"); fx = s.j && s.j.fx; if (!(fx && fx.rates)) await sleep(5000); }

@@ -1,4 +1,4 @@
-// clean-titles v58
+// clean-titles v59
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -1251,56 +1251,21 @@ const VISUAL = /\b(?:pictures?|photos?|photographs?|images?|pics?|wallpapers?|lo
 const NOT_VISUAL = /\b(?:processing|python|javascript|java|css|html|api|upload|resize|crop|compress|convert|converter|format|size|editor|edit|search|generator|ai|dataset|recognition|classification|docker|file|files|link|url|tag|src|alt text|background remover|remove background|to pdf|to text|ocr)\b/i;
 const visualQ = (q) => { const s = String(q || "").trim(); return !!s && !s.startsWith("!") && s.length <= 100 && VISUAL.test(s) && !NOT_VISUAL.test(s); };
 
-// ----- Which medium helps this search most (user, 2026-11-26): priority, not hiding. Video when something has to be
-// SHOWN moving (a hands-on procedure, a technique, a performance, how a product feels in a review); pictures when the
-// answer is how something LOOKS (a chart, notation, a diagram, a layout, a part, a style); text otherwise. Both boxes
-// stay on the page: the stronger one sits under the first result, the other lower down. Three signals, added up:
-// the words of the search, what the results themselves are, and what this user clicks (learned per word, `learn`).
-const MV = [
-  [/\bhow (?:to|do (?:i|you|we)|does one|can i)\b/i, 1.2],
-  [/\b(?:tutorials?|walk ?through|step by step|diy|install(?:ing|ation)?|set(?:ting)? ?up|repair(?:ing)?|fix(?:ing)?|replac(?:e|ing)|assembl(?:e|y|ing)|disassembl\w*|take apart|tie|fold|knit(?:ting)?|crochet|sew(?:ing)?|solder(?:ing)?|wir(?:e|ing)|clean(?:ing)?|sharpen(?:ing)?|massage)\b/i, 1.4],
-  [/\b(?:workouts?|exercises?|stretch(?:es|ing)?|technique|drills?|form check|choreography|dance|swing|serve|tricks?|strum(?:ming)?|fingerpicking|play(?:ing)? (?:the )?\w+ (?:song|cover))\b/i, 1.6],
-  [/\b(?:reviews?|unboxing|hands[- ]on|first impressions?|sound test|demo|in action)\b/i, 1.6],
-  [/\b(?:videos?|youtube|trailers?|clips?|highlights|music video|live performance|watch)\b/i, 3],
-];
-const MI = [
-  [/\b(?:pictures?|photos?|images?|pics?|wallpapers?|logos?|what does .+ look like|look like|looks like)\b/i, 3],
-  [/\b(?:charts?|diagrams?|notation|numbers|tabs?|tablature|sheet music|chords?|fingering|scales?|layouts?|maps?|floor ?plans?|schematics?|pinouts?|symbols?|signs?|icons?|labels?|parts?|anatomy|sizes? chart|color(?:s|ways)?|colou?rs?|patterns?|styles?|designs?|outfits?|aesthetic|ideas|inspo|tattoos?|hairstyles?|identify|what (?:kind|type) of|species|breeds?)\b/i, 1.4],
-];
-// code/software tasks: text answers, neither box moves up
-const NOT_VIDEO = /\b(?:error|exception|python|javascript|typescript|java|c\+\+|sql|regex|api|code|npm|pip|git|github|bash|powershell|cmd|terminal|excel formula|docker|css|html|json|yaml|bug|stack ?trace)\b/i;
-const MT = /\b(?:what is|what are|why|meaning|define|definition|difference|vs\.?|versus|history|explained?|theory|variance|ratio|formula|price|cost|hours|near me|population|when (?:is|was|did)|who (?:is|was))\b/i;
-const mediaNeed = (q, top = [], learn = null) => {
-  const s = ` ${String(q || "").toLowerCase()} `;
-  if (!s.trim() || s.trim().startsWith("!") || NOT_VIDEO.test(s)) return { video: 0, image: 0 };
-  let video = 0, image = 0.5; // a little picture lean by default, like Google's Images row
-  for (const [re, w] of MV) if (re.test(s)) video += w;
-  for (const [re, w] of MI) if (re.test(s)) image += w;
-  if (MT.test(s)) { video -= 1; image -= 0.2; }
-  if (NOT_VISUAL.test(s)) image = 0;
-  // the results: many videos in the top 10 = the web thinks it's a video thing (a song, a match); most of them
-  // naming a chart/diagram/photo = a picture thing
-  const n = Math.min(top.length, 10) || 1, t = top.slice(0, 10);
-  video += 2.5 * (t.filter((r) => r && r.video).length / n) - 0.5;
-  image += 1.5 * (t.filter((r) => r && /\b(?:chart|diagram|photos?|pictures?|images?|gallery|map|illustrat\w+|infographic)\b/i.test(`${r.title || ""} ${r.snippet || ""}`)).length / n);
-  // this user's clicks on the Videos box vs the Images row, per word of the search (each word up to ±1)
-  if (learn) for (const w of new Set(s.split(/[^\p{L}\p{N}]+/u).filter((x) => x.length > 2))) {
-    const c = learn[w]; if (!c) continue;
-    const [v, i] = c, tot = v + i;
-    if (tot >= 2) { const d = (v - i) / tot; video += d; image -= d; }
-  }
-  return { video: Math.max(0, video), image: Math.max(0, image) };
-};
-// Where each box goes: the stronger medium after the first result, the weaker after the fifth (both stay on the page)
-const mediaOrder = (need) => (need.video > need.image ? { video: 1, image: 5 } : { video: 5, image: 1 });
-// Clicks: words -> [videoClicks, imageClicks], newest words kept (max 400)
-const learnClick = (store, q, kind) => {
-  const m = store && typeof store === "object" ? store : {};
-  for (const w of new Set(String(q || "").toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((x) => x.length > 2))) {
-    const c = m[w] || [0, 0]; c[kind === "video" ? 0 : 1] = Math.min(50, c[kind === "video" ? 0 : 1] + 1); delete m[w]; m[w] = c;
-  }
-  const k = Object.keys(m); for (const w of k.slice(0, Math.max(0, k.length - 400))) delete m[w];
-  return m;
+// ----- Videos box and Images row: placed by what the search needs (user, 2026-11-26), on one scale with the results.
+// The answer AI judges which format serves the search (fmt: video / image / text, summing to 1, from describing each
+// format to the reranker), and how well each item fits (rel 0..1). An item's worth = its format's share x its fit.
+// A box is worth its format x the mean fit of its best 3 items, and goes above the first result (never the top one)
+// that is worth less. Taps steer the format shares (tapBias). No word lists, no fixed slots.
+const fmtShares = (p) => { const v = Math.max(0, +p.video || 0), i = Math.max(0, +p.image || 0), t = Math.max(0, +p.text || 0), n = v + i + t; return n ? { video: v / n, image: i / n, text: t / n } : null; };
+const boxWorth = (fmt, rels, kind) => { const r = rels.filter((x) => typeof x === "number").sort((a, b) => b - a).slice(0, 3); return fmt && r.length ? fmt[kind] * (r.reduce((a, b) => a + b, 0) / r.length) : null; };
+// index (in the shown results) to insert the box before; results.length = after the last; never 0 (the top result stays first)
+const boxAt = (fmt, resultRels, worth) => { for (let i = 1; i < resultRels.length; i++) if (typeof resultRels[i] === "number" && fmt.text * resultRels[i] < worth) return i; return resultRels.length; };
+// Taps: per format, shown and tapped counts -> each format's share scaled by its smoothed tap rate vs the average
+const tapBias = (fmt, st) => {
+  if (!fmt || !st) return fmt;
+  const rate = (k) => ((st[k]?.t || 0) + 1) / ((st[k]?.s || 0) + 4); // 1 in 4 to start: no effect until there's data
+  const avg = (rate("video") + rate("image")) / 2;
+  return fmtShares({ video: fmt.video * rate("video") / avg, image: fmt.image * rate("image") / avg, text: fmt.text });
 };
 
 // ----- !deepl (spec 14): "!deepl text" or "!deepl de text" -> DeepL's translator with that text (target English
@@ -1446,7 +1411,7 @@ const qaAbout = (question, text) => {
   return n >= (ws.length >= 3 ? 2 : 1);
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, navName, navDist, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, relCore, related, topicOf, tidyTitle, flagPrompt, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, mediaNeed, mediaOrder, learnClick, deeplUrl, answer, snipQuery, snipSentences, featuredSnippetAI, featuredSnippet, QA_LEAD, qaAbout };
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, navName, navDist, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, relCore, related, topicOf, tidyTitle, flagPrompt, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, fmtShares, boxWorth, boxAt, tapBias, deeplUrl, answer, snipQuery, snipSentences, featuredSnippetAI, featuredSnippet, QA_LEAD, qaAbout };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -2309,16 +2274,27 @@ const earlyStart = () => {
     if (!eq && !wq && !cq && (SHOW.kp !== false || SHOW.mean !== false) && kpWanted(q)) ask("kp", key, { q: CT.kpQuery(q) });
     // Images row (spec 12): the image search starts now, in parallel, for clearly visual searches: picture words, or
     // a search you opened the Images tab for in the last 12 h (degoog still has that image search cached)
-    // ...and for any search whose words (or your past clicks) say pictures may help (CT.mediaNeed)
-    if (SHOW.img !== false && !shaped(q) && (CT.visualQ(q) || visualSeen.has(qHash(q)) || CT.mediaNeed(q, [], mediaLearn()).image >= 0.5)) {
+    // ...and for any other search the answer AI says pictures serve better than an even split (format question, ~20 ms,
+    // asked now so the pictures are in hand by the first paint); no AI answer: picture searches only, as before
+    const imgGo = () => {
+        const e = { key, data: undefined };
+        early.set("img", e);
+        fetch(`/api/search?q=${encodeURIComponent(q)}&type=images`).then((x) => (x.ok ? x.json() : null))
+          .then((j) => {
+            e.data = j && Array.isArray(j.results) ? j : null;
+            // Image AI scores the row's pictures now, in parallel with the web results
+            if (e.data && VISON) { visKey(); visAsk(q, [...new Set(e.data.results.slice(0, 40).map((x) => origOf(x.thumbnail || "")).filter(Boolean))]).then(visRow); }
+          }, () => { e.data = null; });
+    };
+    const pic = SHOW.img !== false && (CT.visualQ(q) || visualSeen.has(qHash(q)));
+    if (!shaped(q)) {
       const e = { key, data: undefined };
-      early.set("img", e);
-      fetch(`/api/search?q=${encodeURIComponent(q)}&type=images`).then((x) => (x.ok ? x.json() : null))
-        .then((j) => {
-          e.data = j && Array.isArray(j.results) ? j : null;
-          // Image AI scores the row's pictures now, in parallel with the web results
-          if (e.data && VISON) { visKey(); visAsk(q, [...new Set(e.data.results.slice(0, 40).map((x) => origOf(x.thumbnail || "")).filter(Boolean))]).then(visRow); }
-        }, () => { e.data = null; });
+      early.set("fmt", e);
+      bridge("fmt", { q }).then((j) => {
+        e.data = j && j.f ? j.f : null;
+        const f = e.data && CT.fmtShares(e.data);
+        if (pic || (f && SHOW.img !== false && f.image > 1 / 3)) imgGo();
+      }, () => { e.data = null; if (pic) imgGo(); });
     }
     // Top stories: the News search starts now, in parallel, only for a search that looked like news last time
     if (SHOW.news && !shaped(q) && newsy.has(qHash(q))) {
@@ -2927,13 +2903,16 @@ const hashStore = (KEY) => {
 const newsy = hashStore(NEWSY_KEY);
 // Searches you opened the Images tab for (same hash, 12 h = degoog's cache, so their image search is still cached)
 const visualSeen = hashStore("ct-visual");
-// What you click: the Videos box or the Images row, per word of the search (CT.learnClick); steers CT.mediaNeed
-const MEDIA_KEY = "ct-media";
-const mediaLearn = () => { try { const m = JSON.parse(localStorage.getItem(MEDIA_KEY) || "{}"); return m && typeof m === "object" ? m : {}; } catch { return {}; } };
+// Taps on the Videos box / Images row vs times each was shown (per browser) steer the format shares (CT.tapBias)
+const MEDIA_KEY = "ct-media2";
+const mediaStats = () => { try { const m = JSON.parse(localStorage.getItem(MEDIA_KEY) || "{}"); return m && typeof m === "object" ? m : {}; } catch { return {}; } };
+const mediaCount = (kind, f) => { try { const m = mediaStats(); const c = m[kind] || { s: 0, t: 0 }; c[f] = (c[f] || 0) + 1; if (c.s > 400) { c.s = Math.round(c.s / 2); c.t = Math.round(c.t / 2); } m[kind] = c; localStorage.setItem(MEDIA_KEY, JSON.stringify(m)); } catch {} };
+const tappedFor = new Set();
 document.addEventListener("click", (e) => {
   const a = e.target && e.target.closest ? e.target.closest(".ct-video a, .ct-imgs a, .ct-video button.ct-more, .ct-imgs button.ct-more") : null;
   if (!a) return;
-  try { localStorage.setItem(MEDIA_KEY, JSON.stringify(CT.learnClick(mediaLearn(), curQ(), a.closest(".ct-video") ? "video" : "image"))); } catch {}
+  const kind = a.closest(".ct-video") ? "video" : "image", k = `${kind}|${searchId(location.href)}`;
+  if (!tappedFor.has(k)) { tappedFor.add(k); mediaCount(kind, "t"); }
 }, true);
 const _info = new WeakMap();
 const info = (el) => {
@@ -3089,7 +3068,7 @@ const groups = () => {
     if (!s) {
       s = G[kind] = section(`ct-${kind}`, title);
       if (isRow) { const [wrap, row] = scroller(); s.append(wrap); s.row = row; s.wrap = wrap; } else { s.row = mk("div", "ct-list"); s.append(s.row); }
-      if (at) at.after(s); else (c.find((r) => r.el.style.display !== "none") || c[0]).el.before(s);
+      if (at && at.before) at.before.before(s); else if (at && at.after) at.after.after(s); else (c.find((r) => r.el.style.display !== "none") || c[0]).el.before(s);
       const m = moreBtn(label, tab); if (m) s.append(m);
     }
     const n = s.row.children.length;
@@ -3098,19 +3077,31 @@ const groups = () => {
   };
   if (shaped()) return; // a plain list of the type asked for: no boxes or rows
   if (SHOW.forum) box("forum", (r) => !!r.forum, 4, forumRow, "Discussions and forums", "forums", "More discussions", false);
-  // Videos vs Images: the medium this search needs more sits under the first result, the other after the fifth
-  const need = CT.mediaNeed(curQ(), rows, mediaLearn()), ord = CT.mediaOrder(need);
-  const slot = (n) => { const v = [...list.querySelectorAll(".result-item")].filter(shown); return v.length ? v[Math.min(n, v.length) - 1] : null; };
-  if (SHOW.video) box("video", (r) => r.video, 8, videoCard, "Videos", "videos", "More videos", true, slot(ord.video));
+  // Videos box and Images row go where they're worth more than the results (CT.boxAt): the answer AI's format shares
+  // for this search (steered by your taps) x how well their items fit. Without the AI: degoog's own order.
+  const fmtRaw = ready("fmt", key);
+  const fmt = fmtRaw ? CT.tapBias(CT.fmtShares(fmtRaw), mediaStats()) : null;
+  const place = (worth) => {
+    const v = [...list.querySelectorAll(".result-item")].filter((el) => shown(el) && !info(el)?.video);
+    if (!fmt || worth == null || !v.length) return null;
+    const i = CT.boxAt(fmt, v.map((el) => info(el)?.ai), worth);
+    return i >= v.length ? { after: v[v.length - 1] } : { before: v[i] };
+  };
+  if (SHOW.video) {
+    const had = !!G.video;
+    box("video", (r) => r.video, 8, videoCard, "Videos", "videos", "More videos", true, place(CT.boxWorth(fmt, rows.filter((r) => r.video).map((r) => r.ai), "video")));
+    if (!had && G.video) mediaCount("video", "s");
+  }
 
   // Images row: drawn after the first result in this same pass, only if the image search is already in hand
   if (!G.img) {
     G.img = true;
     const j = ready("img", key);
-    const t = j && slot(CT.visualQ(curQ()) ? 1 : ord.image);
     const th = visThr();
     const pics = j ? (j.results || []).filter((x) => x && x.thumbnail && x.url && relOk(x.title, x.url) && !(th && VS.p.get(origOf(x.thumbnail)) < th.low) && !aiImg((() => { try { return new URL(x.url).hostname.replace(/^www\./, ""); } catch { return ""; } })())).slice(0, 12) : [];
-    if (t && pics.length >= 4) {
+    const at = j && place(CT.boxWorth(fmt, pics.map((x) => x.ctRel), "image"));
+    const t = j && !at && (CT.visualQ(curQ()) || visualSeen.has(qHash(curQ()))) && [...list.querySelectorAll(".result-item")].find(shown); // no AI: picture searches only, as before
+    if ((at || t) && pics.length >= 4) {
       const s = section("ct-imgs", "Images");
       const [wrap, row] = scroller();
       for (const x of pics) {
@@ -3123,7 +3114,8 @@ const groups = () => {
       }
       s.append(wrap);
       const m = moreBtn("More images", "images"); if (m) s.append(m);
-      t.after(s);
+      if (at && at.before) at.before.before(s); else if (at) at.after.after(s); else t.after(s);
+      mediaCount("image", "s");
       wrap.upd();
     }
   }

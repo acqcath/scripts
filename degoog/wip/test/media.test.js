@@ -1,22 +1,19 @@
-// Videos vs Images priority (user, 2026-11-26): the medium the search needs more goes first; nothing is hidden
+// Videos box / Images row placement (user, 2026-11-26): format share x fit, on one scale with the results
 import { test, expect } from "bun:test";
 import * as A from "../files/answers.js";
-const top = (vids) => Array.from({ length: 10 }, (_, i) => ({ video: i < vids, title: "x" }));
-const first = (q, vids, learn) => (A.mediaOrder(A.mediaNeed(q, top(vids), learn)).video === 1 ? "video" : "image");
-test("media: pictures first for looks/notation/facts, video first for hands-on, reviews, songs", () => {
-  expect(first("kalimba numbers and variance in pitch", 3)).toBe("image");
-  expect(first("black holes", 1)).toBe("image");
-  expect(first("how to change a bike tire", 3)).toBe("video");
-  expect(first("how to tie a tie", 5)).toBe("video");
-  expect(first("sony wh-1000xm6 review", 3)).toBe("video");
-  expect(first("taylor swift fortnight", 6)).toBe("video");
-  expect(A.mediaNeed("python list comprehension", top(2))).toEqual({ video: 0, image: 0 });
+test("media: a box goes above the first result it outweighs, never above the top result", () => {
+  const fmt = A.fmtShares({ video: 0.9, image: 0.2, text: 0.4 }); // a how-to: video wins
+  const rels = [0.95, 0.9, 0.85, 0.6, 0.5];
+  const w = A.boxWorth(fmt, [0.9, 0.8, 0.85, 0.1], "video");
+  expect(A.boxAt(fmt, rels, w)).toBe(1);
+  const f2 = A.fmtShares({ video: 0.1, image: 0.7, text: 0.8 }); // a notation question: videos sink
+  expect(A.boxAt(f2, rels, A.boxWorth(f2, [0.9, 0.8, 0.85], "video"))).toBe(rels.length);
+  expect(A.boxAt(f2, rels, A.boxWorth(f2, [0.9, 0.8, 0.85], "image"))).toBeLessThan(rels.length);
+  expect(A.boxWorth(null, [0.9], "video")).toBe(null);
 });
-test("media: your clicks move a search's medium", () => {
-  let m = {};
-  for (let i = 0; i < 4; i++) m = A.learnClick(m, "kalimba song tutorial", "video");
-  expect(first("kalimba numbers and variance in pitch", 3)).toBe("image");
-  expect(A.mediaNeed("kalimba numbers", top(3), m).video).toBeGreaterThan(A.mediaNeed("kalimba numbers", top(3)).video);
-  for (let i = 0; i < 500; i++) m = A.learnClick(m, `word${i}`, "image");
-  expect(Object.keys(m).length).toBe(400);
+test("media: taps move a format's share, no data = no change", () => {
+  const f = A.fmtShares({ video: 0.5, image: 0.5, text: 0.5 });
+  expect(A.tapBias(f, {})).toEqual(f);
+  const b = A.tapBias(f, { video: { s: 20, t: 10 }, image: { s: 20, t: 1 } });
+  expect(b.video).toBeGreaterThan(b.image);
 });

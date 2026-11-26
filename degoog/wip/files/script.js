@@ -859,16 +859,27 @@ const earlyStart = () => {
     if (!eq && !wq && !cq && (SHOW.kp !== false || SHOW.mean !== false) && kpWanted(q)) ask("kp", key, { q: CT.kpQuery(q) });
     // Images row (spec 12): the image search starts now, in parallel, for clearly visual searches: picture words, or
     // a search you opened the Images tab for in the last 12 h (degoog still has that image search cached)
-    // ...and for any search whose words (or your past clicks) say pictures may help (CT.mediaNeed)
-    if (SHOW.img !== false && !shaped(q) && (CT.visualQ(q) || visualSeen.has(qHash(q)) || CT.mediaNeed(q, [], mediaLearn()).image >= 0.5)) {
+    // ...and for any other search the answer AI says pictures serve better than an even split (format question, ~20 ms,
+    // asked now so the pictures are in hand by the first paint); no AI answer: picture searches only, as before
+    const imgGo = () => {
+        const e = { key, data: undefined };
+        early.set("img", e);
+        fetch(`/api/search?q=${encodeURIComponent(q)}&type=images`).then((x) => (x.ok ? x.json() : null))
+          .then((j) => {
+            e.data = j && Array.isArray(j.results) ? j : null;
+            // Image AI scores the row's pictures now, in parallel with the web results
+            if (e.data && VISON) { visKey(); visAsk(q, [...new Set(e.data.results.slice(0, 40).map((x) => origOf(x.thumbnail || "")).filter(Boolean))]).then(visRow); }
+          }, () => { e.data = null; });
+    };
+    const pic = SHOW.img !== false && (CT.visualQ(q) || visualSeen.has(qHash(q)));
+    if (!shaped(q)) {
       const e = { key, data: undefined };
-      early.set("img", e);
-      fetch(`/api/search?q=${encodeURIComponent(q)}&type=images`).then((x) => (x.ok ? x.json() : null))
-        .then((j) => {
-          e.data = j && Array.isArray(j.results) ? j : null;
-          // Image AI scores the row's pictures now, in parallel with the web results
-          if (e.data && VISON) { visKey(); visAsk(q, [...new Set(e.data.results.slice(0, 40).map((x) => origOf(x.thumbnail || "")).filter(Boolean))]).then(visRow); }
-        }, () => { e.data = null; });
+      early.set("fmt", e);
+      bridge("fmt", { q }).then((j) => {
+        e.data = j && j.f ? j.f : null;
+        const f = e.data && CT.fmtShares(e.data);
+        if (pic || (f && SHOW.img !== false && f.image > 1 / 3)) imgGo();
+      }, () => { e.data = null; if (pic) imgGo(); });
     }
     // Top stories: the News search starts now, in parallel, only for a search that looked like news last time
     if (SHOW.news && !shaped(q) && newsy.has(qHash(q))) {
@@ -1477,13 +1488,16 @@ const hashStore = (KEY) => {
 const newsy = hashStore(NEWSY_KEY);
 // Searches you opened the Images tab for (same hash, 12 h = degoog's cache, so their image search is still cached)
 const visualSeen = hashStore("ct-visual");
-// What you click: the Videos box or the Images row, per word of the search (CT.learnClick); steers CT.mediaNeed
-const MEDIA_KEY = "ct-media";
-const mediaLearn = () => { try { const m = JSON.parse(localStorage.getItem(MEDIA_KEY) || "{}"); return m && typeof m === "object" ? m : {}; } catch { return {}; } };
+// Taps on the Videos box / Images row vs times each was shown (per browser) steer the format shares (CT.tapBias)
+const MEDIA_KEY = "ct-media2";
+const mediaStats = () => { try { const m = JSON.parse(localStorage.getItem(MEDIA_KEY) || "{}"); return m && typeof m === "object" ? m : {}; } catch { return {}; } };
+const mediaCount = (kind, f) => { try { const m = mediaStats(); const c = m[kind] || { s: 0, t: 0 }; c[f] = (c[f] || 0) + 1; if (c.s > 400) { c.s = Math.round(c.s / 2); c.t = Math.round(c.t / 2); } m[kind] = c; localStorage.setItem(MEDIA_KEY, JSON.stringify(m)); } catch {} };
+const tappedFor = new Set();
 document.addEventListener("click", (e) => {
   const a = e.target && e.target.closest ? e.target.closest(".ct-video a, .ct-imgs a, .ct-video button.ct-more, .ct-imgs button.ct-more") : null;
   if (!a) return;
-  try { localStorage.setItem(MEDIA_KEY, JSON.stringify(CT.learnClick(mediaLearn(), curQ(), a.closest(".ct-video") ? "video" : "image"))); } catch {}
+  const kind = a.closest(".ct-video") ? "video" : "image", k = `${kind}|${searchId(location.href)}`;
+  if (!tappedFor.has(k)) { tappedFor.add(k); mediaCount(kind, "t"); }
 }, true);
 const _info = new WeakMap();
 const info = (el) => {
@@ -1639,7 +1653,7 @@ const groups = () => {
     if (!s) {
       s = G[kind] = section(`ct-${kind}`, title);
       if (isRow) { const [wrap, row] = scroller(); s.append(wrap); s.row = row; s.wrap = wrap; } else { s.row = mk("div", "ct-list"); s.append(s.row); }
-      if (at) at.after(s); else (c.find((r) => r.el.style.display !== "none") || c[0]).el.before(s);
+      if (at && at.before) at.before.before(s); else if (at && at.after) at.after.after(s); else (c.find((r) => r.el.style.display !== "none") || c[0]).el.before(s);
       const m = moreBtn(label, tab); if (m) s.append(m);
     }
     const n = s.row.children.length;
@@ -1648,19 +1662,31 @@ const groups = () => {
   };
   if (shaped()) return; // a plain list of the type asked for: no boxes or rows
   if (SHOW.forum) box("forum", (r) => !!r.forum, 4, forumRow, "Discussions and forums", "forums", "More discussions", false);
-  // Videos vs Images: the medium this search needs more sits under the first result, the other after the fifth
-  const need = CT.mediaNeed(curQ(), rows, mediaLearn()), ord = CT.mediaOrder(need);
-  const slot = (n) => { const v = [...list.querySelectorAll(".result-item")].filter(shown); return v.length ? v[Math.min(n, v.length) - 1] : null; };
-  if (SHOW.video) box("video", (r) => r.video, 8, videoCard, "Videos", "videos", "More videos", true, slot(ord.video));
+  // Videos box and Images row go where they're worth more than the results (CT.boxAt): the answer AI's format shares
+  // for this search (steered by your taps) x how well their items fit. Without the AI: degoog's own order.
+  const fmtRaw = ready("fmt", key);
+  const fmt = fmtRaw ? CT.tapBias(CT.fmtShares(fmtRaw), mediaStats()) : null;
+  const place = (worth) => {
+    const v = [...list.querySelectorAll(".result-item")].filter((el) => shown(el) && !info(el)?.video);
+    if (!fmt || worth == null || !v.length) return null;
+    const i = CT.boxAt(fmt, v.map((el) => info(el)?.ai), worth);
+    return i >= v.length ? { after: v[v.length - 1] } : { before: v[i] };
+  };
+  if (SHOW.video) {
+    const had = !!G.video;
+    box("video", (r) => r.video, 8, videoCard, "Videos", "videos", "More videos", true, place(CT.boxWorth(fmt, rows.filter((r) => r.video).map((r) => r.ai), "video")));
+    if (!had && G.video) mediaCount("video", "s");
+  }
 
   // Images row: drawn after the first result in this same pass, only if the image search is already in hand
   if (!G.img) {
     G.img = true;
     const j = ready("img", key);
-    const t = j && slot(CT.visualQ(curQ()) ? 1 : ord.image);
     const th = visThr();
     const pics = j ? (j.results || []).filter((x) => x && x.thumbnail && x.url && relOk(x.title, x.url) && !(th && VS.p.get(origOf(x.thumbnail)) < th.low) && !aiImg((() => { try { return new URL(x.url).hostname.replace(/^www\./, ""); } catch { return ""; } })())).slice(0, 12) : [];
-    if (t && pics.length >= 4) {
+    const at = j && place(CT.boxWorth(fmt, pics.map((x) => x.ctRel), "image"));
+    const t = j && !at && (CT.visualQ(curQ()) || visualSeen.has(qHash(curQ()))) && [...list.querySelectorAll(".result-item")].find(shown); // no AI: picture searches only, as before
+    if ((at || t) && pics.length >= 4) {
       const s = section("ct-imgs", "Images");
       const [wrap, row] = scroller();
       for (const x of pics) {
@@ -1673,7 +1699,8 @@ const groups = () => {
       }
       s.append(wrap);
       const m = moreBtn("More images", "images"); if (m) s.append(m);
-      t.after(s);
+      if (at && at.before) at.before.before(s); else if (at) at.after.after(s); else t.after(s);
+      mediaCount("image", "s");
       wrap.upd();
     }
   }

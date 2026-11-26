@@ -1559,7 +1559,7 @@ const INFL = new Map();
 const RANK_WAIT_MS = 1600, RANK_RUN_MS = 6000;
 globalThis.__ctResults = async (result, query, params) => {
   const type = String((params && params.type) || "web");
-  if (!result || !Array.isArray(result.results) || !query || /^(images|videos)$/.test(type)) return;
+  if (!result || !Array.isArray(result.results) || !query || type === "videos") return;
   const q = String(query).trim().slice(0, 300);
   const rs = result.results.slice(0, 60);
   if (!rs.length || q.startsWith("!")) return;
@@ -1569,7 +1569,8 @@ globalThis.__ctResults = async (result, query, params) => {
   if (!got) {
     let run = INFL.get(key);
     if (!run) {
-      const docs = rs.map((r) => `${stripT(r.title)}. ${stripT(r.snippet)}`.slice(0, 1200));
+      const host = (u) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; } };
+      const docs = rs.map((r) => (type === "images" ? `${stripT(r.title)}. Picture from ${host(r.url)}` : `${stripT(r.title)}. ${stripT(r.snippet)}`).slice(0, 1200));
       const sents = [];
       if (type === "web" && (QLIKE.test(q) || q.split(/\s+/).length >= 2)) rs.slice(0, 6).forEach((r, i) => sentences(r.snippet).slice(0, 4).forEach((x) => sents.push([i, x])));
       run = (async () => {
@@ -1588,6 +1589,24 @@ globalThis.__ctResults = async (result, query, params) => {
   }
   rs.forEach((r, i) => { if (typeof got.rel[i] === "number") r.ctRel = got.rel[i]; if (got.best[i]) r.ctBest = got.best[i]; });
   result.ctAi = 1;
+};
+
+// Which format serves a search (user, 2026-11-26): the reranker reads the search next to a description of each format
+// and says how well each would give the searcher what they need; the page places the Videos box / Images row by it
+// (core boxAt) and fetches pictures only when they beat an even split. ~3 tiny passes, cached per search.
+const FMT_TASK = "Given a web search query, judge whether this kind of result is the best way to give the searcher what they need";
+const FMT_DOCS = { video: "A video that shows it being done or demonstrated, step by step, in motion", image: "Pictures, photos, diagrams or charts that show what it looks like", text: "A written web page that explains or answers it in words" };
+const FMTC = new Map();
+export const fmtFor = async (q) => {
+  q = String(q || "").trim().slice(0, 300);
+  if (!q || q.startsWith("!")) return null;
+  const k = q.toLowerCase();
+  if (FMTC.has(k)) return FMTC.get(k);
+  const j = await vis("/rank", { q, docs: Object.values(FMT_DOCS), task: FMT_TASK }, 1500);
+  if (!j || !Array.isArray(j.s) || j.s.length !== 3) return null;
+  const f = { video: j.s[0], image: j.s[1], text: j.s[2] };
+  FMTC.set(k, f); if (FMTC.size > 2000) FMTC.delete(FMTC.keys().next().value);
+  return f;
 };
 
 export const routes = [
@@ -1778,6 +1797,11 @@ export const routes = [
       const q = (new URL(req.url).searchParams.get("q") || "").slice(0, 100);
       return new Response(JSON.stringify({ kp: await kpFor(q) }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
     },
+  },
+  {
+    method: "get",
+    path: "/fmt",
+    async handler(req) { return jsonOut({ f: await fmtFor(new URL(req.url).searchParams.get("q") || "") }); },
   },
   {
     method: "get",
