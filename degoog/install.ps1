@@ -1475,15 +1475,85 @@ const doiNames = async (rs) => {
   return n;
 };
 // ===== ⚑ Flags: "what's wrong with these results?" from the ⚑ in the tab row =====
-// Report in the ⚑ box keeps each flag (the search, the tab, your note, its top 10 results) in flags.json on this
-// server only, and opens a Claude Code session filled with it (core flagPrompt), plus anything not handed over yet:
-// the updater's last problem (update-issue.txt, written by the PC's hourly job). That session fixes the code.
+// Save in the ⚑ box keeps each flag (the search, the tab, your note, its top 10 results) in flags.json on this
+// server only. The local model (flagJudge) decides when what's waiting is worth a Claude session; the PC's hourly job
+// then sends it all in one (core flagPrompt), plus the updater's last problem (update-issue.txt, sent at once).
 const flagsFile = () => `${DIR}/flags.json`, issueFile = () => `${DIR}/update-issue.txt`;
 let FLAGS = null;
 const readFlags = () => { if (FLAGS) return FLAGS; try { const j = JSON.parse(fs.readFileSync(flagsFile(), "utf8")); FLAGS = j && Array.isArray(j.list) ? j : { list: [], issueAt: 0 }; } catch { FLAGS = { list: [], issueAt: 0 }; } return FLAGS; };
 const saveFlags = () => { try { fs.writeFileSync(`${flagsFile()}.tmp`, JSON.stringify(FLAGS)); fs.renameSync(`${flagsFile()}.tmp`, flagsFile()); } catch {} };
 const flagIssue = () => { try { const st = fs.statSync(issueFile()); const t = st.mtimeMs; const text = fs.readFileSync(issueFile(), "utf8").trim(); return text && t > (readFlags().issueAt || 0) ? { t, text: text.slice(-3000) } : null; } catch { return null; } };
 const flagOpen = () => readFlags().list.filter((f) => !f.handed);
+// Same as core.js flagPrompt (test/flag.test.js checks they agree): the text a Claude Code session opens with
+export const flagPromptS = (flags, issue, max = 12000) => {
+  const head = "degoog clean-titles: fix what my degoog reported. Read degoog/wip/QUICKSTART.md in acqcath/scripts first and follow its \"Flags\" steps: " +
+    "commit the flags below to the private repo acqcath/degoog-flags, then fix the code so these searches come out right, release and merge. " +
+    "Keep my searches out of the public repo.\n";
+  const body = (fl, snip) => JSON.stringify({ flags: fl.map((f) => ({ at: new Date(f.t).toISOString(), q: f.q, tab: f.type, note: f.note, top: (f.top || []).map((r) => (snip ? { title: r.title, url: r.url, snippet: r.snippet } : { title: r.title, url: r.url })) })), updateIssue: issue || null });
+  let fl = (flags || []).slice(-20);
+  for (;;) {
+    for (const snip of [true, false]) { const s = head + body(fl, snip); if (s.length <= max || fl.length <= 1) { if (s.length <= max || !snip) return s.slice(0, max); } }
+    if (fl.length <= 1) return (head + body(fl, false)).slice(0, max);
+    fl = fl.slice(1);
+  }
+};
+// The model ai-summary is set to (on this PC, free), called through ai-summary's own provider code, so every
+// provider it supports works here with its URL, key and model. null when ai-summary isn't installed or has no model.
+const aiAsk = async (messages, maxTokens = 1500) => {
+  const data = process.env.DEGOOG_DATA_DIR || `${process.cwd()}/data`;
+  let all = {};
+  try { all = JSON.parse(fs.readFileSync(process.env.DEGOOG_PLUGIN_SETTINGS_FILE || `${data}/plugin-settings.json`, "utf8")) || {}; } catch { return null; }
+  const k = Object.keys(all).find((x) => x.toLowerCase() === "ai-summary-slot") || Object.keys(all).find((x) => /ai-summary/i.test(x));
+  const raw = k && all[k];
+  if (!raw || !String(raw.model || "").trim()) return null;
+  const root = DIR.replace(/\/[^/]+\/?$/, "");
+  let dir = "";
+  try { dir = fs.readdirSync(root).find((d) => /ai-summary/i.test(d) && fs.existsSync(`${root}/${d}/providers/index.js`) && fs.existsSync(`${root}/${d}/src/settings.js`)) || ""; } catch {}
+  if (!dir) return null;
+  let P, S;
+  try { P = await import(`${root}/${dir}/providers/index.js`); S = await import(`${root}/${dir}/src/settings.js`); } catch { return null; }
+  if (typeof P.pickAdapter !== "function" || typeof S.parseSettings !== "function") return null;
+  const st = S.parseSettings(raw);
+  const ad = P.pickAdapter(st.provider, st.openAICompatProvider);
+  const ab = new AbortController();
+  const t = setTimeout(() => ab.abort(), 90000);
+  let out = "";
+  try {
+    for await (const ch of ad.stream({ baseUrl: st.baseUrl, model: st.model, apiKey: st.apiKey, extraHeaders: st.extraHeaders, sessionId: "degoog-ctflag" }, messages, { maxTokens, disableThinking: true, tokenParam: st.tokenParam, signal: ab.signal })) {
+      if (ch.kind === "text") out += ch.text;
+      else if (ch.kind === "error") return null;
+    }
+  } catch { return null; } finally { clearTimeout(t); }
+  return out;
+};
+// Is what's waiting worth a Claude session (which uses the user's weekly Claude usage)? The local model decides once
+// per new set of reports; the PC's hourly job sends only on yes (or at once for an update breakage).
+const JUDGE_SYS = "You decide whether a batch of user reports about their self-hosted search engine is worth sending to an expensive " +
+  "coding assistant now, which uses up the user's limited weekly usage. Say send when the reports show real problems a code " +
+  "change would fix (wrong, junk, missing or badly ordered results; a broken feature) and together they are enough work to " +
+  "justify one session: several reports, or one serious or clearly systematic problem. Say wait when they are few and minor, " +
+  "vague, or about one-off content no rule could fix, so more reports can join the batch. Reply with JSON only: " +
+  '{"send": true or false, "why": "one short plain sentence for the user"}.';
+export const judgeParse = (txt) => {
+  const m = /\{[\s\S]*\}/.exec(String(txt || ""));
+  if (!m) return null;
+  try { const j = JSON.parse(m[0]); return typeof j.send === "boolean" ? { send: j.send, why: String(j.why || "").replace(/\s+/g, " ").trim().slice(0, 200) } : null; } catch { return null; }
+};
+const flagHost = (u) => { try { return new URL(u).hostname.toLowerCase().replace(/^www\./, ""); } catch { return ""; } };
+let _judging = null;
+const flagJudge = () => (_judging ||= (async () => {
+  const F = readFlags(), open = flagOpen();
+  const key = open.map((f) => f.id).join(",");
+  if (!open.length) return { send: false, why: "" };
+  if (F.judge && F.judge.key === key) return F.judge;
+  const list = open.map((f, i) => `${i + 1}. [${f.type}] "${f.q}"${f.note ? ` note: ${f.note}` : " (no note)"}; top results: ${f.top.slice(0, 3).map((r) => `${flagHost(r.url)}: ${r.title}`).join(" | ")}`).join("\n");
+  const v = judgeParse(await aiAsk([{ role: "system", content: JUDGE_SYS }, { role: "user", content: `Waiting reports (${open.length}):\n${list}` }]));
+  F.judge = { key, send: v ? v.send : false, why: v ? v.why : "No local model answered (ai-summary's model), so these wait.", at: Date.now() };
+  saveFlags();
+  return F.judge;
+})().finally(() => { _judging = null; }));
+const judgeNow = () => { const F = readFlags(), key = flagOpen().map((f) => f.id).join(","); return F.judge && F.judge.key === key ? F.judge : null; };
+const flagCount = () => flagOpen().length + (flagIssue() ? 1 : 0);
 
 // A slow answer is never thrown away: the rank call keeps running past the wait below and fills AIC when it lands, so
 // the very next request for the same results (a tab switch, a reload) already has it. Same request twice at once
@@ -1525,28 +1595,42 @@ globalThis.__ctResults = async (result, query, params) => {
 
 export const routes = [
   {
-    // ⚑ Report: {q, type, note, top: [{title, url, snippet}]} is kept, and it and everything waiting go to Claude
+    // ⚑ Save: {q, type, note, top: [{title, url, snippet}]} is kept until you send -> {n: how many wait}
     method: "post",
     path: "/flag",
     async handler(req) {
       let b = {};
       try { b = await req.json(); } catch {}
-      const F = readFlags(), issue = flagIssue(), now = Date.now();
-      for (const f of flagOpen()) f.handed = now;
-      if (issue) F.issueAt = issue.t;
       const q = String(b.q || "").trim().slice(0, 300);
-      if (q) F.list.push({ id: now, t: now, handed: now, q, type: String(b.type || "web").slice(0, 40), note: String(b.note || "").trim().slice(0, 1000),
+      if (!q) return jsonOut({ n: flagCount() });
+      const F = readFlags(), now = Date.now();
+      F.list.push({ id: now, t: now, q, type: String(b.type || "web").slice(0, 40), note: String(b.note || "").trim().slice(0, 1000),
         top: (Array.isArray(b.top) ? b.top : []).slice(0, 10).map((r) => ({ title: String((r && r.title) || "").slice(0, 200), url: String((r && r.url) || "").slice(0, 500), snippet: String((r && r.snippet) || "").slice(0, 300) })).filter((r) => /^https?:\/\//.test(r.url)) });
       if (F.list.length > 500) F.list = F.list.slice(-500);
       saveFlags();
-      return jsonOut({ ok: 1 });
+      flagJudge().catch(() => {});
+      return jsonOut({ n: flagCount() });
     },
   },
   {
-    // ⚑ What else goes along with the next Report: {flags: [not handed over], issue: the updater's last problem}
+    // ⚑ What's waiting: {flags, issue: the updater's last problem}; ?sent=1 (the Send tap) marks it all as sent
     method: "post",
     path: "/flags",
-    handler: () => { const i = flagIssue(); return jsonOut({ flags: flagOpen(), issue: i ? i.text : "" }); },
+    async handler(req) {
+      const open = flagOpen(), i = flagIssue();
+      if (new URL(req.url).searchParams.get("sent") === "1") {
+        const F = readFlags(), now = Date.now();
+        for (const f of open) f.handed = now;
+        if (i) F.issueAt = i.t;
+        saveFlags();
+        return jsonOut({ flags: [], issue: "" });
+      }
+      // The PC's hourly job (../autoupdate-job.ps1 SendReports): the prompt itself, with no " or \ in it, because
+      // Windows PowerShell mangles those in arguments to programs
+      const jd = open.length ? await flagJudge().catch(() => null) : null;
+      if (new URL(req.url).searchParams.get("prompt") === "1") return jsonOut({ n: open.length + (i ? 1 : 0), issue: !!i, send: !!i || !!(jd && jd.send), why: jd ? jd.why : "", prompt: flagPromptS(open, i ? i.text : "").replace(/["\\]/g, "'") });
+      return jsonOut({ flags: open, issue: i ? i.text : "", send: !!(jd && jd.send), why: jd ? jd.why : "" });
+    },
   },
   {
     // Image AI: {q, u: [image addresses]} -> {p: [0..1 or null]} (how well each picture shows the search)
@@ -1647,7 +1731,7 @@ export const routes = [
       }
       const sites = sitesFromLists(block, score);
       mirrorTo(sites);
-      return new Response(JSON.stringify({ sites, auto: autoList().filter((d) => sites[d] === "lower"), seo: SEO_ON, ai: aiStatus(data), fx: readFx().rates ? { date: FX.date, rates: FX.rates } : null }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+      return new Response(JSON.stringify({ sites, auto: autoList().filter((d) => sites[d] === "lower"), seo: SEO_ON, ai: aiStatus(data), flags: flagCount(), flagDue: !!flagIssue() || !!(judgeNow() && judgeNow().send), fx: readFx().rates ? { date: FX.date, rates: FX.rates } : null }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
     },
   },
   {
@@ -1882,7 +1966,7 @@ export default {
 };
 '@)
 [IO.File]::WriteAllText("$t\script.js", @'
-// clean-titles v55
+// clean-titles v56
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -3483,13 +3567,14 @@ const saveSites = () => { try { localStorage.setItem(SITES_KEY, JSON.stringify(S
 // Sites lowered by the anti-SEO checks ("auto" in the menu), and whether those checks are on (Settings)
 // Also: will ai-summary answer (a model set, not off, "only for questions"?), so its spot is kept only when it will come
 // and the ECB currency rates for the answer card (fx)
-let SITES_AUTO = [], SEO_ON = false, AI_ON = { on: false }, FX = null;
+let SITES_AUTO = [], SEO_ON = false, AI_ON = { on: false }, FX = null, FLAGN = { n: 0, due: false };
 try { const c = JSON.parse(localStorage.getItem("ct-sites-auto") || "null"); if (c && Array.isArray(c.auto)) { SITES_AUTO = c.auto; SEO_ON = !!c.seo; if (c.ai) AI_ON = c.ai; if (c.fx && c.fx.rates) FX = c.fx; } } catch {}
 const takeSites = (j) => {
   if (!j || !j.sites || typeof j.sites !== "object") return;
   SITES = j.sites; saveSites();
   SITES_AUTO = Array.isArray(j.auto) ? j.auto : []; SEO_ON = !!j.seo; AI_ON = j.ai && typeof j.ai === "object" ? j.ai : { on: false };
   if (j.fx && j.fx.rates) FX = j.fx;
+  FLAGN = { n: Number(j.flags) || 0, due: !!j.flagDue }; flagMark();
   try { localStorage.setItem("ct-sites-auto", JSON.stringify({ auto: SITES_AUTO, seo: SEO_ON, ai: AI_ON, fx: FX })); } catch {}
 };
 bridge("sites", {}).then(takeSites).catch(() => {});
@@ -4601,10 +4686,11 @@ const tools = () => {
 };
 
 
-// ⚑ at the right end of the tab row (phone and PC) opens "What's wrong? (optional)" and one Report button. Report keeps
-// the search, your note and its top 10 results on your server and opens a Claude Code session (the Claude app on the
-// phone) filled with them and anything waiting (an update problem from the PC); you tap send there.
-// The link is a real link built before the tap, so phones open the Claude app (a link opened after a wait is blocked).
+// ⚑ at the right end of the tab row (phone and PC): "What's wrong? (optional)" + Save keeps the search, your note and
+// its top 10 results on your server; the ⚑ shows how many wait ("⚑ 3"). The local model decides when they're worth a
+// Claude session (the ⚑ lights up on yes) and the PC's hourly job sends them. "Send N to Claude" opens one Claude Code session (the Claude app on the phone) filled
+// with all of them; you tap send there. It's a real link built before the tap, so phones open the Claude app (a
+// link opened after a wait is blocked).
 const CLAUDE_REPO = "acqcath/scripts";
 const flagTop = () => {
   const out = [];
@@ -4619,45 +4705,64 @@ const flagTop = () => {
   return out;
 };
 const curType = () => { try { return new URL(location.href).searchParams.get("type") || "web"; } catch { return "web"; } };
+const flagMark = () => {
+  const f = document.getElementById("ct-flag");
+  if (!f) return;
+  f.textContent = FLAGN.n ? `⚑ ${FLAGN.n}` : "⚑";
+  f.classList.toggle("ct-due", FLAGN.due);
+};
+const flagSend = (box) => {
+  const row = box.querySelector(".ct-flag-send");
+  bridge("flags", {}, "{}").then((j) => {
+    if (!box.isConnected) return;
+    row.replaceChildren();
+    const fl = j && Array.isArray(j.flags) ? j.flags : [], issue = String((j && j.issue) || "");
+    const n = fl.length + (issue ? 1 : 0);
+    FLAGN = { n, due: !!issue || !!j.send }; flagMark();
+    if (!n) return;
+    const u = new URL("https://claude.ai/code/new");
+    u.searchParams.set("q", CT.flagPrompt(fl, issue));
+    u.searchParams.set("repo", CLAUDE_REPO);
+    u.searchParams.set("branch", "main");
+    const go = mk("a", "ct-flag-go", `Send ${n} to Claude`);
+    go.href = u.toString(); go.target = "_blank"; go.rel = "noopener";
+    go.addEventListener("click", () => {
+      bridge("flags", { sent: "1" }, "{}").catch(() => {}); // keepalive: still lands as the page hands over to Claude
+      FLAGN = { n: 0, due: false }; flagMark();
+      setTimeout(() => row.replaceChildren(), 400);
+    });
+    row.append(go);
+    if (issue) row.append(mk("span", "ct-flag-st", "Includes an update problem from the PC: sending soon."));
+  }).catch(() => {});
+};
 const flagBox = (btn) => {
   let box = document.getElementById("ct-flagbox");
   if (box) { box.remove(); btn.setAttribute("aria-expanded", "false"); return; }
   btn.setAttribute("aria-expanded", "true");
-  box = document.createElement("div");
+  box = document.createElement("form");
   box.id = "ct-flagbox";
   const l = mk("label", "", "");
   const t = document.createElement("textarea");
   t.rows = 2; t.maxLength = 1000; t.setAttribute("autocapitalize", "sentences");
   l.append(mk("span", "", "What's wrong? (optional)"), t);
-  const go = mk("a", "ct-flag-go", "Report");
-  go.target = "_blank"; go.rel = "noopener";
-  const extra = mk("div", "ct-flag-st", "");
-  box.append(l, go, extra);
-  let wait = { flags: [], issue: "" };
-  const cur = () => ({ t: Date.now(), q: curQ(), type: curType(), note: t.value.trim(), top: flagTop() });
-  const link = () => {
-    const u = new URL("https://claude.ai/code/new");
-    u.searchParams.set("q", CT.flagPrompt([...wait.flags, cur()], wait.issue));
-    u.searchParams.set("repo", CLAUDE_REPO);
-    u.searchParams.set("branch", "main");
-    go.href = u.toString();
-  };
-  link();
-  t.addEventListener("input", link);
-  go.addEventListener("pointerdown", link);
-  bridge("flags", {}, "{}").then((j) => {
-    if (!j || !box.isConnected) return;
-    wait = { flags: Array.isArray(j.flags) ? j.flags : [], issue: String(j.issue || "") };
-    const n = wait.flags.length + (wait.issue ? 1 : 0);
-    if (n) extra.textContent = wait.issue && !wait.flags.length ? "Also sends the PC's last update problem." : `Also sends ${n} earlier report${n > 1 ? "s" : ""}.`;
-    link();
-  }).catch(() => {});
-  go.addEventListener("click", () => {
-    const c = cur();
-    bridge("flag", {}, JSON.stringify(c)).catch(() => {}); // keepalive: still lands as the page hands over to Claude
-    setTimeout(() => { box.remove(); btn.setAttribute("aria-expanded", "false"); }, 400);
+  const save = mk("button", "", "Save");
+  save.type = "submit";
+  const st = mk("span", "ct-flag-st", "");
+  const acts = mk("div", "ct-flag-acts", "");
+  acts.append(save, st);
+  box.append(l, acts, mk("div", "ct-flag-send", ""));
+  box.addEventListener("submit", (e) => {
+    e.preventDefault(); e.stopPropagation();
+    save.disabled = true; st.textContent = "";
+    bridge("flag", {}, JSON.stringify({ q: curQ(), type: curType(), note: t.value.trim(), top: flagTop() })).then((j) => {
+      save.disabled = false;
+      if (!j) { st.textContent = "Couldn't save. Try again."; return; }
+      t.value = ""; st.textContent = "Saved.";
+      flagSend(box);
+    }).catch(() => { save.disabled = false; st.textContent = "Couldn't save. Try again."; });
   });
   (document.getElementById("ct-adv") || document.getElementById("results-tabs")).after(box);
+  flagSend(box);
   if (!PHONE.matches) t.focus();
 };
 const flagBtn = () => {
@@ -4666,12 +4771,12 @@ const flagBtn = () => {
   const f = document.createElement("button");
   f.type = "button";
   f.id = "ct-flag";
-  f.textContent = "⚑";
   f.title = "Report a problem with these results";
   f.setAttribute("aria-label", "Report a problem with these results");
   f.setAttribute("aria-expanded", "false");
   f.addEventListener("click", () => flagBox(f));
   tabs.append(f);
+  flagMark();
   tabsEdge();
 };
 
@@ -6265,6 +6370,8 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
    edge. Phone: stays at the right edge while the tab row scrolls under it. Its box opens under the tabs like Tools'. */
 #ct-flag { position: relative; align-self: stretch; display: flex; align-items: center; background: none; border: 0; border-bottom: 3px solid transparent; padding: 0 4px 0 10px; font: inherit; font-size: 15px; line-height: 1; color: var(--text-secondary); cursor: pointer; flex: none; }
 #ct-flag:hover, #ct-flag[aria-expanded="true"] { color: var(--text-primary); }
+#ct-flag { font-variant-numeric: tabular-nums; white-space: nowrap; }
+#ct-flag.ct-due { color: var(--primary); font-weight: 600; }
 #results-tabs:not(:has(#ct-tools)) #ct-flag { margin-left: auto; }
 @media (max-width: 767px) {
   #ct-flag { position: sticky; right: 0; z-index: 1; padding: 0 16px 0 12px; background: var(--bg); box-shadow: -10px 0 10px -4px var(--bg); }
@@ -6273,7 +6380,10 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 #ct-flagbox label { display: grid; gap: 6px; }
 #ct-flagbox textarea { font: inherit; color: var(--text-primary); background: var(--bg-light); border: 1px solid var(--border-light); border-radius: 8px; padding: 7px 10px; outline: none; resize: vertical; min-height: 2.6em; }
 #ct-flagbox textarea:focus { border-color: var(--primary); }
-.ct-flag-st:empty { display: none; }
+.ct-flag-st:empty, .ct-flag-send:empty { display: none; }
+.ct-flag-acts, .ct-flag-send { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+#ct-flagbox .ct-flag-acts button { font: 600 13.5px system-ui, sans-serif; padding: 8px 18px; border-radius: 999px; background: var(--bg-light); color: var(--text-primary); border: 1px solid var(--border-light); cursor: pointer; }
+#ct-flagbox .ct-flag-acts button:disabled { opacity: .6; cursor: default; }
 .ct-flag-go { justify-self: start; display: inline-block; font: 600 13.5px system-ui, sans-serif; padding: 8px 18px; border-radius: 999px; background: var(--primary); color: #11111b !important; text-decoration: none !important; cursor: pointer; }
 @media (max-width: 767px) { #ct-flagbox { padding: 12px 16px; } #ct-flagbox textarea { font-size: 16px; } }
 #ct-adv { display: grid; grid-template-columns: max-content minmax(0, 360px); gap: 8px 16px; align-items: center; padding: 14px 0 16px; max-width: 600px; font-size: 13.5px; color: var(--text-secondary); }
@@ -6833,7 +6943,7 @@ docker restart $c | Out-Null
 $null = docker exec $c sh -c 'for i in $(seq 1 40); do curl -fs -o /dev/null http://127.0.0.1:${DEGOOG_PORT:-4444}/readyz && exit 0; sleep 1; done'
 
 $ss = docker exec $c cat /app/data/server-settings.json | Out-String | ConvertFrom-Json
-"plugin code inside the page (should be v55): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
+"plugin code inside the page (should be v56): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
 "page files (should be a ct and a psl file): " + (docker exec $c sh -c 'ls /app/src/public/ct/')
 "progressive results off (should be False): $($ss.settings.streamingEnabled -eq $true)"
 "typo fixer word list (should be about 82800): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/words.txt')

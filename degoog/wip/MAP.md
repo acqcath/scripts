@@ -2,7 +2,7 @@
 
 Every section, function and route in degoog/wip/files with its line. Read the lines you need (`sed -n A,Bp file`), not whole files.
 
-## index.js (1879 lines)
+## index.js (1963 lines)
   - `braveOriginal` :13
   - `upgrade` :33
 - **Typo fixing and related searches, without Google** :57
@@ -155,34 +155,41 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - `saveFlags` :1481
   - `flagIssue` :1482
   - `flagOpen` :1483
-  - `globalThis.__ctResults` :1490
-  - route `/flag` :1527
-  - route `/flags` :1545
-  - route `/vis` :1551
-  - route `/rank` :1563
-  - route `/near` :1574
-  - route `/fix` :1584
-  - route `/qs` :1604
-  - route `/relay` :1615
-  - route `/sites` :1635
-  - route `/why` :1653
-  - route `/wd` :1658
-  - route `/qv` :1667
-  - route `/qvs` :1675
-  - route `/arch` :1684
-  - route `/kp` :1692
-  - route `/sports` :1700
-  - route `/cmu` :1708
-  - route `/eol` :1716
-  - route `/aiimg` :1726
-  - route `/seo` :1736
-  - route `/prefs` :1746
-  - route `/perf` :1752
-  - route `/learn` :1768
-  - route `/yt` :1781
-  - route `/hd` :1791
+  - `flagPromptS` :1485
+  - `aiAsk` :1499
+  - `judgeParse` :1534
+  - `flagHost` :1539
+  - `flagJudge` :1541
+  - `judgeNow` :1552
+  - `flagCount` :1553
+  - `globalThis.__ctResults` :1560
+  - route `/flag` :1597
+  - route `/flags` :1615
+  - route `/vis` :1635
+  - route `/rank` :1647
+  - route `/near` :1658
+  - route `/fix` :1668
+  - route `/qs` :1688
+  - route `/relay` :1699
+  - route `/sites` :1719
+  - route `/why` :1737
+  - route `/wd` :1742
+  - route `/qv` :1751
+  - route `/qvs` :1759
+  - route `/arch` :1768
+  - route `/kp` :1776
+  - route `/sports` :1784
+  - route `/cmu` :1792
+  - route `/eol` :1800
+  - route `/aiimg` :1810
+  - route `/seo` :1820
+  - route `/prefs` :1830
+  - route `/perf` :1836
+  - route `/learn` :1852
+  - route `/yt` :1865
+  - route `/hd` :1875
 
-## script.js (2251 lines)
+## script.js (2272 lines)
   - `bridge` :2
   - `aiKey` :21
   - `fadeIn` :72
@@ -201,112 +208,114 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - `PSL` :193
   - `saveSites` :200
   - `takeSites` :206
-  - `sitePrefs` :215
-  - `tabPass` :222
-  - `relPass` :256
-  - `listPass` :308
-  - `foldPass` :361
-  - `canHD` :386
-  - `sizeHint` :398
-  - `lowres` :406
-  - `hdImg` :407
-  - `picKey` :453
-  - `row` :461
-  - `aiImg` :527
-- **Image AI (ct-vision on the PC's GPU, through this plugin's server)** :531
-  - `origOf` :535
-  - `VISON` :537
-  - `visThr` :539
-  - `visAsk` :545
-  - `visQueue` :550
-  - `visFlush` :560
-  - `visKey` :569
-  - `visRow` :571
-  - `visApply` :576
-  - `mediaRel` :595
-  - `mediaFold` :610
-  - `mediaFoldAdd` :617
-  - `previewPass` :649
-  - `relatedStrip` :663
-  - `relOk` :710
-  - `card` :711
-  - `handle` :731
-  - `scan` :740
-  - `bangFor` :764
-  - `markDrawn` :785
-  - `glance` :786
-  - `ask` :819
-  - `ready` :824
-  - `earlyStart` :826
-  - `nearWord` :880
-  - `lower` :891
-  - `extras` :893
-- **Site choices, People also ask, and search Tools** :1000
-  - `goTo` :1001
-  - `rowHost` :1007
-- **Sites: Prefer / Normal / Lower / Hide, one rounded group in each result's menu (replaces Rank / Block)** :1008
-  - `siteOf` :1013
-  - `siteItems` :1014
-  - `settingsFetch` :1066
-  - `saveSite` :1074
-  - `paaAnchor` :1125
-  - `paa` :1128
-  - `advParse` :1256
-  - `tools` :1268
-  - `flagTop` :1327
-  - `curType` :1339
-  - `flagBox` :1340
-  - `flagBtn` :1381
-  - `skel` :1397
-  - `noUsage` :1408
-- **Sitelinks, Discussions and forums, Videos, Top stories** :1417
-  - `ytId` :1422
-  - `VIDEO_URL` :1429
-  - `forumName` :1433
-  - `when` :1446
-  - `ago` :1454
-  - `fresh` :1465
-  - `hot` :1469
-  - `qHash` :1473
-  - `hashStore` :1474
-  - `info` :1492
-  - `mk` :1515
-  - `favImg` :1516
-  - `moreBtn` :1523
-  - `scroller` :1532
-  - `section` :1544
-  - `forumRow` :1547
-  - `siteName` :1560
-  - `videoCard` :1561
-  - `storyCard` :1583
-  - `used` :1600
-  - `shown` :1601
-  - `groups` :1602
-- **Answer card, local answers (core answers.js: math, units, cooking, tip/percent, dates, patterns)** :1715
-  - `cmuQ` :1721
-  - `aiWanted` :1726
-  - `aiBox` :1742
-  - `aiPass` :1755
-  - `ansCard` :1782
-  - `livePoll` :1845
-  - `fitLine` :1864
-  - `ansPass` :1873
-  - `ansCopy` :1916
-  - `onlyPass` :1930
-- **Quick view (spec 11): your tap opens it under the result (it grows: your action), tap again to close** :1953
-  - `qvBox` :1955
-  - `qvs` :2021
-  - `starsWanted` :2022
-  - `starsPass` :2024
-  - `meanPass` :2056
-- **Knowledge panel (spec 3)** :2075
-  - `kpWanted` :2083
-  - `kpCard` :2089
-  - `kpPass` :2132
-  - `safe` :2155
-  - `tabRescue` :2160
-  - `init` :2175
-- **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :2207
+  - `sitePrefs` :216
+  - `tabPass` :223
+  - `relPass` :257
+  - `listPass` :309
+  - `foldPass` :362
+  - `canHD` :387
+  - `sizeHint` :399
+  - `lowres` :407
+  - `hdImg` :408
+  - `picKey` :454
+  - `row` :462
+  - `aiImg` :528
+- **Image AI (ct-vision on the PC's GPU, through this plugin's server)** :532
+  - `origOf` :536
+  - `VISON` :538
+  - `visThr` :540
+  - `visAsk` :546
+  - `visQueue` :551
+  - `visFlush` :561
+  - `visKey` :570
+  - `visRow` :572
+  - `visApply` :577
+  - `mediaRel` :596
+  - `mediaFold` :611
+  - `mediaFoldAdd` :618
+  - `previewPass` :650
+  - `relatedStrip` :664
+  - `relOk` :711
+  - `card` :712
+  - `handle` :732
+  - `scan` :741
+  - `bangFor` :765
+  - `markDrawn` :786
+  - `glance` :787
+  - `ask` :820
+  - `ready` :825
+  - `earlyStart` :827
+  - `nearWord` :881
+  - `lower` :892
+  - `extras` :894
+- **Site choices, People also ask, and search Tools** :1001
+  - `goTo` :1002
+  - `rowHost` :1008
+- **Sites: Prefer / Normal / Lower / Hide, one rounded group in each result's menu (replaces Rank / Block)** :1009
+  - `siteOf` :1014
+  - `siteItems` :1015
+  - `settingsFetch` :1067
+  - `saveSite` :1075
+  - `paaAnchor` :1126
+  - `paa` :1129
+  - `advParse` :1257
+  - `tools` :1269
+  - `flagTop` :1329
+  - `curType` :1341
+  - `flagMark` :1342
+  - `flagSend` :1348
+  - `flagBox` :1372
+  - `flagBtn` :1402
+  - `skel` :1418
+  - `noUsage` :1429
+- **Sitelinks, Discussions and forums, Videos, Top stories** :1438
+  - `ytId` :1443
+  - `VIDEO_URL` :1450
+  - `forumName` :1454
+  - `when` :1467
+  - `ago` :1475
+  - `fresh` :1486
+  - `hot` :1490
+  - `qHash` :1494
+  - `hashStore` :1495
+  - `info` :1513
+  - `mk` :1536
+  - `favImg` :1537
+  - `moreBtn` :1544
+  - `scroller` :1553
+  - `section` :1565
+  - `forumRow` :1568
+  - `siteName` :1581
+  - `videoCard` :1582
+  - `storyCard` :1604
+  - `used` :1621
+  - `shown` :1622
+  - `groups` :1623
+- **Answer card, local answers (core answers.js: math, units, cooking, tip/percent, dates, patterns)** :1736
+  - `cmuQ` :1742
+  - `aiWanted` :1747
+  - `aiBox` :1763
+  - `aiPass` :1776
+  - `ansCard` :1803
+  - `livePoll` :1866
+  - `fitLine` :1885
+  - `ansPass` :1894
+  - `ansCopy` :1937
+  - `onlyPass` :1951
+- **Quick view (spec 11): your tap opens it under the result (it grows: your action), tap again to close** :1974
+  - `qvBox` :1976
+  - `qvs` :2042
+  - `starsWanted` :2043
+  - `starsPass` :2045
+  - `meanPass` :2077
+- **Knowledge panel (spec 3)** :2096
+  - `kpWanted` :2104
+  - `kpCard` :2110
+  - `kpPass` :2153
+  - `safe` :2176
+  - `tabRescue` :2181
+  - `init` :2196
+- **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :2228
 
 ## core.js (566 lines)
 - **Sites: registrable domain via the public suffix list** :4
@@ -470,7 +479,7 @@ Every section, function and route in degoog/wip/files with its line. Read the li
 
 ## setcss.js (12 lines)
 
-## custom.css (837 lines)
+## custom.css (842 lines)
 - Catppuccin Mocha colors :1
 - DESCRIPTION SIZE :22
 - v50 :24
@@ -532,28 +541,28 @@ Every section, function and route in degoog/wip/files with its line. Read the li
 - Tools :614
 - Tools lives with the search it changes :615
 - ⚑ Flag :627
-- ===== Answer card (local answers) :648
-- Featured snippet :662
-- ===== AI summary spot :673
-- The panel over the 3 lines :686
-- Opened with ⌄ (your tap) :694
-- CMU card details :702
-- Sports card :709
-- Knowledge panel (spec 3) :726
-- Wide screens :746
-- Same-shape results (spec 8) :760
-- "Only reddit :762
-- "Open archived copy" :765
-- Images row (spec 12) :769
-- Quick view :777
-- Meaning line :790
-- Site icons are back (user, 2026-11-23) :797
-- Menu lines are tap targets :800
-- ===== Vertical rhythm (one scale, by how things belong together) ===== :803
-- Line breaks that read well, for every piece of text :816
-- Phones :824
-- Image/video preview :830
-- Image AI :834
+- ===== Answer card (local answers) :653
+- Featured snippet :667
+- ===== AI summary spot :678
+- The panel over the 3 lines :691
+- Opened with ⌄ (your tap) :699
+- CMU card details :707
+- Sports card :714
+- Knowledge panel (spec 3) :731
+- Wide screens :751
+- Same-shape results (spec 8) :765
+- "Only reddit :767
+- "Open archived copy" :770
+- Images row (spec 12) :774
+- Quick view :782
+- Meaning line :795
+- Site icons are back (user, 2026-11-23) :802
+- Menu lines are tap targets :805
+- ===== Vertical rhythm (one scale, by how things belong together) ===== :808
+- Line breaks that read well, for every piece of text :821
+- Phones :829
+- Image/video preview :835
+- Image AI :839
 
 ## other
 - ../autoupdate-job.ps1: the PC's hourly update job (Issue() puts update problems on the server for ⚑ Report)

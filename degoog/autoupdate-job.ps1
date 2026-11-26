@@ -25,6 +25,62 @@ function Issue($text) {
   } catch {}
 }
 function Tail($t) { if ($t.Length -gt 2800) { $t.Substring($t.Length - 2800) } else { $t } }
+# Reports from the flag in degoog go to Claude by themselves, all in one Claude Code session (claude --cloud) on
+# acqcath/scripts: an update problem (the update broke something) right away; the rest once the local model on the
+# degoog server (ai-summary's) judges them worth a session, since each session uses weekly Claude usage. Needs Git and the Claude Code CLI, signed in once, on this PC (the user installs them:
+# licenses are theirs to accept); until then a notification (at most daily) gives the one line and reports wait.
+function SendReports {
+  $js = Join-Path $env:TEMP 'ct-flags.js'
+  try {
+    $c = docker ps -q | Where-Object { (docker inspect $_ --format '{{range .Mounts}}{{.Destination}} {{end}}') -match '/app/data' } | Select-Object -First 1
+    if (-not $c) { return }
+    [IO.File]::WriteAllText($js, @'
+const port = process.env.DEGOOG_PORT || 4444;
+const q = process.argv[2] === "sent" ? "!cleantitles bridge flags sent=1" : "!cleantitles bridge flags prompt=1";
+const r = await fetch(`http://127.0.0.1:${port}/api/command`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: q }) });
+const j = await r.json();
+process.stdout.write(String(j.html || "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&"));
+'@)
+    docker cp $js "${c}:/tmp/ct-flags.js" | Out-Null
+    $w = (docker exec $c bun /tmp/ct-flags.js | Out-String) | ConvertFrom-Json
+    if (-not $w -or -not $w.n) { return }
+    $stamp = Join-Path $dir 'reports-sent.txt'
+    if (-not $w.send) { return }
+    $env:Path = "$env:Path;$env:USERPROFILE\.local\bin;$env:ProgramFiles\Git\cmd"
+    $nag = Join-Path $dir 'signin-nag.txt'
+    $ready = (Get-Command git -ErrorAction SilentlyContinue) -and (Get-Command claude -ErrorAction SilentlyContinue)
+    if (-not $ready) {
+      if (-not (Test-Path $nag) -or (Get-Item $nag).LastWriteTime -lt (Get-Date).AddHours(-20)) {
+        Set-Content -Path $nag -Value (Get-Date -Format s)
+        Notify "degoog has $($w.n) report(s) to send to Claude. One-time setup in PowerShell: winget install Git.Git; irm https://claude.ai/install.ps1 | iex; claude"
+      }
+      return
+    }
+    $repo = Join-Path $dir 'repo'
+    if (-not (Test-Path (Join-Path $repo '.git'))) { git clone -q --depth 1 --filter=blob:none --sparse https://github.com/acqcath/scripts $repo 2>&1 | Out-Null; git -C $repo sparse-checkout set degoog 2>&1 | Out-Null }
+    git -C $repo pull -q --ff-only 2>&1 | Out-Null
+    $out = Join-Path $env:TEMP 'ct-claude.txt'
+    $p = Start-Process claude -ArgumentList '--cloud', ('"' + $w.prompt + '"') -WorkingDirectory $repo -NoNewWindow -PassThru -RedirectStandardOutput $out -RedirectStandardError "$out.err"
+    if (-not $p.WaitForExit(300000)) { try { $p.Kill() } catch {} }
+    $res = ((Get-Content $out -Raw -ErrorAction SilentlyContinue) + (Get-Content "$out.err" -Raw -ErrorAction SilentlyContinue))
+    Remove-Item -Force $out, "$out.err" -ErrorAction SilentlyContinue
+    if ($res -match 'session_\w+') {
+      docker exec $c bun /tmp/ct-flags.js sent | Out-Null
+      "$(Get-Date -Format s) sent $($w.n) report(s): $($Matches[0])" | Set-Content -Path $stamp
+    } else {
+      "$(Get-Date -Format s) reports not sent: $res" | Add-Content -Path $log
+      if (-not (Test-Path $nag) -or (Get-Item $nag).LastWriteTime -lt (Get-Date).AddHours(-20)) {
+        Set-Content -Path $nag -Value (Get-Date -Format s)
+        Notify "degoog has $($w.n) report(s) waiting. To let them go to Claude by themselves, sign in once: open PowerShell, run claude"
+      }
+    }
+  } catch {
+    "reports check failed $(Get-Date -Format s): $($_.Exception.Message)" | Add-Content -Path $log
+  } finally {
+    Remove-Item -Force $js -ErrorAction SilentlyContinue
+    if ($c) { docker exec $c rm -f /tmp/ct-flags.js 2>&1 | Out-Null }
+  }
+}
 # Checks every hour (one small GitHub request; installs only when something changed), so a fix reaches the PC
 # within the hour. The job switches its own task to hourly once.
 try {
@@ -54,3 +110,4 @@ try {
 } catch {
   "update check failed $(Get-Date -Format s): $($_.Exception.Message)" | Add-Content -Path $log
 }
+SendReports

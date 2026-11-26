@@ -201,13 +201,14 @@ const saveSites = () => { try { localStorage.setItem(SITES_KEY, JSON.stringify(S
 // Sites lowered by the anti-SEO checks ("auto" in the menu), and whether those checks are on (Settings)
 // Also: will ai-summary answer (a model set, not off, "only for questions"?), so its spot is kept only when it will come
 // and the ECB currency rates for the answer card (fx)
-let SITES_AUTO = [], SEO_ON = false, AI_ON = { on: false }, FX = null;
+let SITES_AUTO = [], SEO_ON = false, AI_ON = { on: false }, FX = null, FLAGN = { n: 0, due: false };
 try { const c = JSON.parse(localStorage.getItem("ct-sites-auto") || "null"); if (c && Array.isArray(c.auto)) { SITES_AUTO = c.auto; SEO_ON = !!c.seo; if (c.ai) AI_ON = c.ai; if (c.fx && c.fx.rates) FX = c.fx; } } catch {}
 const takeSites = (j) => {
   if (!j || !j.sites || typeof j.sites !== "object") return;
   SITES = j.sites; saveSites();
   SITES_AUTO = Array.isArray(j.auto) ? j.auto : []; SEO_ON = !!j.seo; AI_ON = j.ai && typeof j.ai === "object" ? j.ai : { on: false };
   if (j.fx && j.fx.rates) FX = j.fx;
+  FLAGN = { n: Number(j.flags) || 0, due: !!j.flagDue }; flagMark();
   try { localStorage.setItem("ct-sites-auto", JSON.stringify({ auto: SITES_AUTO, seo: SEO_ON, ai: AI_ON, fx: FX })); } catch {}
 };
 bridge("sites", {}).then(takeSites).catch(() => {});
@@ -1319,10 +1320,11 @@ const tools = () => {
 };
 
 
-// ⚑ at the right end of the tab row (phone and PC) opens "What's wrong? (optional)" and one Report button. Report keeps
-// the search, your note and its top 10 results on your server and opens a Claude Code session (the Claude app on the
-// phone) filled with them and anything waiting (an update problem from the PC); you tap send there.
-// The link is a real link built before the tap, so phones open the Claude app (a link opened after a wait is blocked).
+// ⚑ at the right end of the tab row (phone and PC): "What's wrong? (optional)" + Save keeps the search, your note and
+// its top 10 results on your server; the ⚑ shows how many wait ("⚑ 3"). The local model decides when they're worth a
+// Claude session (the ⚑ lights up on yes) and the PC's hourly job sends them. "Send N to Claude" opens one Claude Code session (the Claude app on the phone) filled
+// with all of them; you tap send there. It's a real link built before the tap, so phones open the Claude app (a
+// link opened after a wait is blocked).
 const CLAUDE_REPO = "acqcath/scripts";
 const flagTop = () => {
   const out = [];
@@ -1337,45 +1339,64 @@ const flagTop = () => {
   return out;
 };
 const curType = () => { try { return new URL(location.href).searchParams.get("type") || "web"; } catch { return "web"; } };
+const flagMark = () => {
+  const f = document.getElementById("ct-flag");
+  if (!f) return;
+  f.textContent = FLAGN.n ? `⚑ ${FLAGN.n}` : "⚑";
+  f.classList.toggle("ct-due", FLAGN.due);
+};
+const flagSend = (box) => {
+  const row = box.querySelector(".ct-flag-send");
+  bridge("flags", {}, "{}").then((j) => {
+    if (!box.isConnected) return;
+    row.replaceChildren();
+    const fl = j && Array.isArray(j.flags) ? j.flags : [], issue = String((j && j.issue) || "");
+    const n = fl.length + (issue ? 1 : 0);
+    FLAGN = { n, due: !!issue || !!j.send }; flagMark();
+    if (!n) return;
+    const u = new URL("https://claude.ai/code/new");
+    u.searchParams.set("q", CT.flagPrompt(fl, issue));
+    u.searchParams.set("repo", CLAUDE_REPO);
+    u.searchParams.set("branch", "main");
+    const go = mk("a", "ct-flag-go", `Send ${n} to Claude`);
+    go.href = u.toString(); go.target = "_blank"; go.rel = "noopener";
+    go.addEventListener("click", () => {
+      bridge("flags", { sent: "1" }, "{}").catch(() => {}); // keepalive: still lands as the page hands over to Claude
+      FLAGN = { n: 0, due: false }; flagMark();
+      setTimeout(() => row.replaceChildren(), 400);
+    });
+    row.append(go);
+    if (issue) row.append(mk("span", "ct-flag-st", "Includes an update problem from the PC: sending soon."));
+  }).catch(() => {});
+};
 const flagBox = (btn) => {
   let box = document.getElementById("ct-flagbox");
   if (box) { box.remove(); btn.setAttribute("aria-expanded", "false"); return; }
   btn.setAttribute("aria-expanded", "true");
-  box = document.createElement("div");
+  box = document.createElement("form");
   box.id = "ct-flagbox";
   const l = mk("label", "", "");
   const t = document.createElement("textarea");
   t.rows = 2; t.maxLength = 1000; t.setAttribute("autocapitalize", "sentences");
   l.append(mk("span", "", "What's wrong? (optional)"), t);
-  const go = mk("a", "ct-flag-go", "Report");
-  go.target = "_blank"; go.rel = "noopener";
-  const extra = mk("div", "ct-flag-st", "");
-  box.append(l, go, extra);
-  let wait = { flags: [], issue: "" };
-  const cur = () => ({ t: Date.now(), q: curQ(), type: curType(), note: t.value.trim(), top: flagTop() });
-  const link = () => {
-    const u = new URL("https://claude.ai/code/new");
-    u.searchParams.set("q", CT.flagPrompt([...wait.flags, cur()], wait.issue));
-    u.searchParams.set("repo", CLAUDE_REPO);
-    u.searchParams.set("branch", "main");
-    go.href = u.toString();
-  };
-  link();
-  t.addEventListener("input", link);
-  go.addEventListener("pointerdown", link);
-  bridge("flags", {}, "{}").then((j) => {
-    if (!j || !box.isConnected) return;
-    wait = { flags: Array.isArray(j.flags) ? j.flags : [], issue: String(j.issue || "") };
-    const n = wait.flags.length + (wait.issue ? 1 : 0);
-    if (n) extra.textContent = wait.issue && !wait.flags.length ? "Also sends the PC's last update problem." : `Also sends ${n} earlier report${n > 1 ? "s" : ""}.`;
-    link();
-  }).catch(() => {});
-  go.addEventListener("click", () => {
-    const c = cur();
-    bridge("flag", {}, JSON.stringify(c)).catch(() => {}); // keepalive: still lands as the page hands over to Claude
-    setTimeout(() => { box.remove(); btn.setAttribute("aria-expanded", "false"); }, 400);
+  const save = mk("button", "", "Save");
+  save.type = "submit";
+  const st = mk("span", "ct-flag-st", "");
+  const acts = mk("div", "ct-flag-acts", "");
+  acts.append(save, st);
+  box.append(l, acts, mk("div", "ct-flag-send", ""));
+  box.addEventListener("submit", (e) => {
+    e.preventDefault(); e.stopPropagation();
+    save.disabled = true; st.textContent = "";
+    bridge("flag", {}, JSON.stringify({ q: curQ(), type: curType(), note: t.value.trim(), top: flagTop() })).then((j) => {
+      save.disabled = false;
+      if (!j) { st.textContent = "Couldn't save. Try again."; return; }
+      t.value = ""; st.textContent = "Saved.";
+      flagSend(box);
+    }).catch(() => { save.disabled = false; st.textContent = "Couldn't save. Try again."; });
   });
   (document.getElementById("ct-adv") || document.getElementById("results-tabs")).after(box);
+  flagSend(box);
   if (!PHONE.matches) t.focus();
 };
 const flagBtn = () => {
@@ -1384,12 +1405,12 @@ const flagBtn = () => {
   const f = document.createElement("button");
   f.type = "button";
   f.id = "ct-flag";
-  f.textContent = "⚑";
   f.title = "Report a problem with these results";
   f.setAttribute("aria-label", "Report a problem with these results");
   f.setAttribute("aria-expanded", "false");
   f.addEventListener("click", () => flagBox(f));
   tabs.append(f);
+  flagMark();
   tabsEdge();
 };
 

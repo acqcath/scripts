@@ -1,9 +1,11 @@
 # clean-titles: quickstart (read this instead of all of HANDOFF.md; grep HANDOFF.md for details)
 
 ## Every degoog chat, first: Flags
-⚑ Report (tab row, every tab) opens a new Claude Code session filled with the report: the search, tab, the user's note,
-the top 10 results, plus the PC updater's last problem if any (`updateIssue`). In that session, and at the start of
-every other degoog chat:
+⚑ (degoog's tab row, every tab) saves reports on the server: the search, tab, the user's note, the top 10 results.
+The PC's hourly job (../autoupdate-job.ps1 `SendReports`) sends them with `claude --cloud` from a sparse clone on the
+PC: an update breakage (`updateIssue`, the self-check output) at once, everything else in one session overnight
+(1-10 AM ET); the ⚑ box also has a manual "Send N to Claude" link. In such a session, and at the start of every
+other degoog chat:
 1. `add_repo acqcath/degoog-flags` (private) and clone it (`git clone --depth 1 https://github.com/acqcath/degoog-flags`).
    If it doesn't exist yet or isn't reachable, say so in one line and go on.
 2. A Report session: commit its flags as `flags/<UTC date>-<n>.json` (the JSON from the prompt). Never put the user's
