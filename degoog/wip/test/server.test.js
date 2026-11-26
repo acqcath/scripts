@@ -610,3 +610,13 @@ test("M4: shaped answers and the contested check are parsed strictly", async () 
   const n = S.needsParse(Array.from({ length: Object.values(S.NEEDS).reduce((a, [, o]) => a + Object.keys(o).length, 0) }, () => 0.5));
   expect(Object.values(n.s).reduce((a, b) => a + b, 0)).toBeCloseTo(1);
 });
+
+import { median, rankWait } from "../files/index.js";
+test("search time: the reranker wait is skipped once its measured median run is over the wait", () => {
+  expect(median([])).toBe(null);
+  expect(median([3, 1, 2])).toBe(2);
+  expect(rankWait([])).toBe(1600); // nothing measured: wait as before
+  expect(rankWait([400, 500, 600, 700, 800])).toBe(1600); // fast model: the race returns as soon as it answers
+  expect(rankWait([2500, 2600, 2700, 2400, 3000])).toBe(0); // slow model: waiting would time out anyway
+  expect(rankWait([2500, 2600])).toBe(1600); // too few runs to judge
+});

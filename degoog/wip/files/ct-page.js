@@ -3370,7 +3370,7 @@ const shapeAsk = (g, key) => {
   const back = () => { if (AIS.key !== key) return; AIS.shape = ""; AIS.got = false; clearTimeout(AIS.t); AIS.t = 0; aiPass(g, key); }; // no shaped answer: ai-summary's own text shows in the spot
   bridge("shape", {}, JSON.stringify({ q, k, r: rs })).then((j) => {
     if (AIS.key !== key) return;
-    const a = j && j.a, box = g.querySelector(":scope > .ct-ai");
+    const a = j && j.a, box = [...g.children].find((c) => c.classList.contains("ct-ai"));
     if (!a || !box) return back();
     box.querySelector(".ct-ai-label").replaceChildren(mk("span", "ct-ai-star", "✦"), ` AI summary · ${SHAPE_NAME[a.k] || ""}`);
     box.querySelector(".ct-ai-text").append(shapeBody(a, rs));
@@ -3572,7 +3572,9 @@ const ansPass = () => {
     // drawn in this same pass. Not on page 2+, plain-list searches, or when an answer above came first.
     let pg = 1;
     try { pg = Number(new URL(key).searchParams.get("page") || 1); } catch {}
-    if (globalThis.CT_NOSNIP !== true && !ansVal && SHOW.ans !== false && webTab && !TYPE_WORDS.test(q) && !shaped(q) && pg <= 1) {
+    // A shaped answer picked by the needs call (steps, table...) is the richer answer for the spot: no snippet then
+    const shapeNext = aiVal && !!CT.shapePick(ready("needs", key));
+    if (globalThis.CT_NOSNIP !== true && !ansVal && !shapeNext && SHOW.ans !== false && webTab && !TYPE_WORDS.test(q) && !shaped(q) && pg <= 1) {
       const rs = [...document.querySelectorAll("#results-list .result-item")].filter((el) => el.style.display !== "none" && !el.classList.contains("ct-grouped")).slice(0, 6).map(info).filter(Boolean);
       const f = CT.featuredSnippetAI(q, rs) || (rs.some((r) => r.best) ? null : CT.featuredSnippet(q, rs));
       if (f) ansVal = { ...f, label: `From ${f.h}` };

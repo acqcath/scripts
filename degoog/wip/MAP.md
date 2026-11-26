@@ -211,7 +211,7 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - route `/yt` :2012
   - route `/hd` :2022
 
-## script.js (2484 lines)
+## script.js (2486 lines)
   - `bridge` :2
   - `aiKey` :21
   - `fadeIn` :72
@@ -326,24 +326,24 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - `fitLine` :2050
   - `byWorth` :2061
   - `ansPass` :2070
-  - `ansCopy` :2117
-  - `onlyPass` :2131
-- **Quick view (spec 11): your tap opens it under the result (it grows: your action), tap again to close** :2154
-  - `qvBox` :2156
-  - `qvs` :2222
-  - `starsWanted` :2223
-  - `starsPass` :2225
-  - `meanPass` :2257
-- **Knowledge panel (spec 3)** :2276
-  - `kpWanted` :2284
-  - `kpCard` :2290
-  - `kpPass` :2333
-  - `tabKind` :2363
-  - `tabKeep` :2364
-  - `safe` :2388
-  - `tabRescue` :2393
-  - `init` :2408
-- **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :2440
+  - `ansCopy` :2119
+  - `onlyPass` :2133
+- **Quick view (spec 11): your tap opens it under the result (it grows: your action), tap again to close** :2156
+  - `qvBox` :2158
+  - `qvs` :2224
+  - `starsWanted` :2225
+  - `starsPass` :2227
+  - `meanPass` :2259
+- **Knowledge panel (spec 3)** :2278
+  - `kpWanted` :2286
+  - `kpCard` :2292
+  - `kpPass` :2335
+  - `tabKind` :2365
+  - `tabKeep` :2366
+  - `safe` :2390
+  - `tabRescue` :2395
+  - `init` :2410
+- **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :2442
 
 ## core.js (645 lines)
 - **Sites: registrable domain via the public suffix list** :4

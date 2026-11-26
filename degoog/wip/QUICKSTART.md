@@ -32,7 +32,7 @@ only those lines (`sed -n A,Bp files/x.js`).
 - custom.css, vision/app.py (reranker + image AI on the GPU), ctcheck.js (installer self-check table).
 
 ## Build, test, release
-1. `cd degoog/wip && bun install && bun test` (46 tests skip: they need private recordings in rec/).
+1. `cd degoog/wip && bun install && CT_VERSION=vNN python3 build.py && bun test` (page tests load the BUILT files/ct-page.js: rebuild after any script.js/core.js edit or the test runs old code; happy-dom has no `:scope`, use `[...g.children].find`) (46 tests skip: they need private recordings in rec/).
 2. `CT_VERSION=vNN python3 build.py && python3 patch_installer.py vNN` writes ../install.ps1 and checks every embedded file round-trips. (build_installer.py is obsolete: its v49 skeleton is gone.)
 3. Branch, push (`git -c push.negotiate=true push -u origin vNN`), open the PR with `gh api repos/acqcath/scripts/pulls -f title=... -f head=vNN -f base=main -f body=...` (`gh pr create` fails: GraphQL blocked). Each version branches from a fresh `git fetch --depth=5 origin main && git checkout -B vNN origin/main` (main is squash-merged, so a branch off the last version branch conflicts). Right after a push, merge can say "conflicts" while GitHub recomputes: wait ~10 s and retry once. Then merge it yourself as its own command: `gh api -X PUT repos/acqcath/scripts/pulls/N/merge -f merge_method=squash` (if the safety check blocks it, leave it open, build the next version on top, merge both with the next PR, and tell the user). The PC's auto-update installs main within the hour, or within a minute while a sent flag's fix is pending (autoupdate-job.ps1 Sync-Task).
 

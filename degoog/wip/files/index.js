@@ -1679,13 +1679,28 @@ export const sidesFor = (q, rs) => (rs.length < 2 ? Promise.resolve(null) : cach
 // shares one run (INFL).
 const INFL = new Map();
 const RANK_WAIT_MS = 1600, RANK_RUN_MS = 6000;
+// Search time (measured): the last 50 reranker run times and the time this hook added to each search. When the
+// reranker's median run is over the wait, waiting is wasted (it'd time out anyway): the search goes on at once and
+// the scores are kept for the next request.
+const SPEED = { rank: [], hook: [] };
+const speedAdd = (a, ms) => { a.push(ms); if (a.length > 50) a.shift(); };
+export const median = (a) => { if (!a.length) return null; const b = [...a].sort((x, y) => x - y), m = b.length >> 1; return b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2; };
+export const rankWait = (runs) => { const m = median(runs); return m != null && runs.length >= 5 && m > RANK_WAIT_MS ? 0 : RANK_WAIT_MS; };
 globalThis.__ctResults = async (result, query, params) => {
+  const t0 = Date.now();
+  try { await ctResults(result, query, params); } finally { speedAdd(SPEED.hook, Date.now() - t0); }
+};
+const ctResults = async (result, query, params) => {
   const type = String((params && params.type) || "web");
   if (!result || !Array.isArray(result.results) || !query || type === "videos") return;
   const q = String(query).trim().slice(0, 300);
   const rs = result.results.slice(0, 60);
   if (!rs.length || q.startsWith("!")) return;
-  try { if (await doiNames(result.results)) result.ctPub = 1; } catch {}
+  // Publisher names and the reranker run side by side (they used to add up)
+  const doi = doiNames(result.results).then((n) => { if (n) result.ctPub = 1; }, () => {});
+  try { await rankPart(result, q, rs, type); } finally { await doi; }
+};
+const rankPart = async (result, q, rs, type) => {
   const key = `${type}|${q}|${rs.map((r) => r.url).join("|")}`;
   let got = AIC.get(key);
   if (!got) {
@@ -1696,7 +1711,9 @@ globalThis.__ctResults = async (result, query, params) => {
       const sents = [];
       if (type === "web" && (QLIKE.test(q) || q.split(/\s+/).length >= 2)) rs.slice(0, 6).forEach((r, i) => sentences(r.snippet).slice(0, 4).forEach((x) => sents.push([i, x])));
       run = (async () => {
+        const r0 = Date.now();
         const j = await vis("/rank", { q, docs: docs.concat(sents.map(([, x]) => x)) }, RANK_RUN_MS);
+        if (j) speedAdd(SPEED.rank, Date.now() - r0);
         if (!j || !Array.isArray(j.s)) return null;
         const g = { rel: j.s.slice(0, docs.length), best: {} };
         sents.forEach(([i, x], k) => { const v = j.s[docs.length + k]; if (typeof v === "number" && (!g.best[i] || v > g.best[i].p)) g.best[i] = { s: x, p: v }; });
@@ -1706,7 +1723,8 @@ globalThis.__ctResults = async (result, query, params) => {
       })().finally(() => INFL.delete(key));
       INFL.set(key, run);
     }
-    got = await Promise.race([run, new Promise((r) => { const t = setTimeout(() => r(null), RANK_WAIT_MS); if (t.unref) t.unref(); })]);
+    const wait = rankWait(SPEED.rank);
+    got = !wait ? null : await Promise.race([run, new Promise((r) => { const t = setTimeout(() => r(null), wait); if (t.unref) t.unref(); })]);
     if (!got) return;
   }
   rs.forEach((r, i) => { if (typeof got.rel[i] === "number") r.ctRel = got.rel[i]; if (got.best[i]) r.ctBest = got.best[i]; });
@@ -1796,6 +1814,12 @@ export const routes = [
     method: "post",
     path: "/sides",
     async handler(req) { let b = {}; try { b = await req.json(); } catch {} const q = String(b.q || "").trim().slice(0, 300); return jsonOut({ d: q ? (await sidesFor(q, resIn(b))) || null : null }); },
+  },
+  {
+    // Search time (self-check): median ms the hook added per search, the reranker's median run, the wait in use
+    method: "get",
+    path: "/speed",
+    async handler() { return jsonOut({ hook: median(SPEED.hook), rank: median(SPEED.rank), n: SPEED.hook.length, wait: rankWait(SPEED.rank) }); },
   },
   {
     // First-screen cutoff sample from the page: {w: worth of the last result on its first screen} -> {cut: median}

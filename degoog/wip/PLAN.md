@@ -41,8 +41,12 @@ Variety tie-break by content similarity, built but off until ⚑ "wrong order" r
 Built: core copyKey/sameCopy in planPage (any site, transitive, ctx.copies across endless-scroll pages; fold key
 `~sim:<doc key>`, page flag ctSim). core varietyOrder(items, margin) + VARIETY_MARGIN = null (off): to turn on, set
 it from the ⚑ "order" flags' ai tie margins and call it on the shown items in listPass.
-### M4: answer card shape + contested check [WIP on branch v65-wip, not merged]
-Status: server /shape + /sides + needs group s built and tested; page shapeAsk/shapeBody/sidesPass + CSS built; page test "shaped answer fills the AI spot" FAILS (box lacks ct-shaped: check aiPass shape decision / shapeAsk firing in jsdom). Sides test not yet run. Then ctcheck rows, build v65, release.
+### M4 = v65: answer card shape + contested check [done]
+Built: server /shape + /sides + needs group s; page shapeAsk/shapeBody/sidesPass + CSS. A shape picked by the needs
+call keeps the word-match featured snippet out of the spot (the shaped answer is the richer answer). Self-check rows:
+"Needs call: shape judge", "Shaped answer", "Contested check". Search time: DOI names and the reranker run side by
+side (were serial: up to 0.9 s saved), the 1.6 s reranker wait is skipped once its measured median run is over it;
+/speed + self-check row "Search time added by clean-titles" (median ms per search).
 Shape (steps / X-vs-Y table / timeline / chart picture) from the needs call; text from ai-summary's model.
 Contested check: ai-summary's model, question-style searches only (from the needs call); the both-sides panel is
 inserted below the fold, so it never moves what is being read (the user agreed this beats reserved empty space).
