@@ -1,4 +1,4 @@
-# Daily job behind "degoog clean-titles update" (fetched fresh from GitHub each run, so fixes to it apply by
+# Job behind "degoog clean-titles update" (fetched fresh from GitHub each run, so fixes to it apply by
 # themselves). Installs only when degoog/install.ps1 on main changed. Silent when everything passes; a Windows
 # notification only when something needs you. Log: %LOCALAPPDATA%\clean-titles\last-run.txt
 $dir = Join-Path $env:LOCALAPPDATA 'clean-titles'
@@ -85,33 +85,132 @@ process.stdout.write(String(j.html || "").replace(/&lt;/g, "<").replace(/&gt;/g,
     if ($c) { docker exec $c rm -f /tmp/ct-flags.js 2>&1 | Out-Null }
   }
 }
-# Checks every 5 minutes, on the clock's 5s (one small GitHub request, well under GitHub's 60 an hour; installs only
-# when something changed), so a fix reaches the PC within 5 minutes. The job switches its own task once.
+# Log that never grows without end (a failed check can repeat every 5 minutes)
+function Log($line) {
+  try {
+    Add-Content -Path $log -Value $line
+    if ((Get-Item $log).Length -gt 200KB) { $k = Get-Content $log -Tail 200; Set-Content -Path $log -Value $k -Encoding UTF8 }
+  } catch {}
+}
+# Files come from raw.githubusercontent.com, not GitHub's API: the API allows 60 requests an hour per internet
+# address without sign-in, shared by everyone behind the same campus address. Each fetch is conditional (ETag), so an
+# unchanged file is a tiny 304 answer and the body is reused from the cache next to it.
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072
+function Get-Cond($url, $cache, $accept) {
+  $req = [Net.HttpWebRequest]::Create($url)
+  $req.UserAgent = 'degoog-clean-titles-updater'
+  $req.Accept = $accept
+  $req.Timeout = 30000
+  if ((Test-Path $cache) -and (Test-Path "$cache.etag")) { $req.Headers.Add('If-None-Match', (Get-Content "$cache.etag" -Raw).Trim()) }
+  try {
+    $res = $req.GetResponse()
+    $sr = New-Object IO.StreamReader($res.GetResponseStream(), [Text.Encoding]::UTF8)
+    $body = $sr.ReadToEnd(); $sr.Close()
+    $et = $res.Headers['ETag']; $res.Close()
+    [IO.File]::WriteAllText($cache, $body, (New-Object Text.UTF8Encoding $true))
+    if ($et) { Set-Content -Path "$cache.etag" -Value $et } else { Remove-Item "$cache.etag" -ErrorAction SilentlyContinue }
+    return @{ changed = $true; body = $body }
+  } catch {
+    $e = $_.Exception; while ($e.InnerException -and -not ($e -is [Net.WebException])) { $e = $e.InnerException }
+    if ($e -is [Net.WebException] -and $e.Response -and [int]$e.Response.StatusCode -eq 304) { $e.Response.Close(); return @{ changed = $false; body = [IO.File]::ReadAllText($cache) } }
+    throw
+  }
+}
+# The launcher the scheduled task runs: fetches this job only when it changed (conditional request), and runs the
+# last good copy when GitHub can't be reached, so one failed download never skips a run
+$launch = Join-Path $dir 'update.ps1'
+$launcher = @'
+$d = Join-Path $env:LOCALAPPDATA 'clean-titles'; $j = Join-Path $d 'job.ps1'
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072
+try {
+  $req = [Net.HttpWebRequest]::Create('https://raw.githubusercontent.com/acqcath/scripts/main/degoog/autoupdate-job.ps1')
+  $req.UserAgent = 'degoog-clean-titles-updater'; $req.Timeout = 30000
+  if ((Test-Path $j) -and (Test-Path "$j.etag")) { $req.Headers.Add('If-None-Match', (Get-Content "$j.etag" -Raw).Trim()) }
+  $res = $req.GetResponse(); $sr = New-Object IO.StreamReader($res.GetResponseStream(), [Text.Encoding]::UTF8)
+  $b = $sr.ReadToEnd(); $sr.Close(); $et = $res.Headers['ETag']; $res.Close()
+  if ($b -match 'degoog') { [IO.File]::WriteAllText($j, $b, (New-Object Text.UTF8Encoding $true)); if ($et) { Set-Content -Path "$j.etag" -Value $et } }
+} catch {}
+if (Test-Path $j) { & $j } else { "job download failed $(Get-Date -Format s)" | Add-Content -Path (Join-Path $d 'last-run.txt') }
+'@
+try { if (-not (Test-Path $launch) -or (Get-Content $launch -Raw) -ne $launcher) { [IO.File]::WriteAllText($launch, $launcher, (New-Object Text.UTF8Encoding $true)) } } catch {}
+# The task itself, kept in its best shape by this job: every 5 minutes, all day (daily trigger repeating every 5 min
+# for 1 day works on every Windows version), started through Windows 11's headless console so no window ever flashes
+# (powershell -WindowStyle Hidden still flashes, and stays open when Windows Terminal is the default). The headless
+# start is tested first (it must leave a marker file); if it fails, the plain hidden start stays and it's retried daily.
 try {
   $task = Get-ScheduledTask -TaskName 'degoog clean-titles update' -ErrorAction Stop
   $tr = $task.Triggers | Select-Object -First 1
-  if (-not $tr -or -not $tr.Repetition -or $tr.Repetition.Interval -ne 'PT5M') {
-    $nt = New-ScheduledTaskTrigger -Once -At ((Get-Date).Date) -RepetitionInterval (New-TimeSpan -Minutes 5)
-    Set-ScheduledTask -TaskName 'degoog clean-titles update' -Trigger $nt -ErrorAction Stop | Out-Null
+  $act = $task.Actions | Select-Object -First 1
+  $ps = "powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$launch`""
+  $okTrig = $tr -and $tr.Repetition -and $tr.Repetition.Interval -eq 'PT5M' -and $tr.Repetition.Duration -eq 'P1D' -and $tr.CimClass.CimClassName -eq 'MSFT_TaskDailyTrigger'
+  $okAct = $act -and $act.Execute -match 'conhost' -and $act.Arguments -match [regex]::Escape($launch)
+  $newAct = $null
+  if (-not $okAct) {
+    $failF = Join-Path $dir 'headless-failed.txt'
+    if (-not (Test-Path $failF) -or (Get-Item $failF).LastWriteTime -lt (Get-Date).AddDays(-1)) {
+      $m = Join-Path $dir 'headless-ok.txt'; Remove-Item $m -ErrorAction SilentlyContinue
+      try { $p = Start-Process conhost.exe -ArgumentList @('--headless', 'powershell.exe', '-NoProfile', '-Command', "Set-Content -LiteralPath '$m' -Value ok") -PassThru -WindowStyle Hidden; [void]$p.WaitForExit(30000) } catch {}
+      Start-Sleep -Milliseconds 500
+      if (Test-Path $m) { Remove-Item $m; Remove-Item $failF -ErrorAction SilentlyContinue; $newAct = New-ScheduledTaskAction -Execute 'conhost.exe' -Argument "--headless $ps" }
+      else { Set-Content -Path $failF -Value (Get-Date -Format s); Log "headless start test failed $(Get-Date -Format s); keeping the hidden start" }
+    }
+    if (-not $newAct -and -not ($act.Execute -match 'powershell' -and $act.Arguments -match [regex]::Escape($launch))) { $newAct = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ($ps -replace '^powershell\.exe ', '') }
   }
-} catch {}
+  if (-not $okTrig -or $newAct) {
+    $nt = New-ScheduledTaskTrigger -Daily -At '00:00'
+    $nt.Repetition = (New-ScheduledTaskTrigger -Once -At '00:00' -RepetitionInterval (New-TimeSpan -Minutes 5) -RepetitionDuration (New-TimeSpan -Days 1)).Repetition
+    $setArgs = @{ TaskName = 'degoog clean-titles update'; Trigger = $nt; ErrorAction = 'Stop' }
+    if ($newAct) { $setArgs.Action = $newAct }
+    Set-ScheduledTask @setArgs | Out-Null
+    Log "$(Get-Date -Format s) task set: every 5 min$(if ($newAct) { ", start: $($newAct.Execute)" })"
+  }
+} catch { Log "task update failed $(Get-Date -Format s): $($_.Exception.Message)" }
+
+# Reads the installer's self-check output and records the outcome. The AI builds in the background on a first
+# install: while the check says it isn't up yet, the version is "pending" and only the self-check is re-run (every
+# 10 min, no reinstall, so degoog isn't restarted again). A failed install is retried at most hourly, not every run.
+$tried = Join-Path $dir 'tried.txt'
+function Judge($sha, $out) {
+  $aiPending = $out -match 'not answering yet|not active yet'
+  if ($out -match 'All PASS \(clean-titles self-check\)') { $ok = $true; Issue '' }
+  elseif ($out -match '(\d+) FAIL \(clean-titles self-check\)') { $ok = $true; Issue "self-check after updating to ${sha}: $($Matches[1]) FAIL`n$(Tail $out)" }
+  else { $ok = $false; Issue "the update to $sha didn't finish`n$(Tail $out)" }
+  if (-not $ok) { Set-Content -Path $tried -Value "$sha fail $(Get-Date -Format o)" }
+  elseif ($aiPending) { Set-Content -Path $tried -Value "$sha pending $(Get-Date -Format o)" }
+  else { Set-Content -Path $mark -Value $sha; Remove-Item $tried -ErrorAction SilentlyContinue }
+}
 try {
-  $sha = (Invoke-RestMethod 'https://api.github.com/repos/acqcath/scripts/commits?path=degoog/install.ps1&sha=main&per_page=1' -ErrorAction Stop)[0].sha
-  if (-not $sha) { return }
-  if ((Test-Path $mark) -and ((Get-Content $mark -Raw).Trim() -eq $sha)) { return }
-  $code = Invoke-RestMethod 'https://api.github.com/repos/acqcath/scripts/contents/degoog/install.ps1' -Headers @{Accept = 'application/vnd.github.raw'} -ErrorAction Stop
+  # Version = a hash of the installer itself (raw files carry no commit id); unchanged file = 304, nothing to do
+  $inst = Join-Path $dir 'installer.ps1'
+  $code = (Get-Cond 'https://raw.githubusercontent.com/acqcath/scripts/main/degoog/install.ps1' $inst '*/*').body
+  if ($code -notmatch 'clean-titles') { SendReports; return }
+  $sha = -join ([Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($code)) | Select-Object -First 8 | ForEach-Object { $_.ToString('x2') })
+  if ((Test-Path $mark) -and ((Get-Content $mark -Raw).Trim() -eq $sha)) { SendReports; return }
+  $t = if (Test-Path $tried) { (Get-Content $tried -Raw).Trim() -split ' ' } else { @() }
+  $age = if ($t.Count -ge 3) { ((Get-Date) - [datetime]$t[2]).TotalMinutes } else { 1e9 }
+  if ($t.Count -ge 3 -and $t[0] -eq $sha -and $t[1] -eq 'fail' -and $age -lt 60) { SendReports; return }
+  if ($t.Count -ge 3 -and $t[0] -eq $sha -and $t[1] -eq 'pending') {
+    if ($age -lt 10) { SendReports; return }
+    # self-check only, from the installer already downloaded (no reinstall, no degoog restart)
+    $m = [regex]::Match($code, "WriteAllText\(`"\`$env:TEMP\\ct-check\.js`", @'\r?\n([\s\S]*?)\r?\n'@\)")
+    $c = docker ps -q | Where-Object { (docker inspect $_ --format '{{range .Mounts}}{{.Destination}} {{end}}') -match '/app/data' } | Select-Object -First 1
+    if ($m.Success -and $c) {
+      $f = Join-Path $env:TEMP 'ct-check.js'; [IO.File]::WriteAllText($f, $m.Groups[1].Value)
+      docker cp $f "${c}:/tmp/ct-check.js" | Out-Null
+      $out = docker exec $c bun /tmp/ct-check.js 2>&1 | Out-String -Width 200
+      docker exec $c rm -f /tmp/ct-check.js | Out-Null; Remove-Item -Force $f
+      "$(Get-Date -Format s) self-check again for $sha`n$out" | Set-Content -Path $log -Encoding UTF8
+      Judge $sha $out
+      SendReports; return
+    }
+  }
   $clip = $null; try { $clip = Get-Clipboard -Raw -ErrorAction Stop } catch {}
   $out = ''
   try { $out = & ([scriptblock]::Create($code)) *>&1 | Out-String -Width 200 } catch { $out = "installer error: $($_.Exception.Message)" }
   "$(Get-Date -Format s) version $sha`n$out" | Set-Content -Path $log -Encoding UTF8
   if ($null -ne $clip) { try { Set-Clipboard -Value $clip } catch {} }   # the installer copies its table; keep yours
-  # The image/answer AI builds in the background on its first install: while the check says it isn't up yet, this
-  # version isn't marked done, so tomorrow's run installs it again and records the AI's real numbers
-  $aiPending = $out -match 'not answering yet|not active yet'
-  if ($out -match 'All PASS \(clean-titles self-check\)') { if (-not $aiPending) { Set-Content -Path $mark -Value $sha }; Issue '' }
-  elseif ($out -match '(\d+) FAIL \(clean-titles self-check\)') { $n = $Matches[1]; if (-not $aiPending) { Set-Content -Path $mark -Value $sha }; Issue "self-check after updating to ${sha}: $n FAIL`n$(Tail $out)" }
-  else { Issue "the update to $sha didn't finish`n$(Tail $out)" }
+  Judge $sha $out
 } catch {
-  "update check failed $(Get-Date -Format s): $($_.Exception.Message)" | Add-Content -Path $log
+  Log "update check failed $(Get-Date -Format s): $($_.Exception.Message)"
 }
 SendReports
