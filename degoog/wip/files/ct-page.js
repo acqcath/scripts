@@ -1,4 +1,4 @@
-// clean-titles v56
+// clean-titles v57
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -1474,6 +1474,8 @@ const tabsEdge = () => {
   if (!bar || !tabs) return;
   const w = Math.round(bar.getBoundingClientRect().right - tabs.getBoundingClientRect().left + (parseFloat(getComputedStyle(tabs).paddingRight) || 0));
   if (w > 200) tabs.style.setProperty("--ct-tabs-w", `${w}px`);
+  else tabs.style.removeProperty("--ct-tabs-w");
+  if (!tabsEdge.ro && window.ResizeObserver) { tabsEdge.ro = new ResizeObserver(() => requestAnimationFrame(tabsEdge)); tabsEdge.ro.observe(bar); tabsEdge.ro.observe(tabs); }
 };
 const lineUp = () => {
   tabsEdge();
@@ -1599,14 +1601,14 @@ const saveSites = () => { try { localStorage.setItem(SITES_KEY, JSON.stringify(S
 // Sites lowered by the anti-SEO checks ("auto" in the menu), and whether those checks are on (Settings)
 // Also: will ai-summary answer (a model set, not off, "only for questions"?), so its spot is kept only when it will come
 // and the ECB currency rates for the answer card (fx)
-let SITES_AUTO = [], SEO_ON = false, AI_ON = { on: false }, FX = null, FLAGN = { n: 0, due: false };
+let SITES_AUTO = [], SEO_ON = false, AI_ON = { on: false }, FX = null;
 try { const c = JSON.parse(localStorage.getItem("ct-sites-auto") || "null"); if (c && Array.isArray(c.auto)) { SITES_AUTO = c.auto; SEO_ON = !!c.seo; if (c.ai) AI_ON = c.ai; if (c.fx && c.fx.rates) FX = c.fx; } } catch {}
 const takeSites = (j) => {
   if (!j || !j.sites || typeof j.sites !== "object") return;
   SITES = j.sites; saveSites();
   SITES_AUTO = Array.isArray(j.auto) ? j.auto : []; SEO_ON = !!j.seo; AI_ON = j.ai && typeof j.ai === "object" ? j.ai : { on: false };
   if (j.fx && j.fx.rates) FX = j.fx;
-  FLAGN = { n: Number(j.flags) || 0, due: !!j.flagDue }; flagMark();
+
   try { localStorage.setItem("ct-sites-auto", JSON.stringify({ auto: SITES_AUTO, seo: SEO_ON, ai: AI_ON, fx: FX })); } catch {}
 };
 bridge("sites", {}).then(takeSites).catch(() => {});
@@ -2719,11 +2721,8 @@ const tools = () => {
 
 
 // ⚑ at the right end of the tab row (phone and PC): "What's wrong? (optional)" + Save keeps the search, your note and
-// its top 10 results on your server; the ⚑ shows how many wait ("⚑ 3"). The local model decides when they're worth a
-// Claude session (the ⚑ lights up on yes) and the PC's hourly job sends them. "Send N to Claude" opens one Claude Code session (the Claude app on the phone) filled
-// with all of them; you tap send there. It's a real link built before the tap, so phones open the Claude app (a
-// link opened after a wait is blocked).
-const CLAUDE_REPO = "acqcath/scripts";
+// its top 10 results on your server. Nothing else shows (no count, no send link): the local model decides when they're
+// worth a Claude session and the PC's hourly job sends them by itself. Anything about the box itself goes in the same box.
 const flagTop = () => {
   const out = [];
   for (const el of document.querySelectorAll("#results-list .result-item, #results-list .image-card, #results-list .video-card")) {
@@ -2736,37 +2735,7 @@ const flagTop = () => {
   }
   return out;
 };
-const curType = () => { try { return new URL(location.href).searchParams.get("type") || "web"; } catch { return "web"; } };
-const flagMark = () => {
-  const f = document.getElementById("ct-flag");
-  if (!f) return;
-  f.textContent = FLAGN.n ? `⚑ ${FLAGN.n}` : "⚑";
-  f.classList.toggle("ct-due", FLAGN.due);
-};
-const flagSend = (box) => {
-  const row = box.querySelector(".ct-flag-send");
-  bridge("flags", {}, "{}").then((j) => {
-    if (!box.isConnected) return;
-    row.replaceChildren();
-    const fl = j && Array.isArray(j.flags) ? j.flags : [], issue = String((j && j.issue) || "");
-    const n = fl.length + (issue ? 1 : 0);
-    FLAGN = { n, due: !!issue || !!j.send }; flagMark();
-    if (!n) return;
-    const u = new URL("https://claude.ai/code/new");
-    u.searchParams.set("q", CT.flagPrompt(fl, issue));
-    u.searchParams.set("repo", CLAUDE_REPO);
-    u.searchParams.set("branch", "main");
-    const go = mk("a", "ct-flag-go", `Send ${n} to Claude`);
-    go.href = u.toString(); go.target = "_blank"; go.rel = "noopener";
-    go.addEventListener("click", () => {
-      bridge("flags", { sent: "1" }, "{}").catch(() => {}); // keepalive: still lands as the page hands over to Claude
-      FLAGN = { n: 0, due: false }; flagMark();
-      setTimeout(() => row.replaceChildren(), 400);
-    });
-    row.append(go);
-    if (issue) row.append(mk("span", "ct-flag-st", "Includes an update problem from the PC: sending soon."));
-  }).catch(() => {});
-};
+const curType = () => { try { return new URL(location.href).searchParams.get("type") || tabNow || "web"; } catch { return tabNow || "web"; } };
 const flagBox = (btn) => {
   let box = document.getElementById("ct-flagbox");
   if (box) { box.remove(); btn.setAttribute("aria-expanded", "false"); return; }
@@ -2782,7 +2751,7 @@ const flagBox = (btn) => {
   const st = mk("span", "ct-flag-st", "");
   const acts = mk("div", "ct-flag-acts", "");
   acts.append(save, st);
-  box.append(l, acts, mk("div", "ct-flag-send", ""));
+  box.append(l, acts);
   box.addEventListener("submit", (e) => {
     e.preventDefault(); e.stopPropagation();
     save.disabled = true; st.textContent = "";
@@ -2790,11 +2759,9 @@ const flagBox = (btn) => {
       save.disabled = false;
       if (!j) { st.textContent = "Couldn't save. Try again."; return; }
       t.value = ""; st.textContent = "Saved.";
-      flagSend(box);
     }).catch(() => { save.disabled = false; st.textContent = "Couldn't save. Try again."; });
   });
   (document.getElementById("ct-adv") || document.getElementById("results-tabs")).after(box);
-  flagSend(box);
   if (!PHONE.matches) t.focus();
 };
 const flagBtn = () => {
@@ -2807,8 +2774,8 @@ const flagBtn = () => {
   f.setAttribute("aria-label", "Report a problem with these results");
   f.setAttribute("aria-expanded", "false");
   f.addEventListener("click", () => flagBox(f));
+  f.textContent = "⚑";
   tabs.append(f);
-  flagMark();
   tabsEdge();
 };
 
@@ -3571,6 +3538,35 @@ const kpPass = () => {
   if (fitRO) fitRO.observe(card);
 };
 
+// Tab row: degoog redraws its tabs when the page comes back into view (and when extensions are saved) and can leave a
+// copy of a tab, no active tab or the wrong one. One tab per kind, exactly one underlined (the one you're on), and
+// Tools then ⚑ last, after every redraw.
+let tabNow = "";
+const tabKind = (t) => { const d = t.dataset.type || ""; return d.startsWith("tab:engine:") ? d.slice(11) : d.startsWith("tab:") ? d.slice(4) : d; };
+const tabKeep = () => {
+  const row = document.getElementById("results-tabs");
+  if (!row) return;
+  const tabs = [...row.children].filter((t) => t.classList.contains("results-tab"));
+  if (!tabs.length) return;
+  const seen = new Map();
+  for (const t of tabs) {
+    const k = tabKind(t), had = seen.get(k);
+    if (!had) { seen.set(k, t); continue; }
+    if (t.classList.contains("active") && !had.classList.contains("active")) { had.remove(); seen.set(k, t); } else t.remove();
+  }
+  const act = [...seen.values()].filter((t) => t.classList.contains("active"));
+  if (act.length === 1 && act[0].style.display !== "none") tabNow = tabKind(act[0]);
+  else {
+    let want = tabNow;
+    try { want = want || new URL(location.href).searchParams.get("type") || ""; } catch {}
+    if (!want && document.getElementById("results-layout")?.classList.contains("media-mode")) want = "images";
+    want = want || "web";
+    if (seen.has(want)) for (const [k, t] of seen) t.classList.toggle("active", k === want);
+  }
+  const tl = document.getElementById("ct-tools"), fl = document.getElementById("ct-flag");
+  if (tl && tl.parentElement === row && tl.nextElementSibling && tl.nextElementSibling !== fl) row.append(tl);
+  if (fl && fl.parentElement === row && fl.nextElementSibling) row.append(fl);
+};
 const safe = (name, fn) => { try { fn(); } catch (e) { console.error(`clean-titles ${name}:`, e); } };
 // A tab tapped while degoog's first search is still starting is ignored by degoog (it has no current search yet), so the
 // page seemed stuck until it finished loading. The tap is kept and repeated until degoog takes it (its tab turns
@@ -3603,7 +3599,7 @@ const init = () => {
   safe("rel", relPass);
   safe("scan", () => scan(document.body));
   safe("skeleton", () => skel(document.body));
-  safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("flag", flagBtn);
+  safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("flag", flagBtn); safe("tabkeep", tabKeep);
   safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass);
   safe("drawn", markDrawn);
   // Runs right after degoog inserts results and before the screen updates; only looks inside what was added
@@ -3615,7 +3611,7 @@ const init = () => {
     safe("tabs", tabPass);
     safe("rel", relPass);
     for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { safe("scan", () => scan(n)); safe("skeleton", () => skel(n)); safe("usage", () => noUsage(n)); }
-    safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("flag", flagBtn); safe("card", glance);
+    safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("flag", flagBtn); safe("tabkeep", tabKeep); safe("card", glance);
     safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass); safe("preview", previewPass);
     safe("drawn", markDrawn);
     safe("ai", () => { const g = document.getElementById("at-a-glance"); if (g) aiPass(g, searchId(location.href)); });

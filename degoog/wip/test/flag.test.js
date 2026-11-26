@@ -17,7 +17,7 @@ test("flag: prompt fits Claude's link, dropping snippets then older reports, nev
 // The ⚑ in the tab row: Save stores; the count shows on the ⚑; Send is a claude.ai/code link with everything waiting
 import fs from "node:fs";
 import { Window } from "happy-dom";
-test("flag: ⚑ box saves; Send N links to claude.ai/code with the waiting reports", async () => {
+test("flag: ⚑ box saves; no count, no send link", async () => {
   const win = new Window({ url: "https://degoog.local/search?q=nike%20shoes" });
   const { document } = win;
   document.body.innerHTML = '<div id="results-tabs"><div class="results-tab active" data-type="web">All</div></div><div id="results-list"><div class="result-item" data-result-url="https://www.nike.com/"><a class="result-title" href="https://www.nike.com/">Nike</a><p class="result-snippet">Just do it</p></div></div>';
@@ -38,23 +38,17 @@ test("flag: ⚑ box saves; Send N links to claude.ai/code with the waiting repor
   await new Promise((r) => setTimeout(r, 30));
   const flag = document.getElementById("ct-flag");
   expect(document.getElementById("results-tabs").lastElementChild.id).toBe("ct-flag"); // right end
-  expect(flag.textContent).toBe("⚑ 3"); // waiting count from /sites
+  expect(flag.textContent).toBe("⚑"); // no waiting count (user asked)
   flag.click();
   const box = document.getElementById("ct-flagbox");
   box.querySelector("textarea").value = "nike.com should be first";
   box.dispatchEvent(new win.Event("submit", { cancelable: true }));
   await new Promise((r) => setTimeout(r, 30));
   expect(saved[0].q).toBe("nike shoes"); expect(saved[0].note).toBe("nike.com should be first"); expect(saved[0].top[0].url).toBe("https://www.nike.com/");
-  const go = box.querySelector("a.ct-flag-go");
-  expect(go.textContent).toBe("Send 2 to Claude"); // 1 report + the update problem
-  expect(flag.classList.contains("ct-due")).toBe(true); // lit: the update broke something
-  const u = new URL(go.href);
-  expect(u.origin + u.pathname).toBe("https://claude.ai/code/new");
-  expect(u.searchParams.get("repo")).toBe("acqcath/scripts");
-  expect(u.searchParams.get("q")).toContain("nike.com should be first");
-  go.dispatchEvent(new win.MouseEvent("click", { bubbles: true, cancelable: true }));
-  expect(calls.some((c) => /bridge flags .*sent=1/.test(c))).toBe(true);
+  expect(box.querySelector("a")).toBe(null); // no manual send link: the PC job sends by itself
+  expect(box.textContent).toContain("Saved.");
   expect(flag.textContent).toBe("⚑");
+  expect(flag.classList.contains("ct-due")).toBe(false);
   await win.happyDOM.close();
 });
 

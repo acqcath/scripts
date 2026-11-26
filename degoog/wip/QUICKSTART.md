@@ -2,18 +2,16 @@
 
 ## Every degoog chat, first: Flags
 ⚑ (degoog's tab row, every tab) saves reports on the server: the search, tab, the user's note, the top 10 results.
-The PC's hourly job (../autoupdate-job.ps1 `SendReports`) sends them with `claude --cloud` from a sparse clone on the
-PC: an update breakage (`updateIssue`, the self-check output) at once, everything else in one session overnight
-(1-10 AM ET); the ⚑ box also has a manual "Send N to Claude" link. In such a session, and at the start of every
-other degoog chat:
-1. `add_repo acqcath/degoog-flags` (private) and clone it (`git clone --depth 1 https://github.com/acqcath/degoog-flags`).
-   If it doesn't exist yet or isn't reachable, say so in one line and go on.
-2. A Report session: commit its flags as `flags/<UTC date>-<n>.json` (the JSON from the prompt). Never put the user's
-   searches in acqcath/scripts (public).
-3. Read flags newer than `READ-UP-TO` in degoog-flags (an ISO time; all flags if missing), fix each at the code level
-   (core.js / script.js / index.js: ranking, relevance, junk rules), add a test from the flag where possible, release,
-   merge, then set `READ-UP-TO` to the newest flag's time and push degoog-flags.
-4. `updateIssue` = the installer's self-check output after the hourly update: fix the FAIL rows like any other bug.
+The ⚑ shows nothing else (no count, no send link: the user asked). The PC's hourly job (../autoupdate-job.ps1
+`SendReports`) sends them with `claude --cloud`: an update breakage (`updateIssue`, the self-check output) at once,
+the rest when the local model says they're worth a session; the server marks them sent. The job installs Git and the
+Claude CLI itself and opens Claude's sign-in once a day until it's approved. No separate flags repo (the user won't
+create one; add_repo for a new repo is refused): a Report session gets every flag in its prompt.
+1. Fix each flag at the code level (core.js / script.js / index.js: ranking, relevance, junk rules, or the ⚑ box itself),
+   add a test from the flag where possible (no searches from flags in this public repo), release, merge.
+2. `updateIssue` = the installer's self-check output after the hourly update: fix the FAIL rows like any other bug.
+3. Live look at the server (degoog.tigon-cat.ts.net, built-in browser): every action asks the user to approve, so read
+   the code first and, if still needed, do it all in ONE javascript call (all tabs, sizes, measurements). No screenshots.
 
 Where code lives: **[MAP.md](MAP.md)** (every section, function and route with file:line; rebuilt by build.py). Read
 only those lines (`sed -n A,Bp files/x.js`).
