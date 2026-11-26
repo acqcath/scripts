@@ -25,9 +25,9 @@ function Issue($text) {
   } catch {}
 }
 function Tail($t) { if ($t.Length -gt 2800) { $t.Substring($t.Length - 2800) } else { $t } }
-# Reports from the flag in degoog go to Claude by themselves: an update problem (the update broke something) right
-# away, everything else once a night (1-10 AM Eastern, when Claude usage would otherwise go unused), all in one Claude
-# Code session (claude --cloud) on acqcath/scripts. Needs the Claude Code CLI signed in once on this PC; until then a
+# Reports from the flag in degoog go to Claude by themselves, all in one Claude Code session (claude --cloud) on
+# acqcath/scripts: an update problem (the update broke something) right away; the rest once the local model on the
+# degoog server (ai-summary's) judges them worth a session, since each session uses weekly Claude usage. Needs the Claude Code CLI signed in once on this PC; until then a
 # notification (at most daily) says so and the reports wait on the server.
 function SendReports {
   $js = Join-Path $env:TEMP 'ct-flags.js'
@@ -44,10 +44,8 @@ process.stdout.write(String(j.html || "").replace(/&lt;/g, "<").replace(/&gt;/g,
     docker cp $js "${c}:/tmp/ct-flags.js" | Out-Null
     $w = (docker exec $c bun /tmp/ct-flags.js | Out-String) | ConvertFrom-Json
     if (-not $w -or -not $w.n) { return }
-    $et = [TimeZoneInfo]::ConvertTimeBySystemTimeZoneId((Get-Date), 'Eastern Standard Time').Hour
     $stamp = Join-Path $dir 'reports-sent.txt'
-    $recent = (Test-Path $stamp) -and ((Get-Item $stamp).LastWriteTime -gt (Get-Date).AddHours(-12))
-    if (-not ($w.issue -or ($et -ge 1 -and $et -lt 10 -and -not $recent))) { return }
+    if (-not $w.send) { return }
     $env:Path = "$env:Path;$env:USERPROFILE\.local\bin;$env:ProgramFiles\Git\cmd"
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) { winget install --id Git.Git -e --silent --accept-package-agreements --accept-source-agreements | Out-Null }
     if (-not (Get-Command claude -ErrorAction SilentlyContinue)) { Invoke-RestMethod https://claude.ai/install.ps1 | Invoke-Expression | Out-Null }

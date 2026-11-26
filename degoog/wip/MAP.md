@@ -2,7 +2,7 @@
 
 Every section, function and route in degoog/wip/files with its line. Read the lines you need (`sed -n A,Bp file`), not whole files.
 
-## index.js (1905 lines)
+## index.js (1963 lines)
   - `braveOriginal` :13
   - `upgrade` :33
 - **Typo fixing and related searches, without Google** :57
@@ -156,33 +156,38 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - `flagIssue` :1482
   - `flagOpen` :1483
   - `flagPromptS` :1485
-  - `flagCount` :1497
-  - `globalThis.__ctResults` :1504
-  - route `/flag` :1541
-  - route `/flags` :1558
-  - route `/vis` :1577
-  - route `/rank` :1589
-  - route `/near` :1600
-  - route `/fix` :1610
-  - route `/qs` :1630
-  - route `/relay` :1641
-  - route `/sites` :1661
-  - route `/why` :1679
-  - route `/wd` :1684
-  - route `/qv` :1693
-  - route `/qvs` :1701
-  - route `/arch` :1710
-  - route `/kp` :1718
-  - route `/sports` :1726
-  - route `/cmu` :1734
-  - route `/eol` :1742
-  - route `/aiimg` :1752
-  - route `/seo` :1762
-  - route `/prefs` :1772
-  - route `/perf` :1778
-  - route `/learn` :1794
-  - route `/yt` :1807
-  - route `/hd` :1817
+  - `aiAsk` :1499
+  - `judgeParse` :1534
+  - `flagHost` :1539
+  - `flagJudge` :1541
+  - `judgeNow` :1552
+  - `flagCount` :1553
+  - `globalThis.__ctResults` :1560
+  - route `/flag` :1597
+  - route `/flags` :1615
+  - route `/vis` :1635
+  - route `/rank` :1647
+  - route `/near` :1658
+  - route `/fix` :1668
+  - route `/qs` :1688
+  - route `/relay` :1699
+  - route `/sites` :1719
+  - route `/why` :1737
+  - route `/wd` :1742
+  - route `/qv` :1751
+  - route `/qvs` :1759
+  - route `/arch` :1768
+  - route `/kp` :1776
+  - route `/sports` :1784
+  - route `/cmu` :1792
+  - route `/eol` :1800
+  - route `/aiimg` :1810
+  - route `/seo` :1820
+  - route `/prefs` :1830
+  - route `/perf` :1836
+  - route `/learn` :1852
+  - route `/yt` :1865
+  - route `/hd` :1875
 
 ## script.js (2272 lines)
   - `bridge` :2

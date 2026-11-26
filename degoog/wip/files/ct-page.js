@@ -2719,8 +2719,8 @@ const tools = () => {
 
 
 // ⚑ at the right end of the tab row (phone and PC): "What's wrong? (optional)" + Save keeps the search, your note and
-// its top 10 results on your server until you send; the ⚑ shows how many wait ("⚑ 3"), and lights up only when the
-// PC's update broke something. "Send N to Claude" opens one Claude Code session (the Claude app on the phone) filled
+// its top 10 results on your server; the ⚑ shows how many wait ("⚑ 3"). The local model decides when they're worth a
+// Claude session (the ⚑ lights up on yes) and the PC's hourly job sends them. "Send N to Claude" opens one Claude Code session (the Claude app on the phone) filled
 // with all of them; you tap send there. It's a real link built before the tap, so phones open the Claude app (a
 // link opened after a wait is blocked).
 const CLAUDE_REPO = "acqcath/scripts";
@@ -2750,7 +2750,7 @@ const flagSend = (box) => {
     row.replaceChildren();
     const fl = j && Array.isArray(j.flags) ? j.flags : [], issue = String((j && j.issue) || "");
     const n = fl.length + (issue ? 1 : 0);
-    FLAGN = { n, due: !!issue }; flagMark();
+    FLAGN = { n, due: !!issue || !!j.send }; flagMark();
     if (!n) return;
     const u = new URL("https://claude.ai/code/new");
     u.searchParams.set("q", CT.flagPrompt(fl, issue));
@@ -2764,7 +2764,7 @@ const flagSend = (box) => {
       setTimeout(() => row.replaceChildren(), 400);
     });
     row.append(go);
-    if (issue) row.append(mk("span", "ct-flag-st", "includes an update problem from the PC"));
+    if (issue) row.append(mk("span", "ct-flag-st", "Includes an update problem from the PC: sending soon."));
   }).catch(() => {});
 };
 const flagBox = (btn) => {

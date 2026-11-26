@@ -27,7 +27,7 @@ test("flag: ⚑ box saves; Send N links to claude.ai/code with the waiting repor
     calls.push(q);
     let out = { ok: 1 };
     if (/bridge flag __body/.test(q)) { saved.push(JSON.parse(new URLSearchParams(q.replace(/^!cleantitles bridge flag /, "")).get("__body"))); out = { n: saved.length }; }
-    if (/bridge flags /.test(q)) out = /sent=1/.test(q) ? { flags: [], issue: "" } : { flags: saved.map((x) => ({ ...x, t: 0 })), issue: "2 FAIL" };
+    if (/bridge flags /.test(q)) out = /sent=1/.test(q) ? { flags: [], issue: "" } : { flags: saved.map((x) => ({ ...x, t: 0 })), issue: "2 FAIL", send: false, why: "one minor report" };
     if (/bridge sites /.test(q)) out = { sites: {}, flags: 3, flagDue: false };
     return new win.Response(JSON.stringify({ html: JSON.stringify(out).replace(/&/g, "&amp;").replace(/</g, "&lt;") }), { status: 200, headers: { "Content-Type": "application/json" } });
   };
@@ -63,4 +63,11 @@ test("flag: server and page build the same prompt", () => {
   const fl = Array.from({ length: 25 }, (_, i) => mkF(i));
   expect(flagPromptS(fl, "x FAIL")).toBe(C.flagPrompt(fl, "x FAIL"));
   expect(flagPromptS([mkF(1)], "")).toBe(C.flagPrompt([mkF(1)], ""));
+});
+
+import { judgeParse } from "../files/index.js";
+test("flag: the local model's verdict is read safely", () => {
+  expect(judgeParse('ok {"send": true, "why": "3 junk-ranking reports"}')).toEqual({ send: true, why: "3 junk-ranking reports" });
+  expect(judgeParse('{"send": "yes"}')).toBe(null);
+  expect(judgeParse("no idea")).toBe(null);
 });
