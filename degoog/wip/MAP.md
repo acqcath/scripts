@@ -330,7 +330,7 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - `init` :2325
 - **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :2357
 
-## core.js (599 lines)
+## core.js (635 lines)
 - **Sites: registrable domain via the public suffix list** :4
   - `pslParse` :6
   - `regDomain` :27
@@ -362,52 +362,59 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - `docsFor` :241
   - `hostOf` :248
   - `planPage` :253
-- **Sites: Prefer / Normal / Lower / Hide, stored in degoog's own lists** :298
-  - `plainHost` :302
-  - `sitesFromLists` :304
-  - `unblockText` :315
-- **Anti-SEO: signs on one search's web results (the server adds them up per site)** :320
-  - `aiTell` :327
-  - `staleBest` :329
-  - `snipWords` :337
-  - `overlap` :344
-  - `seoSigns` :348
-  - `seoVerdict` :373
-- **Paywall tag** :375
-  - `paywalled` :380
-- **Snippet cleanup** :382
-  - `cleanSnippet` :386
-  - `doiPublisher` :396
-  - `tidyText` :404
-  - `dateLabel` :431
-  - `relDate` :438
-- **Patterns ("paste anything")** :449
-  - `upsValid` :451
-  - `isbnValid` :458
-  - `cmuCourse` :465
-- **News / Science / Forums tabs: each favours its own kind (user, 2026-11-23), from 64 recorded tab searches** :477
-  - `tabLow` :487
-- **Relevance (one rule for every topic; no lists, nothing to train or maintain)** :498
-  - `relToks` :504
-  - `relWords` :506
-  - `relIdent` :511
-  - `relHit` :512
-  - `matchShare` :513
-  - `relJudgeable` :519
-  - `relCore` :523
-  - `related` :530
-  - `topicToks` :536
-  - `topicOf` :537
-  - `tidyTitle` :549
-  - `flagCats` :556
-  - `flagCtxClean` :558
-  - `flagPrompt` :569
-  - `fmtShares` :585
-  - `boxWorth` :586
-  - `boxAt` :588
-  - `cutMedian` :594
-  - `blockGo` :595
-  - `blockShare` :598
+  - `plainWords` :311
+  - `copyKey` :312
+  - `within` :313
+  - `sameCopy` :314
+  - `bag` :318
+  - `jaccard` :319
+  - `varietyOrder` :320
+- **Sites: Prefer / Normal / Lower / Hide, stored in degoog's own lists** :334
+  - `plainHost` :338
+  - `sitesFromLists` :340
+  - `unblockText` :351
+- **Anti-SEO: signs on one search's web results (the server adds them up per site)** :356
+  - `aiTell` :363
+  - `staleBest` :365
+  - `snipWords` :373
+  - `overlap` :380
+  - `seoSigns` :384
+  - `seoVerdict` :409
+- **Paywall tag** :411
+  - `paywalled` :416
+- **Snippet cleanup** :418
+  - `cleanSnippet` :422
+  - `doiPublisher` :432
+  - `tidyText` :440
+  - `dateLabel` :467
+  - `relDate` :474
+- **Patterns ("paste anything")** :485
+  - `upsValid` :487
+  - `isbnValid` :494
+  - `cmuCourse` :501
+- **News / Science / Forums tabs: each favours its own kind (user, 2026-11-23), from 64 recorded tab searches** :513
+  - `tabLow` :523
+- **Relevance (one rule for every topic; no lists, nothing to train or maintain)** :534
+  - `relToks` :540
+  - `relWords` :542
+  - `relIdent` :547
+  - `relHit` :548
+  - `matchShare` :549
+  - `relJudgeable` :555
+  - `relCore` :559
+  - `related` :566
+  - `topicToks` :572
+  - `topicOf` :573
+  - `tidyTitle` :585
+  - `flagCats` :592
+  - `flagCtxClean` :594
+  - `flagPrompt` :605
+  - `fmtShares` :621
+  - `boxWorth` :622
+  - `boxAt` :624
+  - `cutMedian` :630
+  - `blockGo` :631
+  - `blockShare` :634
 
 ## answers.js (828 lines)
 - **Answer card, local part (no network): math, units incl. cooking, tip / percent, date math, patterns** :1
