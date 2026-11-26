@@ -27,8 +27,8 @@ function Issue($text) {
 function Tail($t) { if ($t.Length -gt 2800) { $t.Substring($t.Length - 2800) } else { $t } }
 # Reports from the flag in degoog go to Claude by themselves, all in one Claude Code session (claude --cloud) on
 # acqcath/scripts: an update problem (the update broke something) right away; the rest once the local model on the
-# degoog server (ai-summary's) judges them worth a session, since each session uses weekly Claude usage. Needs the Claude Code CLI signed in once on this PC; until then a
-# notification (at most daily) says so and the reports wait on the server.
+# degoog server (ai-summary's) judges them worth a session, since each session uses weekly Claude usage. Needs Git and the Claude Code CLI, signed in once, on this PC (the user installs them:
+# licenses are theirs to accept); until then a notification (at most daily) gives the one line and reports wait.
 function SendReports {
   $js = Join-Path $env:TEMP 'ct-flags.js'
   try {
@@ -47,8 +47,15 @@ process.stdout.write(String(j.html || "").replace(/&lt;/g, "<").replace(/&gt;/g,
     $stamp = Join-Path $dir 'reports-sent.txt'
     if (-not $w.send) { return }
     $env:Path = "$env:Path;$env:USERPROFILE\.local\bin;$env:ProgramFiles\Git\cmd"
-    if (-not (Get-Command git -ErrorAction SilentlyContinue)) { winget install --id Git.Git -e --silent --accept-package-agreements --accept-source-agreements | Out-Null }
-    if (-not (Get-Command claude -ErrorAction SilentlyContinue)) { Invoke-RestMethod https://claude.ai/install.ps1 | Invoke-Expression | Out-Null }
+    $nag = Join-Path $dir 'signin-nag.txt'
+    $ready = (Get-Command git -ErrorAction SilentlyContinue) -and (Get-Command claude -ErrorAction SilentlyContinue)
+    if (-not $ready) {
+      if (-not (Test-Path $nag) -or (Get-Item $nag).LastWriteTime -lt (Get-Date).AddHours(-20)) {
+        Set-Content -Path $nag -Value (Get-Date -Format s)
+        Notify "degoog has $($w.n) report(s) to send to Claude. One-time setup in PowerShell: winget install Git.Git; irm https://claude.ai/install.ps1 | iex; claude"
+      }
+      return
+    }
     $repo = Join-Path $dir 'repo'
     if (-not (Test-Path (Join-Path $repo '.git'))) { git clone -q --depth 1 --filter=blob:none --sparse https://github.com/acqcath/scripts $repo 2>&1 | Out-Null; git -C $repo sparse-checkout set degoog 2>&1 | Out-Null }
     git -C $repo pull -q --ff-only 2>&1 | Out-Null
@@ -62,7 +69,6 @@ process.stdout.write(String(j.html || "").replace(/&lt;/g, "<").replace(/&gt;/g,
       "$(Get-Date -Format s) sent $($w.n) report(s): $($Matches[0])" | Set-Content -Path $stamp
     } else {
       "$(Get-Date -Format s) reports not sent: $res" | Add-Content -Path $log
-      $nag = Join-Path $dir 'signin-nag.txt'
       if (-not (Test-Path $nag) -or (Get-Item $nag).LastWriteTime -lt (Get-Date).AddHours(-20)) {
         Set-Content -Path $nag -Value (Get-Date -Format s)
         Notify "degoog has $($w.n) report(s) waiting. To let them go to Claude by themselves, sign in once: open PowerShell, run claude"
