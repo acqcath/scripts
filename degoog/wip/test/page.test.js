@@ -37,6 +37,15 @@ const run = async (q, opts = {}) => {
       await new Promise((r) => setTimeout(r, opts.news.delay || 0));
       return new win.Response(JSON.stringify({ results: nr.results }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
+    // Another type's search the page fetched (forums, science): opts.typed[type] = {results, delay}; opts.typedCalls logs them
+    const ty = /^\/api\/search\?.*type=(forums|science)\b/.exec(String(url));
+    if (ty) {
+      if (opts.typedCalls) opts.typedCalls.push(ty[1]);
+      const t = opts.typed && opts.typed[ty[1]];
+      if (!t) return new win.Response("{}", { status: 404 });
+      await new Promise((r) => setTimeout(r, t.delay || 0));
+      return new win.Response(JSON.stringify({ results: t.results }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
     // The Images search (images row): opts.images = {delay}, answered with the recorded image results for this search
     if (/^\/api\/search\?.*type=images/.test(String(url))) {
       if (opts.imgCalls) opts.imgCalls.push(String(url));
@@ -761,4 +770,37 @@ test("page: a tab tapped before degoog can take it is tapped again until it take
   const n = taps;
   await new Promise((r) => setTimeout(r, 1000));
   expect(taps).toBe(n); // stopped once taken
+});
+
+test("page M2: papers fetched only when they could beat the first screen, placed by worth; cutoff sample sent", async () => {
+  const res = Array.from({ length: 8 }, (_, i) => ({ title: `Crispr off target effects explained part ${i + 1}`, url: `https://site${i}.example.com/crispr-${i}`, snippet: "Crispr off target effects and how they are measured in cells." }));
+  const aiw = res.map((r) => [new URL(r.url).hostname.replace(/^www\./, "") + new URL(r.url).pathname, { p: 0.5, best: null }]);
+  const papers = [0, 1, 2].map((i) => ({ title: `Off-target effects of CRISPR-Cas9 study ${i + 1}`, url: `https://journal${i}.example.org/crispr-off-target-${i}`, snippet: "We measure crispr off target effects genome wide.", ctRel: 0.95 }));
+  const needs = (cut) => ({ n: { f: { video: 0, image: 0, text: 1 }, n: {}, b: { forums: 0.1, news: 0.1, papers: 0.9, info: 0.1, answer: 0.1, web: 0.3 }, ms: 5, cut } });
+  const calls = [], typedCalls = [];
+  const { document, errors } = await run("crispr off target effects study", { res, aiw, engines: 60, calls, typedCalls, bridge: { needs: { data: needs(0.5), delay: 5 }, cut: { data: { cut: 0.5 }, delay: 1 } }, typed: { science: { results: papers, delay: 5 } } });
+  expect(errors).toEqual([]);
+  expect(typedCalls).toEqual(["science"]);
+  const s = document.querySelector(".ct-paper");
+  expect(s).toBeTruthy();
+  expect(s.querySelectorAll(".ct-fi").length).toBe(3);
+  expect(s.previousElementSibling.classList.contains("result-item")).toBe(true); // right after the top result
+  await new Promise((r) => setTimeout(r, 50));
+  expect(calls.some((c) => c.route === "cut" && Number(c.params.get("w")) > 0)).toBe(true);
+  const t2 = [];
+  const b = await run("crispr off target effects study", { res, aiw, engines: 60, typedCalls: t2, bridge: { needs: { data: needs(5), delay: 5 } }, typed: { science: { results: papers, delay: 5 } } });
+  expect(t2).toEqual([]); // 1 x 0.9 / 0.3 = 3 can't beat a cutoff of 5: never fetched
+  expect(b.document.querySelector(".ct-paper")).toBe(null);
+});
+
+test("page M2: the answer card takes its place by worth (a weak answer share sends a snippet below better results)", async () => {
+  const res = Array.from({ length: 6 }, (_, i) => ({ title: `Golden Gate Bridge facts and history ${i + 1}`, url: `https://gg${i}.example.com/golden-gate-${i}`, snippet: "The Golden Gate Bridge is a suspension bridge spanning the Golden Gate strait in San Francisco. It opened in 1937." }));
+  const aiw = (p) => res.map((r, i) => [new URL(r.url).hostname + new URL(r.url).pathname, { p: 0.9, best: i === 1 ? { s: "The Golden Gate Bridge is a suspension bridge spanning the Golden Gate strait in San Francisco.", p } : null }]);
+  const needs = (answer) => ({ n: { f: { video: 0, image: 0, text: 1 }, n: {}, b: { forums: 0, news: 0, papers: 0, info: 0, answer, web: 0.5 }, ms: 5, cut: 9 } });
+  const a = await run("what is the golden gate bridge", { res, aiw: aiw(0.92), engines: 40, bridge: { needs: { data: needs(0.1), delay: 5 } } });
+  expect(a.errors).toEqual([]);
+  expect(a.document.querySelector("#at-a-glance .ct-ans")).toBe(null);
+  expect(a.document.querySelector("#results-list > .ct-ans")?.textContent || "").toContain("suspension bridge");
+  const b = await run("what is the golden gate bridge", { res, aiw: aiw(0.92), engines: 40, bridge: { needs: { data: needs(0.9), delay: 5 } } });
+  expect(b.document.querySelector("#at-a-glance .ct-ans")?.textContent || "").toContain("suspension bridge");
 });

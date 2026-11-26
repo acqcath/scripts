@@ -307,3 +307,23 @@ test("one scale: format shares, box worth, box position", () => {
   const g = C.fmtShares({ video: 0.05, image: 0.05, text: 0.9 });
   expect(C.boxAt(g, [0.9, 0.8, 0.7], C.boxWorth(g, [0.9], "video"))).toBe(3); // text search: after the last
 });
+
+test("M2: fetch cutoff and blocks that may go first", () => {
+  expect(C.cutMedian([0.3, null, 0.1, 0.2])).toBeCloseTo(0.2);
+  expect(C.cutMedian([0.1, 0.2, 0.3, 0.4])).toBeCloseTo(0.25);
+  expect(C.cutMedian([])).toBe(null);
+  expect(C.blockGo(0.4, null)).toBe(true); // no samples yet: fetch, so the cutoff gets measured
+  expect(C.blockGo(0.4, 0.5)).toBe(false);
+  expect(C.blockGo(0.6, 0.5)).toBe(true);
+  expect(C.blockGo(undefined, 0.1)).toBe(false);
+  const f = C.fmtShares({ video: 0, image: 0, text: 1 });
+  expect(C.boxAt(f, [0.5, 0.4], 0.9, 0)).toBe(0); // a sure answer may go above the top result
+  expect(C.boxAt(f, [0.5, 0.4], 0.45, 0)).toBe(1);
+});
+
+test("M2: block share against plain web pages", () => {
+  const f = C.fmtShares({ video: 0.2, image: 0.2, text: 0.6 });
+  expect(C.blockShare(f, { forums: 0.8, web: 0.4 }, "forums")).toBeCloseTo(1.2);
+  expect(C.blockShare(f, { forums: 0.8, web: 0 }, "forums")).toBe(null);
+  expect(C.blockShare(null, { forums: 0.8, web: 0.4 }, "forums")).toBe(null);
+});

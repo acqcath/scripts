@@ -585,4 +585,14 @@ export const flagPrompt = (flags, issue, max = 12000) => {
 export const fmtShares = (p) => { if (!p) return null; const v = Math.max(0, +p.video || 0), i = Math.max(0, +p.image || 0), t = Math.max(0, +p.text || 0), n = v + i + t; return n ? { video: v / n, image: i / n, text: t / n } : null; };
 export const boxWorth = (fmt, rels, kind) => { const r = (rels || []).filter((x) => typeof x === "number").sort((a, b) => b - a).slice(0, 3); return fmt && r.length ? fmt[kind] * (r.reduce((a, b) => a + b, 0) / r.length) : null; };
 // index (in the shown results) to insert the box before; resultRels.length = after the last; never 0 (the top result stays first)
-export const boxAt = (fmt, resultRels, worth) => { for (let i = 1; i < resultRels.length; i++) if (typeof resultRels[i] === "number" && fmt.text * resultRels[i] < worth) return i; return resultRels.length; };
+export const boxAt = (fmt, resultRels, worth, from = 1) => { for (let i = from; i < resultRels.length; i++) if (typeof resultRels[i] === "number" && fmt.text * resultRels[i] < worth) return i; return resultRels.length; };
+
+// ===== M2: every block on the same scale. A block (forums, top stories, papers) is fetched only when its share for
+// this search x the best possible fit (1.0) could beat the worth of the last result on the first screen; that cutoff
+// is the running median the server keeps from recent searches (cutMedian). No samples yet = fetch (that's how the
+// first samples are measured). Info panel and answer card use boxAt from 0: they may go first, or further down.
+export const cutMedian = (a) => { const v = (a || []).filter((x) => typeof x === "number" && isFinite(x)).sort((x, y) => x - y); if (!v.length) return null; const m = v.length >> 1; return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; };
+export const blockGo = (share, cut) => typeof share === "number" && (cut == null || share > cut);
+// A block's share on the results' scale: the text share x how much better the block fits this search than a plain
+// list of web pages (both rated in the same needs pass: needs b.web). null without the AI.
+export const blockShare = (fmt, b, kind) => (fmt && b && typeof b[kind] === "number" && b.web > 0 ? fmt.text * b[kind] / b.web : null);

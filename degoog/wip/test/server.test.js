@@ -577,3 +577,20 @@ test("needs: one batched pass parses into format shares, needs and block fits", 
   expect(Object.keys(v.b)).toContain("forums");
   expect(needsParse([0.1])).toBe(null);
 });
+
+test("M2: first-screen cutoff store keeps a running median", async () => {
+  const fs2 = await import("node:fs"), os2 = await import("node:os"), path2 = await import("node:path");
+  const srv2 = await import("../files/index.js");
+  srv2._setDegoog({}, fs2.mkdtempSync(path2.join(os2.tmpdir(), "ct-cut-")));
+  srv2._cutReset();
+  expect(srv2.cutNow()).toBe(null);
+  for (const w of [0.3, 0.1, 0.2]) expect(srv2.cutAdd(w)).toBe(true);
+  expect(srv2.cutAdd("x")).toBe(false);
+  expect(srv2.cutAdd(3)).toBe(false);
+  expect(srv2.cutNow()).toBeCloseTo(0.2);
+  const r = srv2.routes.find((x) => x.path === "/cut");
+  const j = await (await r.handler(new Request("http://local/cut?w=0.4"))).json();
+  expect(j.cut).toBeCloseTo(0.25);
+  srv2._cutReset();
+  expect(srv2.cutNow()).toBeCloseTo(0.25); // read back from cut.json
+});

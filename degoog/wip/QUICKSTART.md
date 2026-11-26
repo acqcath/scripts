@@ -17,7 +17,7 @@ Where code lives: **[MAP.md](MAP.md)** (every section, function and route with f
 only those lines (`sed -n A,Bp files/x.js`).
 
 ## Where things are (degoog/wip/files)
-- index.js `/needs` (`NEEDS`, `needsFor`): one batched reranker pass per search rating format shares, needs and block fits (vision `/rank` takes per-doc `tasks`); page places blocks by core `fmtShares`/`boxWorth`/`boxAt`. Plan + milestones: PLAN.md.
+- index.js `/needs` (`NEEDS`, `needsFor`): one batched reranker pass per search rating format shares, needs and block fits (vision `/rank` takes per-doc `tasks`); page places blocks by core `fmtShares`/`boxWorth`/`boxAt`. Plan + milestones: PLAN.md. Blocks (forums/news/papers/info/answer) placed by core `blockShare` x fit; fetch gate `blockGo` vs `/cut` median (cut.json).
 - index.js: server plugin. Rank hook `__ctResults` (reranker scores + featured snippet, DOI names, 1.6 s wait), typo fixer (`check`, `TREND`, `NAMES`), routes (`routes`), `net()` fetch helper.
 - script.js: page code. ⚑ Report: `flagBtn`/`flagBox` (link to claude.ai/code/new built before the tap); prompt text: core.js `flagPrompt`.
 - index.js ⚑ routes: `/flag` (store + hand over), `/flags` (what's waiting); files flags.json, update-issue.txt (written by ../autoupdate-job.ps1 `Issue`).

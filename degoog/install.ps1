@@ -1582,7 +1582,8 @@ export const NEEDS = {
     people: "First-hand experiences and opinions from real people who tried it", doing: "Instructions to do or make something", knowing: "Information or an answer to understand or know something",
     question: "A direct answer to a specific question" }],
   b: [BLOCK_TASK, { forums: "Forum and discussion threads where people share their own experience", news: "Top news stories reporting recent events", papers: "Scientific papers and research studies",
-    info: "A fact panel about one person, place, organization or thing", answer: "A short direct answer shown above the results" }],
+    info: "A fact panel about one person, place, organization or thing", answer: "A short direct answer shown above the results",
+    web: "A list of ordinary web pages about it" }],
 };
 export const needsParse = (s) => {
   let i = 0;
@@ -1595,6 +1596,14 @@ export const needsParse = (s) => {
   if (t > 0) for (const k of Object.keys(out.f)) out.f[k] /= t;
   return out;
 };
+// First-screen cutoff (M2): the worth (text share x AI score) of the last result each page showed on its first screen,
+// last 200 searches, kept in cut.json on this server. Its median decides which blocks are worth fetching (core blockGo).
+const cutFile = () => `${DIR}/cut.json`;
+let CUTS = null;
+const readCuts = () => { if (CUTS) return CUTS; try { const j = JSON.parse(fs.readFileSync(cutFile(), "utf8")); CUTS = Array.isArray(j) ? j.filter((x) => typeof x === "number") : []; } catch { CUTS = []; } return CUTS; };
+export const cutAdd = (w) => { w = +w; if (!Number.isFinite(w) || w < 0 || w > 1) return false; const c = readCuts(); c.push(Math.round(w * 1e4) / 1e4); if (c.length > 200) c.splice(0, c.length - 200); try { fs.writeFileSync(`${cutFile()}.tmp`, JSON.stringify(c)); fs.renameSync(`${cutFile()}.tmp`, cutFile()); } catch {} return true; };
+export const cutNow = () => { const v = [...readCuts()].sort((a, b) => a - b); if (!v.length) return null; const m = v.length >> 1; return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; };
+export const _cutReset = () => { CUTS = null; };
 const NEEDC = new Map(), NEEDI = new Map();
 export const needsFor = async (q) => {
   q = String(q || "").trim().slice(0, 300);
@@ -1705,10 +1714,16 @@ export const routes = [
     },
   },
   {
-    // What this search needs: {n: {f, n, b, ms}} (null when the AI is off); one batched GPU pass, cached per search
+    // What this search needs: {n: {f, n, b, ms, cut}} (null when the AI is off); one batched GPU pass, cached per search
     method: "get",
     path: "/needs",
-    async handler(req) { return jsonOut({ n: await needsFor(new URL(req.url).searchParams.get("q") || "") }); },
+    async handler(req) { const n = await needsFor(new URL(req.url).searchParams.get("q") || ""); return jsonOut({ n: n ? { ...n, cut: cutNow() } : null }); },
+  },
+  {
+    // First-screen cutoff sample from the page: {w: worth of the last result on its first screen} -> {cut: median}
+    method: "get",
+    path: "/cut",
+    async handler(req) { cutAdd(new URL(req.url).searchParams.get("w")); return jsonOut({ cut: cutNow() }); },
   },
   {
     // Answer AI: {q, d: [passages]} -> {s: [0..1 or null]} (how well each passage answers the question)
@@ -2032,8 +2047,8 @@ export default {
 };
 '@)
 [IO.File]::WriteAllText("$t\script.js", @'
-// clean-titles v62
-const CT_VER = "v62";
+// clean-titles v63
+const CT_VER = "v63";
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -2622,7 +2637,17 @@ const flagPrompt = (flags, issue, max = 12000) => {
 const fmtShares = (p) => { if (!p) return null; const v = Math.max(0, +p.video || 0), i = Math.max(0, +p.image || 0), t = Math.max(0, +p.text || 0), n = v + i + t; return n ? { video: v / n, image: i / n, text: t / n } : null; };
 const boxWorth = (fmt, rels, kind) => { const r = (rels || []).filter((x) => typeof x === "number").sort((a, b) => b - a).slice(0, 3); return fmt && r.length ? fmt[kind] * (r.reduce((a, b) => a + b, 0) / r.length) : null; };
 // index (in the shown results) to insert the box before; resultRels.length = after the last; never 0 (the top result stays first)
-const boxAt = (fmt, resultRels, worth) => { for (let i = 1; i < resultRels.length; i++) if (typeof resultRels[i] === "number" && fmt.text * resultRels[i] < worth) return i; return resultRels.length; };
+const boxAt = (fmt, resultRels, worth, from = 1) => { for (let i = from; i < resultRels.length; i++) if (typeof resultRels[i] === "number" && fmt.text * resultRels[i] < worth) return i; return resultRels.length; };
+
+// ===== M2: every block on the same scale. A block (forums, top stories, papers) is fetched only when its share for
+// this search x the best possible fit (1.0) could beat the worth of the last result on the first screen; that cutoff
+// is the running median the server keeps from recent searches (cutMedian). No samples yet = fetch (that's how the
+// first samples are measured). Info panel and answer card use boxAt from 0: they may go first, or further down.
+const cutMedian = (a) => { const v = (a || []).filter((x) => typeof x === "number" && isFinite(x)).sort((x, y) => x - y); if (!v.length) return null; const m = v.length >> 1; return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; };
+const blockGo = (share, cut) => typeof share === "number" && (cut == null || share > cut);
+// A block's share on the results' scale: the text share x how much better the block fits this search than a plain
+// list of web pages (both rated in the same needs pass: needs b.web). null without the AI.
+const blockShare = (fmt, b, kind) => (fmt && b && typeof b[kind] === "number" && b.web > 0 ? fmt.text * b[kind] / b.web : null);
 
 // ===== Answer card, local part (no network): math, units incl. cooking, tip / percent, date math, patterns =====
 // answer(q, now) -> null, or { kind, label, value | title + href, detail, copy, swatch? }. Pure: the page draws it in
@@ -3407,7 +3432,7 @@ const featuredSnippetAI = (q, results) => {
     if (b.p < min || PERSONAL.test(b.s) || PER_MODEL.test(b.s) || /\?$/.test(b.s)) continue;
     if (!top || b.p > top.b.p) top = { r, b };
   }
-  return top ? { kind: "snippet", text: top.b.s, href: top.r.href, title: top.r.title || "", h: top.r.h || "" } : null;
+  return top ? { kind: "snippet", text: top.b.s, href: top.r.href, title: top.r.title || "", h: top.r.h || "", p: top.b.p } : null;
 };
 const featuredSnippet = (q, results) => {
   const sq = typeof q === "string" ? snipQuery(q) : q;
@@ -3452,7 +3477,7 @@ const qaAbout = (question, text) => {
   return n >= (ws.length >= 3 ? 2 : 1);
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, navName, navDist, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, relCore, related, topicOf, tidyTitle, FLAG_CATS, flagCats, flagCtxClean, flagPrompt, fmtShares, boxWorth, boxAt, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippetAI, featuredSnippet, QA_LEAD, qaAbout };
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, navName, navDist, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, relCore, related, topicOf, tidyTitle, FLAG_CATS, flagCats, flagCtxClean, flagPrompt, fmtShares, boxWorth, boxAt, cutMedian, blockGo, blockShare, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippetAI, featuredSnippet, QA_LEAD, qaAbout };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -4328,6 +4353,14 @@ const earlyStart = () => {
           if (e.data && VISON) { visKey(); visAsk(q, [...new Set(e.data.results.slice(0, 40).map((x) => origOf(x.thumbnail || "")).filter(Boolean))]).then(visRow); }
         }, () => { e.data = null; });
     };
+    // One search of another degoog type (news, forums, science), kept for this page as early[name]
+    const typeGo = (name, type) => {
+      if (early.get(name)?.key === key) return;
+      const e = { key, data: undefined };
+      early.set(name, e);
+      fetch(`/api/search?q=${encodeURIComponent(q)}&type=${type}`).then((x) => (x.ok ? x.json() : null))
+        .then((j) => { e.data = j && Array.isArray(j.results) ? j : null; }, () => { e.data = null; });
+    };
     const pic = SHOW.img !== false && !shaped(q) && (CT.visualQ(q) || visualSeen.has(qHash(q)));
     if (pic) imgGo();
     if (!shaped(q)) {
@@ -4337,15 +4370,16 @@ const earlyStart = () => {
         e.data = j && j.n ? j.n : null;
         const f = e.data && CT.fmtShares(e.data.f);
         if (f && SHOW.img !== false && f.image > 1 / Object.keys(f).length) imgGo();
+        // Forums, Top stories, papers (M2): fetched only when the block could beat the last result on the first
+        // screen (share x a perfect fit > the server's measured cutoff, core blockGo)
+        const go = (k) => CT.blockGo(CT.blockShare(f, e.data && e.data.b, k), e.data && e.data.cut);
+        if (SHOW.forum !== false && go("forums")) typeGo("forums", "forums");
+        if (SHOW.news !== false && go("news")) typeGo("news", "news");
+        if (SHOW.papers !== false && go("papers")) typeGo("papers", "science");
       }, () => { e.data = null; });
     }
     // Top stories: the News search starts now, in parallel, only for a search that looked like news last time
-    if (SHOW.news && !shaped(q) && newsy.has(qHash(q))) {
-      const e = { key, data: undefined };
-      early.set("news", e);
-      fetch(`/api/search?q=${encodeURIComponent(q)}&type=news`).then((x) => (x.ok ? x.json() : null))
-        .then((j) => { e.data = j && Array.isArray(j.results) ? j : null; }, () => { e.data = null; });
-    }
+    if (SHOW.news && !shaped(q) && newsy.has(qHash(q))) typeGo("news", "news");
   }
 };
 
@@ -5091,7 +5125,7 @@ let G = { key: "" };
 // the results (v49 waited for the server, which could rebuild the list after it was on screen): the last answer is
 // kept in this browser (switch values only), and a change applies from the next page load. Missing = on.
 const SHOW_KEY = "ct-show";
-let SHOW = { sl: true, forum: true, video: true, news: true, ans: true, kp: true, img: true, qv: true, arch: true, mean: true, stars: true, plain: true, pw: true };
+let SHOW = { sl: true, forum: true, video: true, news: true, papers: true, ans: true, kp: true, img: true, qv: true, arch: true, mean: true, stars: true, plain: true, pw: true };
 try { const c = JSON.parse(localStorage.getItem(SHOW_KEY) || "null"); if (c && typeof c === "object") SHOW = { ...SHOW, ...c }; } catch {}
 bridge("prefs", {}).then((j) => { if (j && typeof j === "object") try { localStorage.setItem(SHOW_KEY, JSON.stringify(j)); } catch {} }).catch(() => {});
 const used = (el) => el.classList.contains("ct-grouped");
@@ -5104,9 +5138,9 @@ const groups = () => {
   if (G.key !== key) {
     list.querySelectorAll(".ct-grp, .ct-sl").forEach((x) => x.remove());
     list.querySelectorAll(".ct-grouped").forEach((x) => x.classList.remove("ct-grouped"));
-    G = { key, sl: null, slTop: null, forum: null, video: null, news: false, img: false };
+    G = { key, sl: null, slTop: null, forum: null, video: null, paper: null, news: false, img: false, cut: false };
   }
-  for (const k of ["forum", "video", "sl"]) if (G[k] && !G[k].isConnected) G[k] = null; // degoog redrew the list
+  for (const k of ["forum", "video", "paper", "sl"]) if (G[k] && !G[k].isConnected) G[k] = null; // degoog redrew the list
   const rows = [...list.querySelectorAll(".result-item")].filter((x) => x.style.display !== "none" || x.dataset.ctCap).map(info).filter(Boolean);
   const top = rows.find((r) => shown(r.el));
   if (!top) return;
@@ -5132,31 +5166,72 @@ const groups = () => {
   }
   // 2+ of a kind become one box, placed where the first of them ranked (the top result always stays a normal
   // result); up to 4 threads / 8 videos, joined by more as endless scroll loads them
-  const box = (kind, test, max, build, title, tab, label, isRow, at) => {
-    const c = rows.filter((r) => r !== top && test(r) && !used(r.el) && !r.el.dataset.ctUnrel);
+  // extra: items from a search of that kind fetched for this page (no element; only when the box is first drawn,
+  // so a box never grows after paint because of them)
+  const box = (kind, test, max, build, title, tab, label, isRow, at, extra) => {
+    let c = rows.filter((r) => r !== top && test(r) && !used(r.el) && !r.el.dataset.ctUnrel);
     let s = G[kind];
+    if (!s && extra && extra.length) {
+      const have = new Set(rows.map((r) => r.href.split("#")[0]));
+      c = c.concat(extra.filter((r) => !have.has(r.href.split("#")[0]) && have.add(r.href.split("#")[0])));
+    }
     if (!s && c.length < 2) return;
     if (!s) {
       s = G[kind] = section(`ct-${kind}`, title);
       if (isRow) { const [wrap, row] = scroller(); s.append(wrap); s.row = row; s.wrap = wrap; } else { s.row = mk("div", "ct-list"); s.append(s.row); }
-      if (at && at.before) at.before.before(s); else if (at && at.after) at.after.after(s); else (c.find((r) => r.el.style.display !== "none") || c[0]).el.before(s);
+      const first = c.find((r) => r.el && r.el.style.display !== "none") || c.find((r) => r.el);
+      if (at && at.before) at.before.before(s); else if (at && at.after) at.after.after(s); else if (first) first.el.before(s); else top.el.after(s);
       const m = moreBtn(label, tab); if (m) s.append(m);
     }
     const n = s.row.children.length;
-    for (const r of c.slice(0, Math.max(0, max - n))) { s.row.append(build(r)); r.el.classList.add("ct-grouped"); }
+    for (const r of c.slice(0, Math.max(0, max - n))) { s.row.append(build(r)); r.el?.classList.add("ct-grouped"); }
     s.wrap?.upd();
   };
   if (shaped()) return; // a plain list of the type asked for: no boxes or rows
-  if (SHOW.forum) box("forum", (r) => !!r.forum, 4, forumRow, "Discussions and forums", "forums", "More discussions", false);
-  // Videos box and Images row go where they're worth more than the results (CT.boxAt): the needs call's format
-  // shares for this search x how well their items fit. Without the AI: degoog's own order, as before.
-  const fmt = CT.fmtShares(ready("needs", key)?.f);
+  // Every box goes where it's worth more than the results (CT.boxAt): videos and images by the needs call's format
+  // shares, forums / top stories / papers by their block share (CT.blockShare), each x how well its items fit.
+  // Without the AI: degoog's own order, as before.
+  const needs = ready("needs", key), fmt = CT.fmtShares(needs?.f);
+  const bShare = (k) => CT.blockShare(fmt, needs?.b, k);
   const place = (worth) => {
     const v = [...list.querySelectorAll(".result-item")].filter((el) => shown(el) && !info(el)?.video && !used(el));
     if (!fmt || worth == null || !v.length) return null;
     const i = CT.boxAt(fmt, v.map((el) => info(el)?.ai), worth);
     return i >= v.length ? { after: v[v.length - 1] } : { before: v[i] };
   };
+  const worthOf = (share, rels) => (share == null ? null : CT.boxWorth({ v: share }, rels, "v"));
+  // A fetched search's results as box items (same shape as info()), the AI score riding along as ctRel
+  const fetched = (name, forumOf) => {
+    const j = ready(name, key);
+    return (j && j.results || []).map((x) => {
+      let u; try { u = new URL(x.url); } catch { return null; }
+      const h = u.hostname.replace(/^(www|m|old)\./, "");
+      return { u, h, href: x.url, title: cleanTitle(String(x.title || ""), x.url) || String(x.title || ""), snippet: String(x.snippet || ""), fav: x.favicon || "",
+        w: x.publishedAt ? { t: Date.parse(`${x.publishedAt}T12:00:00Z`), exact: false } : null, ai: typeof x.ctRel === "number" ? x.ctRel : undefined, forum: forumOf(u, h) };
+    }).filter((r) => r && r.title && relOk(r.title, r.href));
+  };
+  if (SHOW.forum) {
+    const ex = G.forum ? [] : fetched("forums", (u, h) => forumName(u, h) || siteName(h));
+    const fs = bShare("forums");
+    box("forum", (r) => !!r.forum, 4, forumRow, "Discussions and forums", "forums", "More discussions", false,
+      fs == null || G.forum ? null : place(worthOf(fs, rows.filter((r) => r.forum && r !== top).map((r) => r.ai).concat(ex.map((r) => r.ai)))), ex);
+  }
+  if (SHOW.papers !== false && !G.paper) {
+    const ex = fetched("papers", (u, h) => siteName(h));
+    const ps = bShare("papers");
+    if (ps != null && ex.length >= 2) box("paper", () => false, 4, forumRow, "Research papers", "science", "More papers", false, place(worthOf(ps, ex.map((r) => r.ai))), ex);
+  }
+  // First-screen cutoff sample for the server (M2): the worth of the last result on screen, once per search,
+  // measured after this pass is laid out, only while the page is still at the top
+  if (fmt && !G.cut) {
+    G.cut = true;
+    requestAnimationFrame(() => {
+      if (scrollY > 40 || searchId(location.href) !== key) return;
+      const v = [...list.querySelectorAll(".result-item")].filter((el) => shown(el) && el.getBoundingClientRect().top < innerHeight);
+      const r = v.length && info(v[v.length - 1]);
+      if (r && typeof r.ai === "number") bridge("cut", { w: (fmt.text * r.ai).toFixed(4) }).catch(() => {});
+    });
+  }
   if (SHOW.video) box("video", (r) => r.video, 8, videoCard, "Videos", "videos", "More videos", true, place(CT.boxWorth(fmt, rows.filter((r) => r.video).map((r) => r.ai), "video")));
 
   // Images row: drawn after the first result in this same pass, only if the image search is already in hand
@@ -5188,7 +5263,8 @@ const groups = () => {
   // News answer started at page load is already in hand; otherwise nothing is added and the search is remembered,
   // so the next visit starts the News search early. Fresh stories only, one per outlet, none already shown.
   if (SHOW.news && !G.news) {
-    if (!hot(rows)) return;
+    const ns = bShare("news");
+    if (ns == null && !hot(rows)) return;
     G.news = true;
     const q = new URLSearchParams(location.search).get("q") || "";
     if (!q) return;
@@ -5202,7 +5278,7 @@ const groups = () => {
       const h = u.hostname.replace(/^(www|m)\./, "");
       const rel = /(\d+)\s+(minute|hour|day)s?\s+ago/i.exec(x.snippet || "");
       const w = rel ? when(rel[0]) : x.publishedAt ? { t: Date.parse(`${x.publishedAt}T12:00:00Z`), exact: false } : null;
-      return { h, href: x.url, title: cleanTitle(String(x.title || ""), x.url) || String(x.title || ""), w, thumb: x.thumbnail || "", fav: x.favicon || "" };
+      return { h, href: x.url, title: cleanTitle(String(x.title || ""), x.url) || String(x.title || ""), w, thumb: x.thumbnail || "", fav: x.favicon || "", ai: x.ctRel };
     // Real News answers carry no date at all (recorded steelers/nvidia: 0 of 55 dated), so undated stories count as
     // current (a News search returns current news) and keep degoog's order; one dated older than fresh() is left out
     }).filter((r) => r && r.title && (!r.w || fresh(r.w)) && !onPage.has(r.href.split("#")[0]) && !seen.has(r.h) && seen.add(r.h)).slice(0, 8);
@@ -5214,7 +5290,8 @@ const groups = () => {
     items.forEach((r) => row.append(storyCard(r)));
     s.append(wrap);
     const m = moreBtn("More news", "news"); if (m) s.append(m);
-    t.after(s);
+    const at = place(worthOf(ns, items.map((r) => r.ai)));
+    if (at && at.before) at.before.before(s); else if (at) at.after.after(s); else t.after(s);
     wrap.upd();
   }
 };
@@ -5377,6 +5454,17 @@ const fitLine = (line) => {
   while (line.scrollWidth > line.clientWidth + 1 && hid < its.length - 1) { its[its.length - 1 - hid].hidden = true; hid++; if (more) { more.hidden = false; more.textContent = `+${hid}`; } }
 };
 const fitRO = typeof ResizeObserver === "function" ? new ResizeObserver((es) => es.forEach((e) => e.target.querySelectorAll(".ct-fit").forEach(fitLine))) : null;
+// Where a card goes on the one scale (answer card, info panel): before the first shown result worth less, or null =
+// on top (also without the AI, or before the results are on the page)
+const byWorth = (kind, fit) => {
+  const list = document.getElementById("results-list"), key = searchId(location.href);
+  const needs = ready("needs", key), fmt = CT.fmtShares(needs?.f), share = CT.blockShare(fmt, needs?.b, kind);
+  if (!list || share == null) return null;
+  const v = [...list.querySelectorAll(".result-item")].filter((el) => el.style.display !== "none" && !el.classList.contains("ct-grouped") && !el.dataset.ctKp);
+  if (!v.length) return null;
+  const i = CT.boxAt(fmt, v.map((el) => info(el)?.ai), share * fit, 0);
+  return i === 0 ? null : i >= v.length ? { after: v[v.length - 1] } : { before: v[i] };
+};
 const ansPass = () => {
   const g = document.getElementById("at-a-glance");
   if (!g) return;
@@ -5388,6 +5476,7 @@ const ansPass = () => {
     ansVal = webTab && page <= 1 && SHOW.ans !== false ? CT.answer(q, Date.now(), { fx: FX }) : null;
     aiVal = webTab && page <= 1 && !ansVal && aiWanted(q);
     g.querySelectorAll(".ct-ans, .ct-ai").forEach((x) => x.remove());
+    document.querySelectorAll("#results-list > .ct-ans").forEach((x) => x.remove());
   }
   // Network answers (endoflife.date...): only in the pass that draws the results, and only if already in hand;
   // later than that they're dropped for this page (the server keeps them for the next search)
@@ -5412,10 +5501,13 @@ const ansPass = () => {
   // An answer or snippet found in the results pass takes the AI spot (same pass, before paint: nothing moves)
   if (ansVal && aiVal) { aiVal = false; g.querySelectorAll(".ct-ai").forEach((x) => x.remove()); }
   aiPass(g, key);
-  if (!ansVal || g.querySelector(".ct-ans")) return;
-  g.style.display = "";
+  if (!ansVal || g.querySelector(".ct-ans") || document.querySelector("#results-list > .ct-ans")) return;
   const card = ansCard(ansVal);
-  g.prepend(card);
+  // Its place by worth (M2), when the results are already here (else on top, as before): the answer share x its fit
+  // (the AI's score for a snippet's sentence; an exact answer fits fully). A live score stays on top (its updates find it there).
+  const at = !ansVal.live && byWorth("answer", typeof ansVal.p === "number" ? ansVal.p : 1);
+  if (at) { if (at.before) at.before.before(card); else at.after.after(card); }
+  else { g.style.display = ""; g.prepend(card); }
   card.querySelectorAll(".ct-fit").forEach(fitLine);
   if (fitRO) fitRO.observe(card);
 };
@@ -5653,7 +5745,10 @@ const kpPass = () => {
   if (!m.ok) return;
   if (!late) for (const i of m.wiki) rows[i].dataset.ctKp = "1"; // the panel replaces that result (before paint only)
   const card = kpCard(kp, wide);
-  list.prepend(card);
+  // Phones: its place by worth (M2): the info share x the AI's score for the page it replaces. PC: the side column.
+  const fit = Math.max(...m.wiki.map((i) => info(rows[i])?.ai).filter((x) => typeof x === "number"));
+  const at = !wide && !late && isFinite(fit) && byWorth("info", fit);
+  if (at) { if (at.before) at.before.before(card); else at.after.after(card); } else list.prepend(card);
   if (!wide && aiVal) { aiVal = false; document.querySelectorAll("#at-a-glance > .ct-ai").forEach((x) => x.remove()); const g = document.getElementById("at-a-glance"); if (g) aiPass(g, key); } // the panel is what's on top now
   card.querySelectorAll(".ct-fit").forEach(fitLine);
   if (fitRO) fitRO.observe(card);
@@ -7101,7 +7196,7 @@ docker restart $c | Out-Null
 $null = docker exec $c sh -c 'for i in $(seq 1 40); do curl -fs -o /dev/null http://127.0.0.1:${DEGOOG_PORT:-4444}/readyz && exit 0; sleep 1; done'
 
 $ss = docker exec $c cat /app/data/server-settings.json | Out-String | ConvertFrom-Json
-"plugin code inside the page (should be v62): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
+"plugin code inside the page (should be v63): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
 "page files (should be a ct and a psl file): " + (docker exec $c sh -c 'ls /app/src/public/ct/')
 "progressive results off (should be False): $($ss.settings.streamingEnabled -eq $true)"
 "typo fixer word list (should be about 82800): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/words.txt')
@@ -7165,7 +7260,13 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
     const fa = na.j && na.j.n && na.j.n.f, fb = nb.j && nb.j.n && nb.j.n.f;
     const note = (f) => (f ? Object.entries(f).map(([k, v]) => `${k} ${Number(v).toFixed(2)}`).join(" ") : "no answer");
     row("Needs call: format judge (video vs pictures vs text)", !fa ? "SKIP" : top(fa) === "video" && top(fb) !== "video", `tie: ${note(fa)} | kalimba: ${note(fb)}`);
-    row("Needs call: time", !fa ? "SKIP" : true, fa ? `GPU ${na.j.n.ms} ms, round trip ${na.ms} ms` : "AI off or not up yet");
+    row("Needs call: time", !fa ? "SKIP" : true, fa ? `GPU ${na.j.n.ms} ms, round trip ${na.ms} ms` : "AI off or not up yet");    // Blocks on one scale (M2): people's experience -> forums over papers; a research question -> papers over forums
+    const nc = await bridge("needs", { q: "is the keychron k2 worth it opinions" }), nd = await bridge("needs", { q: "crispr off-target effects study" });
+    const bc = nc.j && nc.j.n && nc.j.n.b, bd = nd.j && nd.j.n && nd.j.n.b;
+    const bn = (b) => (b ? `forums ${Number(b.forums).toFixed(2)} papers ${Number(b.papers).toFixed(2)} web ${Number(b.web).toFixed(2)}` : "no answer");
+    row("Needs call: block judge (forums vs papers)", !bc || !bd ? "SKIP" : bc.forums > bc.papers && bd.papers > bd.forums, `keychron: ${bn(bc)} | crispr: ${bn(bd)}`);
+    const cu = await bridge("cut", {});
+    row("First-screen cutoff store", !!(cu.j && "cut" in cu.j), cu.j && cu.j.cut != null ? `median ${Number(cu.j.cut).toFixed(3)}` : "no samples yet (blocks fetched until measured)");
   }
   const fl = await bridge("flags", {}, "{}");
   row("Flag Report store (flags + update problem)", !!(fl.j && Array.isArray(fl.j.flags)), fl.j && fl.j.issue ? "an update problem is waiting for Report" : "");

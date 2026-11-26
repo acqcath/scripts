@@ -1579,7 +1579,8 @@ export const NEEDS = {
     people: "First-hand experiences and opinions from real people who tried it", doing: "Instructions to do or make something", knowing: "Information or an answer to understand or know something",
     question: "A direct answer to a specific question" }],
   b: [BLOCK_TASK, { forums: "Forum and discussion threads where people share their own experience", news: "Top news stories reporting recent events", papers: "Scientific papers and research studies",
-    info: "A fact panel about one person, place, organization or thing", answer: "A short direct answer shown above the results" }],
+    info: "A fact panel about one person, place, organization or thing", answer: "A short direct answer shown above the results",
+    web: "A list of ordinary web pages about it" }],
 };
 export const needsParse = (s) => {
   let i = 0;
@@ -1592,6 +1593,14 @@ export const needsParse = (s) => {
   if (t > 0) for (const k of Object.keys(out.f)) out.f[k] /= t;
   return out;
 };
+// First-screen cutoff (M2): the worth (text share x AI score) of the last result each page showed on its first screen,
+// last 200 searches, kept in cut.json on this server. Its median decides which blocks are worth fetching (core blockGo).
+const cutFile = () => `${DIR}/cut.json`;
+let CUTS = null;
+const readCuts = () => { if (CUTS) return CUTS; try { const j = JSON.parse(fs.readFileSync(cutFile(), "utf8")); CUTS = Array.isArray(j) ? j.filter((x) => typeof x === "number") : []; } catch { CUTS = []; } return CUTS; };
+export const cutAdd = (w) => { w = +w; if (!Number.isFinite(w) || w < 0 || w > 1) return false; const c = readCuts(); c.push(Math.round(w * 1e4) / 1e4); if (c.length > 200) c.splice(0, c.length - 200); try { fs.writeFileSync(`${cutFile()}.tmp`, JSON.stringify(c)); fs.renameSync(`${cutFile()}.tmp`, cutFile()); } catch {} return true; };
+export const cutNow = () => { const v = [...readCuts()].sort((a, b) => a - b); if (!v.length) return null; const m = v.length >> 1; return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; };
+export const _cutReset = () => { CUTS = null; };
 const NEEDC = new Map(), NEEDI = new Map();
 export const needsFor = async (q) => {
   q = String(q || "").trim().slice(0, 300);
@@ -1702,10 +1711,16 @@ export const routes = [
     },
   },
   {
-    // What this search needs: {n: {f, n, b, ms}} (null when the AI is off); one batched GPU pass, cached per search
+    // What this search needs: {n: {f, n, b, ms, cut}} (null when the AI is off); one batched GPU pass, cached per search
     method: "get",
     path: "/needs",
-    async handler(req) { return jsonOut({ n: await needsFor(new URL(req.url).searchParams.get("q") || "") }); },
+    async handler(req) { const n = await needsFor(new URL(req.url).searchParams.get("q") || ""); return jsonOut({ n: n ? { ...n, cut: cutNow() } : null }); },
+  },
+  {
+    // First-screen cutoff sample from the page: {w: worth of the last result on its first screen} -> {cut: median}
+    method: "get",
+    path: "/cut",
+    async handler(req) { cutAdd(new URL(req.url).searchParams.get("w")); return jsonOut({ cut: cutNow() }); },
   },
   {
     // Answer AI: {q, d: [passages]} -> {s: [0..1 or null]} (how well each passage answers the question)

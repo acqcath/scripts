@@ -26,10 +26,15 @@ Status line for the scheduled runs: the first milestone below without [done] is 
    tie margin.
 5. ctcheck.js row "Needs call": times it, and checks the format judge (how-to-tie-a-tie -> video first; a notation
    question -> not video).
-### M2: all blocks on one scale
+### M2 = v63: all blocks on one scale [done]
 Forums, top stories, papers fetched (degoog types) only when share x 1.0 could beat the AI score of the last result
 on the first screen; that cutoff = running median kept on the server from recent searches. Info panel and answer
 card take their place by worth too.
+Built: needs b gained `web` (plain web pages); a block's share = text share x b[kind] / b.web (core blockShare), so
+blocks, videos and results share one scale. Cutoff: page sends the worth of the last first-screen result (`/cut`),
+server keeps 200 in cut.json, `/needs` returns the median as `cut`; no samples = fetch. Papers = degoog type
+science. Answer card / phone info panel: core boxAt from 0 via script.js byWorth (live sports and early exact
+answers stay on top). Self-check rows: "Needs call: block judge", "First-screen cutoff store".
 ### M3: copies + variety
 Copies fold into "+N similar pages" when title and snippet match after normalizing (one contains the other).
 Variety tie-break by content similarity, built but off until ⚑ "wrong order" reports give the margin.
