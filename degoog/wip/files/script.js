@@ -859,8 +859,7 @@ const earlyStart = () => {
     if (!eq && !wq && !cq && (SHOW.kp !== false || SHOW.mean !== false) && kpWanted(q)) ask("kp", key, { q: CT.kpQuery(q) });
     // Images row (spec 12): the image search starts now, in parallel, for clearly visual searches: picture words, or
     // a search you opened the Images tab for in the last 12 h (degoog still has that image search cached)
-    // ...and for any search whose words (or your past clicks) say pictures may help (CT.mediaNeed)
-    if (SHOW.img !== false && !shaped(q) && (CT.visualQ(q) || visualSeen.has(qHash(q)) || CT.mediaNeed(q, [], mediaLearn()).image >= 0.5)) {
+    if (SHOW.img !== false && !shaped(q) && (CT.visualQ(q) || visualSeen.has(qHash(q)))) {
       const e = { key, data: undefined };
       early.set("img", e);
       fetch(`/api/search?q=${encodeURIComponent(q)}&type=images`).then((x) => (x.ok ? x.json() : null))
@@ -1477,14 +1476,6 @@ const hashStore = (KEY) => {
 const newsy = hashStore(NEWSY_KEY);
 // Searches you opened the Images tab for (same hash, 12 h = degoog's cache, so their image search is still cached)
 const visualSeen = hashStore("ct-visual");
-// What you click: the Videos box or the Images row, per word of the search (CT.learnClick); steers CT.mediaNeed
-const MEDIA_KEY = "ct-media";
-const mediaLearn = () => { try { const m = JSON.parse(localStorage.getItem(MEDIA_KEY) || "{}"); return m && typeof m === "object" ? m : {}; } catch { return {}; } };
-document.addEventListener("click", (e) => {
-  const a = e.target && e.target.closest ? e.target.closest(".ct-video a, .ct-imgs a, .ct-video button.ct-more, .ct-imgs button.ct-more") : null;
-  if (!a) return;
-  try { localStorage.setItem(MEDIA_KEY, JSON.stringify(CT.learnClick(mediaLearn(), curQ(), a.closest(".ct-video") ? "video" : "image"))); } catch {}
-}, true);
 const _info = new WeakMap();
 const info = (el) => {
   if (_info.has(el)) return _info.get(el);
@@ -1632,14 +1623,14 @@ const groups = () => {
   }
   // 2+ of a kind become one box, placed where the first of them ranked (the top result always stays a normal
   // result); up to 4 threads / 8 videos, joined by more as endless scroll loads them
-  const box = (kind, test, max, build, title, tab, label, isRow, at) => {
+  const box = (kind, test, max, build, title, tab, label, isRow) => {
     const c = rows.filter((r) => r !== top && test(r) && !used(r.el) && !r.el.dataset.ctUnrel);
     let s = G[kind];
     if (!s && c.length < 2) return;
     if (!s) {
       s = G[kind] = section(`ct-${kind}`, title);
       if (isRow) { const [wrap, row] = scroller(); s.append(wrap); s.row = row; s.wrap = wrap; } else { s.row = mk("div", "ct-list"); s.append(s.row); }
-      if (at) at.after(s); else (c.find((r) => r.el.style.display !== "none") || c[0]).el.before(s);
+      (c.find((r) => r.el.style.display !== "none") || c[0]).el.before(s);
       const m = moreBtn(label, tab); if (m) s.append(m);
     }
     const n = s.row.children.length;
@@ -1648,16 +1639,13 @@ const groups = () => {
   };
   if (shaped()) return; // a plain list of the type asked for: no boxes or rows
   if (SHOW.forum) box("forum", (r) => !!r.forum, 4, forumRow, "Discussions and forums", "forums", "More discussions", false);
-  // Videos vs Images: the medium this search needs more sits under the first result, the other after the fifth
-  const need = CT.mediaNeed(curQ(), rows, mediaLearn()), ord = CT.mediaOrder(need);
-  const slot = (n) => { const v = [...list.querySelectorAll(".result-item")].filter(shown); return v.length ? v[Math.min(n, v.length) - 1] : null; };
-  if (SHOW.video) box("video", (r) => r.video, 8, videoCard, "Videos", "videos", "More videos", true, slot(ord.video));
+  if (SHOW.video) box("video", (r) => r.video, 8, videoCard, "Videos", "videos", "More videos", true);
 
   // Images row: drawn after the first result in this same pass, only if the image search is already in hand
   if (!G.img) {
     G.img = true;
     const j = ready("img", key);
-    const t = j && slot(CT.visualQ(curQ()) ? 1 : ord.image);
+    const t = j && [...list.querySelectorAll(".result-item")].find(shown);
     const th = visThr();
     const pics = j ? (j.results || []).filter((x) => x && x.thumbnail && x.url && relOk(x.title, x.url) && !(th && VS.p.get(origOf(x.thumbnail)) < th.low) && !aiImg((() => { try { return new URL(x.url).hostname.replace(/^www\./, ""); } catch { return ""; } })())).slice(0, 12) : [];
     if (t && pics.length >= 4) {
