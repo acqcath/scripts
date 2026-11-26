@@ -29,7 +29,7 @@ function Tail($t) { if ($t.Length -gt 2800) { $t.Substring($t.Length - 2800) } e
 # acqcath/scripts: an update problem (the update broke something) right away; the rest once the local model on the
 # degoog server (ai-summary's) judges them worth a session, since each session uses weekly Claude usage. Needs Git and the Claude Code CLI, signed in once, on this PC (the user installs them:
 # licenses are theirs to accept); until then a notification (at most daily) gives the one line and reports wait.
-function SendReports {
+function SendReportsCore {
   $js = Join-Path $env:TEMP 'ct-flags.js'
   try {
     $c = docker ps -q | Where-Object { (docker inspect $_ --format '{{range .Mounts}}{{.Destination}} {{end}}') -match '/app/data' } | Select-Object -First 1
@@ -69,6 +69,8 @@ process.stdout.write(String(j.html || "").replace(/&lt;/g, "<").replace(/&gt;/g,
     if ($res -match 'session_\w+') {
       docker exec $c bun /tmp/ct-flags.js sent | Out-Null
       "$(Get-Date -Format s) sent $($w.n) report(s): $($Matches[0])" | Set-Content -Path $stamp
+      # a fix is on its way: check every minute until it's installed (or 6 h pass), then back to hourly
+      Set-Content -Path (Join-Path $dir 'watch-until.txt') -Value (Get-Date).AddHours(6).ToString('o')
     } else {
       "$(Get-Date -Format s) reports not sent: $res" | Add-Content -Path $log
       if (-not (Test-Path $nag) -or (Get-Item $nag).LastWriteTime -lt (Get-Date).AddHours(-20)) {
@@ -85,7 +87,7 @@ process.stdout.write(String(j.html || "").replace(/&lt;/g, "<").replace(/&gt;/g,
     if ($c) { docker exec $c rm -f /tmp/ct-flags.js 2>&1 | Out-Null }
   }
 }
-# Log that never grows without end (a failed check can repeat every minute)
+# Log that never grows without end (a failed check can repeat every minute while a fix is on its way)
 function Log($line) {
   try {
     Add-Content -Path $log -Value $line
@@ -142,16 +144,25 @@ if (-not $env:CT_MAIN -or $have -ne $env:CT_MAIN -or -not (Test-Path $j)) {
 if (Test-Path $j) { & $j } else { "job download failed $(Get-Date -Format s)" | Add-Content -Path (Join-Path $d 'last-run.txt') }
 '@
 try { if (-not (Test-Path $launch) -or (Get-Content $launch -Raw) -ne $launcher) { [IO.File]::WriteAllText($launch, $launcher, (New-Object Text.UTF8Encoding $true)) } } catch {}
-# The task itself, kept in its best shape by this job: every minute, all day (daily trigger repeating every minute
-# for 1 day works on every Windows version), started through Windows 11's headless console so no window ever flashes
+
+$tried = Join-Path $dir 'tried.txt'
+# The task itself, kept in its best shape by this job. How often: driven by your flag reports, not a fixed clock. Hourly
+# while nothing is on its way (that run also picks up new flag reports and sends them); every minute from the moment a
+# report is sent until its fix is installed (or 6 h), and while an installed version waits on its AI self-check.
+# Daily trigger repeating for 1 day works on every Windows version, started through Windows 11's headless console so no window ever flashes
 # (powershell -WindowStyle Hidden still flashes, and stays open when Windows Terminal is the default). The headless
 # start is tested first (it must leave a marker file); if it fails, the plain hidden start stays and it's retried daily.
+function Sync-Task {
 try {
+  $wf = Join-Path $dir 'watch-until.txt'
+  $fast = (Test-Path $tried) -or ((Test-Path $wf) -and ([datetime](Get-Content $wf -Raw).Trim()) -gt (Get-Date))
+  if (-not $fast) { Remove-Item $wf -ErrorAction SilentlyContinue }
+  $want = if ($fast) { 'PT1M' } else { 'PT1H' }
   $task = Get-ScheduledTask -TaskName 'degoog clean-titles update' -ErrorAction Stop
   $tr = $task.Triggers | Select-Object -First 1
   $act = $task.Actions | Select-Object -First 1
   $ps = "powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$launch`""
-  $okTrig = $tr -and $tr.Repetition -and $tr.Repetition.Interval -eq 'PT1M' -and $tr.Repetition.Duration -eq 'P1D' -and $tr.CimClass.CimClassName -eq 'MSFT_TaskDailyTrigger'
+  $okTrig = $tr -and $tr.Repetition -and $tr.Repetition.Interval -eq $want -and $tr.Repetition.Duration -eq 'P1D' -and $tr.CimClass.CimClassName -eq 'MSFT_TaskDailyTrigger'
   $okAct = $act -and $act.Execute -match 'conhost' -and $act.Arguments -match [regex]::Escape($launch)
   $newAct = $null
   if (-not $okAct) {
@@ -167,18 +178,18 @@ try {
   }
   if (-not $okTrig -or $newAct) {
     $nt = New-ScheduledTaskTrigger -Daily -At '00:00'
-    $nt.Repetition = (New-ScheduledTaskTrigger -Once -At '00:00' -RepetitionInterval (New-TimeSpan -Minutes 1) -RepetitionDuration (New-TimeSpan -Days 1)).Repetition
+    $nt.Repetition = (New-ScheduledTaskTrigger -Once -At '00:00' -RepetitionInterval ([Xml.XmlConvert]::ToTimeSpan($want)) -RepetitionDuration (New-TimeSpan -Days 1)).Repetition
     $setArgs = @{ TaskName = 'degoog clean-titles update'; Trigger = $nt; ErrorAction = 'Stop' }
     if ($newAct) { $setArgs.Action = $newAct }
     Set-ScheduledTask @setArgs | Out-Null
-    Log "$(Get-Date -Format s) task set: every minute$(if ($newAct) { ", start: $($newAct.Execute)" })"
+    Log "$(Get-Date -Format s) task set: every $(if ($fast) { 'minute' } else { 'hour' })$(if ($newAct) { ", start: $($newAct.Execute)" })"
   }
 } catch { Log "task update failed $(Get-Date -Format s): $($_.Exception.Message)" }
-
+}
+function SendReports { SendReportsCore; Sync-Task }
 # Reads the installer's self-check output and records the outcome. The AI builds in the background on a first
 # install: while the check says it isn't up yet, the version is "pending" and only the self-check is re-run (every
 # 10 min, no reinstall, so degoog isn't restarted again). A failed install is retried at most hourly, not every run.
-$tried = Join-Path $dir 'tried.txt'
 function Judge($sha, $out) {
   $aiPending = $out -match 'not answering yet|not active yet'
   if ($out -match 'All PASS \(clean-titles self-check\)') { $ok = $true; Issue '' }
@@ -186,7 +197,7 @@ function Judge($sha, $out) {
   else { $ok = $false; Issue "the update to $sha didn't finish`n$(Tail $out)" }
   if (-not $ok) { Set-Content -Path $tried -Value "$sha fail $(Get-Date -Format o)" }
   elseif ($aiPending) { Set-Content -Path $tried -Value "$sha pending $(Get-Date -Format o)" }
-  else { Set-Content -Path $mark -Value $sha; Remove-Item $tried -ErrorAction SilentlyContinue }
+  else { Set-Content -Path $mark -Value $sha; Remove-Item $tried, (Join-Path $dir 'watch-until.txt') -ErrorAction SilentlyContinue }
 }
 try {
   # Version = a hash of the installer itself (raw files carry no commit id); unchanged file = 304, nothing to do
