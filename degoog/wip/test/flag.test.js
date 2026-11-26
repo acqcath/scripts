@@ -14,43 +14,53 @@ test("flag: prompt fits Claude's link, dropping snippets then older reports, nev
   expect(one).toContain('"snippet"');
 });
 
-// The ⚑ in the tab row: one Report link, built before the tap, that carries this search and its results
+// The ⚑ in the tab row: Save stores; the count shows on the ⚑; Send is a claude.ai/code link with everything waiting
 import fs from "node:fs";
 import { Window } from "happy-dom";
-test("flag: ⚑ opens the box; Report is a claude.ai/code link with the search, note and results; it saves the flag", async () => {
+test("flag: ⚑ box saves; Send N links to claude.ai/code with the waiting reports", async () => {
   const win = new Window({ url: "https://degoog.local/search?q=nike%20shoes" });
   const { document } = win;
   document.body.innerHTML = '<div id="results-tabs"><div class="results-tab active" data-type="web">All</div></div><div id="results-list"><div class="result-item" data-result-url="https://www.nike.com/"><a class="result-title" href="https://www.nike.com/">Nike</a><p class="result-snippet">Just do it</p></div></div>';
-  const calls = [];
+  const calls = [], saved = [];
   win.fetch = async (url, init) => {
     const q = init && init.body ? JSON.parse(init.body).query || "" : "";
     calls.push(q);
-    const out = /bridge flags /.test(q) ? { flags: [], issue: "2 FAIL" } : { ok: 1 };
+    let out = { ok: 1 };
+    if (/bridge flag __body/.test(q)) { saved.push(JSON.parse(new URLSearchParams(q.replace(/^!cleantitles bridge flag /, "")).get("__body"))); out = { n: saved.length }; }
+    if (/bridge flags /.test(q)) out = /sent=1/.test(q) ? { flags: [], issue: "" } : { flags: saved.map((x) => ({ ...x, t: 0 })), issue: "2 FAIL" };
+    if (/bridge sites /.test(q)) out = { sites: {}, flags: 3, flagDue: false };
     return new win.Response(JSON.stringify({ html: JSON.stringify(out).replace(/&/g, "&amp;").replace(/</g, "&lt;") }), { status: 200, headers: { "Content-Type": "application/json" } });
   };
   class MO { constructor() {} observe() {} disconnect() {} takeRecords() { return []; } }
   const scope = new Proxy(win, { has: () => true, get: (t, k) => { if (k === "MutationObserver") return MO; if (k === Symbol.unscopables) return undefined; if (!(k in t)) return globalThis[k]; const v = Reflect.get(t, k); return typeof v === "function" && typeof k === "string" && /^[a-z]/.test(k) ? v.bind(t) : v; }, set: (t, k, v) => { t[k] = v; return true; } });
   globalThis.__ctAIW = win.__ctAIW = new Map(); globalThis.__ctPUBW = win.__ctPUBW = new Map();
   new Function("scope", `with (scope) {\nconst __PLUGIN_ID__="clean-titles";\n${fs.readFileSync(new URL("../files/ct-page.js", import.meta.url), "utf8")}\n}`)(scope);
-  await new Promise((r) => setTimeout(r, 20));
+  await new Promise((r) => setTimeout(r, 30));
   const flag = document.getElementById("ct-flag");
-  expect(flag).toBeTruthy();
-  expect(document.getElementById("results-tabs").lastElementChild.id).toBe("ct-flag"); // right end, after Tools
+  expect(document.getElementById("results-tabs").lastElementChild.id).toBe("ct-flag"); // right end
+  expect(flag.textContent).toBe("⚑ 3"); // waiting count from /sites
   flag.click();
   const box = document.getElementById("ct-flagbox");
-  expect(box).toBeTruthy();
-  expect(box.querySelectorAll("button").length).toBe(0); // one action: the Report link
-  await new Promise((r) => setTimeout(r, 20));
-  const ta = box.querySelector("textarea");
-  ta.value = "nike.com should be first"; ta.dispatchEvent(new win.Event("input"));
+  box.querySelector("textarea").value = "nike.com should be first";
+  box.dispatchEvent(new win.Event("submit", { cancelable: true }));
+  await new Promise((r) => setTimeout(r, 30));
+  expect(saved[0].q).toBe("nike shoes"); expect(saved[0].note).toBe("nike.com should be first"); expect(saved[0].top[0].url).toBe("https://www.nike.com/");
   const go = box.querySelector("a.ct-flag-go");
+  expect(go.textContent).toBe("Send 2 to Claude"); // 1 report + the update problem
+  expect(flag.classList.contains("ct-due")).toBe(true); // lit: the update broke something
   const u = new URL(go.href);
   expect(u.origin + u.pathname).toBe("https://claude.ai/code/new");
   expect(u.searchParams.get("repo")).toBe("acqcath/scripts");
-  const p = u.searchParams.get("q");
-  expect(p).toContain("nike shoes"); expect(p).toContain("nike.com should be first"); expect(p).toContain("https://www.nike.com/"); expect(p).toContain("2 FAIL");
-  expect(box.textContent).toContain("update problem");
+  expect(u.searchParams.get("q")).toContain("nike.com should be first");
   go.dispatchEvent(new win.MouseEvent("click", { bubbles: true, cancelable: true }));
-  expect(calls.some((c) => /bridge flag /.test(c) && c.includes("nike"))).toBe(true);
+  expect(calls.some((c) => /bridge flags .*sent=1/.test(c))).toBe(true);
+  expect(flag.textContent).toBe("⚑");
   await win.happyDOM.close();
+});
+
+import { flagPromptS } from "../files/index.js";
+test("flag: server and page build the same prompt", () => {
+  const fl = Array.from({ length: 25 }, (_, i) => mkF(i));
+  expect(flagPromptS(fl, "x FAIL")).toBe(C.flagPrompt(fl, "x FAIL"));
+  expect(flagPromptS([mkF(1)], "")).toBe(C.flagPrompt([mkF(1)], ""));
 });
