@@ -637,6 +637,12 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 #ct-flagbox label { display: grid; gap: 6px; }
 #ct-flagbox textarea { font: inherit; color: var(--text-primary); background: var(--bg-light); border: 1px solid var(--border-light); border-radius: 8px; padding: 7px 10px; outline: none; resize: vertical; min-height: 2.6em; }
 #ct-flagbox textarea:focus { border-color: var(--primary); }
+.ct-flag-h { color: var(--text-secondary); }
+.ct-flag-cats { display: flex; flex-wrap: wrap; gap: 6px; }
+.ct-flag-cat { font: inherit; font-size: 13px; line-height: 18px; padding: 6px 12px; min-height: 32px; border-radius: 999px; border: 1px solid var(--border-light); background: none; color: var(--text-secondary); cursor: pointer; white-space: nowrap; }
+.ct-flag-cat:hover { color: var(--text-primary); }
+.ct-flag-cat[aria-pressed="true"] { background: rgba(205, 214, 244, .14); border-color: var(--primary); color: var(--text-primary); }
+.ct-flag-cat:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .ct-flag-st:empty { display: none; }
 .ct-flag-acts { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 #ct-flagbox .ct-flag-acts button { font: 600 13.5px system-ui, sans-serif; padding: 8px 18px; border-radius: 999px; background: var(--bg-light); color: var(--text-primary); border: 1px solid var(--border-light); cursor: pointer; }

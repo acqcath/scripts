@@ -1337,6 +1337,33 @@ const flagTop = () => {
   }
   return out;
 };
+// Attached to every ⚑: viewport, load timings (page + each /api call, ms) and which blocks were showing (each visible
+// child of the glance area and the results list, by its first class, with a count). Read from the page, no fixed list.
+const flagCtx = () => {
+  const load = {};
+  try {
+    const nav = performance.getEntriesByType("navigation")[0];
+    if (nav) { load.page = nav.domContentLoadedEventEnd; load.pageLoad = nav.loadEventEnd; }
+    for (const r of performance.getEntriesByType("resource")) {
+      let u; try { u = new URL(r.name); } catch { continue; }
+      if (u.origin !== location.origin || !/\/api\//.test(u.pathname)) continue;
+      const k = u.pathname.replace(/^.*\/api\//, "").slice(0, 40);
+      load[k] = Math.max(load[k] || 0, r.duration);
+    }
+  } catch {}
+  const boxes = [], seen = new Map();
+  for (const id of ["at-a-glance", "results-list"]) {
+    const root = document.getElementById(id);
+    if (!root) continue;
+    for (const el of root.children) {
+      if (el.style.display === "none" || el.hidden || !el.getClientRects().length) continue;
+      const k = `${id} > ${el.classList[0] || el.id || el.tagName.toLowerCase()}`;
+      if (!seen.has(k)) { const b = { box: k, n: 0 }; seen.set(k, b); boxes.push(b); }
+      seen.get(k).n++;
+    }
+  }
+  return { vw: innerWidth, vh: innerHeight, dpr: devicePixelRatio, phone: PHONE.matches, load, boxes };
+};
 const curType = () => { try { return new URL(location.href).searchParams.get("type") || tabNow || "web"; } catch { return tabNow || "web"; } };
 const flagBox = (btn) => {
   let box = document.getElementById("ct-flagbox");
@@ -1344,23 +1371,33 @@ const flagBox = (btn) => {
   btn.setAttribute("aria-expanded", "true");
   box = document.createElement("form");
   box.id = "ct-flagbox";
+  const chips = mk("div", "ct-flag-cats", "");
+  chips.setAttribute("role", "group");
+  chips.setAttribute("aria-label", "What's wrong?");
+  for (const [id, name] of CT.FLAG_CATS) {
+    const c = mk("button", "ct-flag-cat", name);
+    c.type = "button"; c.dataset.cat = id; c.setAttribute("aria-pressed", "false");
+    c.addEventListener("click", () => c.setAttribute("aria-pressed", c.getAttribute("aria-pressed") === "true" ? "false" : "true"));
+    chips.append(c);
+  }
   const l = mk("label", "", "");
   const t = document.createElement("textarea");
   t.rows = 2; t.maxLength = 1000; t.setAttribute("autocapitalize", "sentences");
-  l.append(mk("span", "", "What's wrong? (optional)"), t);
+  l.append(mk("span", "", "Anything else? (optional)"), t);
   const save = mk("button", "", "Save");
   save.type = "submit";
   const st = mk("span", "ct-flag-st", "");
   const acts = mk("div", "ct-flag-acts", "");
   acts.append(save, st);
-  box.append(l, acts);
+  box.append(mk("span", "ct-flag-h", "What's wrong?"), chips, l, acts);
   box.addEventListener("submit", (e) => {
     e.preventDefault(); e.stopPropagation();
     save.disabled = true; st.textContent = "";
-    bridge("flag", {}, JSON.stringify({ q: curQ(), type: curType(), note: t.value.trim(), top: flagTop() })).then((j) => {
+    const cats = [...chips.querySelectorAll('[aria-pressed="true"]')].map((c) => c.dataset.cat);
+    bridge("flag", {}, JSON.stringify({ q: curQ(), type: curType(), cats, note: t.value.trim(), ctx: flagCtx(), top: flagTop() })).then((j) => {
       save.disabled = false;
       if (!j) { st.textContent = "Couldn't save. Try again."; return; }
-      t.value = ""; st.textContent = "Saved.";
+      t.value = ""; chips.querySelectorAll(".ct-flag-cat").forEach((c) => c.setAttribute("aria-pressed", "false")); st.textContent = "Saved.";
     }).catch(() => { save.disabled = false; st.textContent = "Couldn't save. Try again."; });
   });
   (document.getElementById("ct-adv") || document.getElementById("results-tabs")).after(box);

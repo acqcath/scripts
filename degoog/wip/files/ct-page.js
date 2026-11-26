@@ -1,4 +1,4 @@
-// clean-titles v59
+// clean-titles v60
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -551,13 +551,28 @@ const topicOf = (rel, words) => {
 const tidyTitle = (t) => tidyText(t).replace(/^[\s|·•:,;–—-]+|[\s|·•:,;–—-]+$/g, "");
 
 
+// ===== ⚑ Report: what can be wrong (multi-select chips in the ⚑ box; the note stays optional). Shared by the page
+// (chips), the server (only these ids are kept) and the prompt. =====
+const FLAG_CATS = [["offtopic", "Off-topic"], ["spam", "Spam / junk"], ["missing", "Missing what I wanted"], ["outdated", "Outdated"],
+  ["order", "Wrong order"], ["layout", "Layout looks off"], ["broken", "Something's broken or slow"]];
+const flagCats = (a) => { const ok = new Set(FLAG_CATS.map((c) => c[0])); return [...new Set((Array.isArray(a) ? a : []).map(String))].filter((c) => ok.has(c)); };
+// Context sent with each flag, clipped to sane sizes: {vw, vh, dpr, phone, load: {name: ms}, boxes: [{box, n}]}
+const flagCtxClean = (c) => {
+  if (!c || typeof c !== "object") return null;
+  const num = (v, max = 1e6) => (Number.isFinite(+v) ? Math.max(0, Math.min(max, Math.round(+v))) : null);
+  const load = {};
+  for (const [k, v] of Object.entries(c.load && typeof c.load === "object" ? c.load : {}).slice(0, 12)) { const n = num(v, 600000); if (n !== null) load[String(k).slice(0, 40)] = n; }
+  const boxes = (Array.isArray(c.boxes) ? c.boxes : []).slice(0, 30).map((b) => ({ box: String((b && b.box) || "").slice(0, 60), n: num(b && b.n, 999) || 1 })).filter((b) => b.box);
+  return { vw: num(c.vw, 10000), vh: num(c.vh, 10000), dpr: Number.isFinite(+c.dpr) ? Math.round(+c.dpr * 100) / 100 : null, phone: !!c.phone, load, boxes };
+};
+
 // ===== ⚑ Report: the text the Claude Code session opens with (Claude's link takes about 14,000 characters: snippets
 // are dropped first, then the oldest waiting flags; the flag being reported always stays) =====
 const flagPrompt = (flags, issue, max = 12000) => {
   const head = "degoog clean-titles: fix what my degoog reported. Read degoog/wip/QUICKSTART.md in acqcath/scripts first and follow its \"Flags\" steps: " +
     "commit the flags below to the private repo acqcath/degoog-flags, then fix the code so these searches come out right, release and merge. " +
     "Keep my searches out of the public repo.\n";
-  const body = (fl, snip) => JSON.stringify({ flags: fl.map((f) => ({ at: new Date(f.t).toISOString(), q: f.q, tab: f.type, note: f.note, top: (f.top || []).map((r) => (snip ? { title: r.title, url: r.url, snippet: r.snippet } : { title: r.title, url: r.url })) })), updateIssue: issue || null });
+  const body = (fl, snip) => JSON.stringify({ flags: fl.map((f) => ({ at: new Date(f.t).toISOString(), q: f.q, tab: f.type, cats: f.cats || [], note: f.note, ctx: f.ctx || null, top: (f.top || []).map((r) => (snip ? { title: r.title, url: r.url, snippet: r.snippet } : { title: r.title, url: r.url })) })), updateIssue: issue || null });
   let fl = (flags || []).slice(-20);
   for (;;) {
     for (const snip of [true, false]) { const s = head + body(fl, snip); if (s.length <= max || fl.length <= 1) { if (s.length <= max || !snip) return s.slice(0, max); } }
@@ -1394,7 +1409,7 @@ const qaAbout = (question, text) => {
   return n >= (ws.length >= 3 ? 2 : 1);
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, navName, navDist, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, relCore, related, topicOf, tidyTitle, flagPrompt, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippetAI, featuredSnippet, QA_LEAD, qaAbout };
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, navName, navDist, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, relCore, related, topicOf, tidyTitle, FLAG_CATS, flagCats, flagCtxClean, flagPrompt, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippetAI, featuredSnippet, QA_LEAD, qaAbout };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -2735,6 +2750,33 @@ const flagTop = () => {
   }
   return out;
 };
+// Attached to every ⚑: viewport, load timings (page + each /api call, ms) and which blocks were showing (each visible
+// child of the glance area and the results list, by its first class, with a count). Read from the page, no fixed list.
+const flagCtx = () => {
+  const load = {};
+  try {
+    const nav = performance.getEntriesByType("navigation")[0];
+    if (nav) { load.page = nav.domContentLoadedEventEnd; load.pageLoad = nav.loadEventEnd; }
+    for (const r of performance.getEntriesByType("resource")) {
+      let u; try { u = new URL(r.name); } catch { continue; }
+      if (u.origin !== location.origin || !/\/api\//.test(u.pathname)) continue;
+      const k = u.pathname.replace(/^.*\/api\//, "").slice(0, 40);
+      load[k] = Math.max(load[k] || 0, r.duration);
+    }
+  } catch {}
+  const boxes = [], seen = new Map();
+  for (const id of ["at-a-glance", "results-list"]) {
+    const root = document.getElementById(id);
+    if (!root) continue;
+    for (const el of root.children) {
+      if (el.style.display === "none" || el.hidden || !el.getClientRects().length) continue;
+      const k = `${id} > ${el.classList[0] || el.id || el.tagName.toLowerCase()}`;
+      if (!seen.has(k)) { const b = { box: k, n: 0 }; seen.set(k, b); boxes.push(b); }
+      seen.get(k).n++;
+    }
+  }
+  return { vw: innerWidth, vh: innerHeight, dpr: devicePixelRatio, phone: PHONE.matches, load, boxes };
+};
 const curType = () => { try { return new URL(location.href).searchParams.get("type") || tabNow || "web"; } catch { return tabNow || "web"; } };
 const flagBox = (btn) => {
   let box = document.getElementById("ct-flagbox");
@@ -2742,23 +2784,33 @@ const flagBox = (btn) => {
   btn.setAttribute("aria-expanded", "true");
   box = document.createElement("form");
   box.id = "ct-flagbox";
+  const chips = mk("div", "ct-flag-cats", "");
+  chips.setAttribute("role", "group");
+  chips.setAttribute("aria-label", "What's wrong?");
+  for (const [id, name] of CT.FLAG_CATS) {
+    const c = mk("button", "ct-flag-cat", name);
+    c.type = "button"; c.dataset.cat = id; c.setAttribute("aria-pressed", "false");
+    c.addEventListener("click", () => c.setAttribute("aria-pressed", c.getAttribute("aria-pressed") === "true" ? "false" : "true"));
+    chips.append(c);
+  }
   const l = mk("label", "", "");
   const t = document.createElement("textarea");
   t.rows = 2; t.maxLength = 1000; t.setAttribute("autocapitalize", "sentences");
-  l.append(mk("span", "", "What's wrong? (optional)"), t);
+  l.append(mk("span", "", "Anything else? (optional)"), t);
   const save = mk("button", "", "Save");
   save.type = "submit";
   const st = mk("span", "ct-flag-st", "");
   const acts = mk("div", "ct-flag-acts", "");
   acts.append(save, st);
-  box.append(l, acts);
+  box.append(mk("span", "ct-flag-h", "What's wrong?"), chips, l, acts);
   box.addEventListener("submit", (e) => {
     e.preventDefault(); e.stopPropagation();
     save.disabled = true; st.textContent = "";
-    bridge("flag", {}, JSON.stringify({ q: curQ(), type: curType(), note: t.value.trim(), top: flagTop() })).then((j) => {
+    const cats = [...chips.querySelectorAll('[aria-pressed="true"]')].map((c) => c.dataset.cat);
+    bridge("flag", {}, JSON.stringify({ q: curQ(), type: curType(), cats, note: t.value.trim(), ctx: flagCtx(), top: flagTop() })).then((j) => {
       save.disabled = false;
       if (!j) { st.textContent = "Couldn't save. Try again."; return; }
-      t.value = ""; st.textContent = "Saved.";
+      t.value = ""; chips.querySelectorAll(".ct-flag-cat").forEach((c) => c.setAttribute("aria-pressed", "false")); st.textContent = "Saved.";
     }).catch(() => { save.disabled = false; st.textContent = "Couldn't save. Try again."; });
   });
   (document.getElementById("ct-adv") || document.getElementById("results-tabs")).after(box);
