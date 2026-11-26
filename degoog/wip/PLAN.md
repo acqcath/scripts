@@ -50,10 +50,15 @@ side (were serial: up to 0.9 s saved), the 1.6 s reranker wait is skipped once i
 Shape (steps / X-vs-Y table / timeline / chart picture) from the needs call; text from ai-summary's model.
 Contested check: ai-summary's model, question-style searches only (from the needs call); the both-sides panel is
 inserted below the fold, so it never moves what is being read (the user agreed this beats reserved empty space).
-### M5: unsolved-search learning
+### M5 = v67: unsolved-search learning [done]
 Private server log (search, time, last result opened). A next search within minutes -> ai-summary's model asks
 "same need or next question?"; only "same need" marks the earlier one unsolved, and the last result opened before a
 solved search is its solver. Nudges block shares for similar needs profiles. ⚑ notes fix general rules.
+Built: page sends only the block kind of a link you open (/seen, no address); /needs logs each search in learn.json
+(30 days of words, counts per needs profile kept) without waiting; "within minutes" = under the median gap between
+your searches (5+ gaps); ai-summary's model says SAME or NEXT. Factor per kind = (solves + 1) / (mean solves + 1),
+each group's total kept (index.js nudgeNeeds). Settings switch "Learn the layout from searches". Self-check row
+"Learning log". Headless layout check not run: needs the private rec/ recordings.
 
 ## Test budget
 Unit tests + jsdom replay every milestone; headless layout-shift + screenshots at 390/1280 only at M1 and M5; the

@@ -1,5 +1,5 @@
-// clean-titles v66
-const CT_VER = "v66";
+// clean-titles v67
+const CT_VER = "v67";
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -645,6 +645,7 @@ const shapePick = (n) => {
 };
 // A question-style search: a direct answer rated at least as needed as doing or knowing in general
 const questionStyle = (n) => { const x = n && n.n; return !!x && typeof x.question === "number" && x.question >= Math.max(+x.doing || 0, +x.knowing || 0); };
+
 
 // ===== Answer card, local part (no network): math, units incl. cooking, tip / percent, date math, patterns =====
 // answer(q, now) -> null, or { kind, label, value | title + href, detail, copy, swatch? }. Pure: the page draws it in
@@ -2120,6 +2121,15 @@ const mediaFoldAdd = (kind, out) => {
 };
 // Image/video preview panel: the picture and the title open the page in one tap (like Google; degoog's picture opened
 // a zoom view and only the button visited), and its "more images" strip leaves out what the grid folded or hid
+// Unsolved-search learning (M5): which kind of block a link you open sat in goes to the server (its own private
+// log; no address is sent). Layout only: it nudges block shares for searches with the same needs profile.
+const SEEN_KIND = [[".ct-forum", "forums"], [".ct-paper", "papers"], [".ct-news", "news"], [".ct-video", "video"], [".ct-imgs", "image"], [".ct-kp", "info"], [".ct-ans, .ct-ai, #at-a-glance", "answer"], [".result-item", "web"]];
+document.addEventListener("click", (e) => {
+  const a = e.target?.closest?.("a[href]");
+  if (!a || !/^https?:/.test(a.href) || !a.closest("#results-list, #at-a-glance") || !webTab) return;
+  const hit = SEEN_KIND.find(([sel]) => a.closest(sel));
+  if (hit) bridge("seen", { q: curQ(), k: hit[1] }, "").catch(() => {});
+}, true);
 document.addEventListener("click", (e) => {
   if (!e.target?.closest?.("#media-preview-img")) return;
   const a = document.querySelector("#media-preview-info .media-preview-link");
