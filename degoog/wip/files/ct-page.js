@@ -1,4 +1,4 @@
-// clean-titles v60
+// clean-titles v61
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -572,7 +572,7 @@ const flagPrompt = (flags, issue, max = 12000) => {
   const head = "degoog clean-titles: fix what my degoog reported. Read degoog/wip/QUICKSTART.md in acqcath/scripts first and follow its \"Flags\" steps: " +
     "commit the flags below to the private repo acqcath/degoog-flags, then fix the code so these searches come out right, release and merge. " +
     "Keep my searches out of the public repo.\n";
-  const body = (fl, snip) => JSON.stringify({ flags: fl.map((f) => ({ at: new Date(f.t).toISOString(), q: f.q, tab: f.type, cats: f.cats || [], note: f.note, ctx: f.ctx || null, top: (f.top || []).map((r) => (snip ? { title: r.title, url: r.url, snippet: r.snippet } : { title: r.title, url: r.url })) })), updateIssue: issue || null });
+  const body = (fl, snip) => JSON.stringify({ flags: fl.map((f) => ({ at: new Date(f.t).toISOString(), q: f.q, tab: f.type, cats: f.cats || [], note: f.note, ctx: f.ctx || null, top: (f.top || []).map((r) => (snip ? { ai: r.ai ?? null, title: r.title, url: r.url, snippet: r.snippet } : { ai: r.ai ?? null, title: r.title, url: r.url })) })), updateIssue: issue || null });
   let fl = (flags || []).slice(-20);
   for (;;) {
     for (const snip of [true, false]) { const s = head + body(fl, snip); if (s.length <= max || fl.length <= 1) { if (s.length <= max || !snip) return s.slice(0, max); } }
@@ -580,6 +580,14 @@ const flagPrompt = (flags, issue, max = 12000) => {
     fl = fl.slice(1);
   }
 };
+
+// ===== One scale for blocks and results (user, 2026-11-26). The needs call (server /needs) gives format shares f
+// (video / image / text, sum 1). An item's worth = its format's share x its fit (AI score 0..1). A box is worth its
+// format's share x the mean fit of its best 3 items and goes before the first result (never the top one) worth less.
+const fmtShares = (p) => { if (!p) return null; const v = Math.max(0, +p.video || 0), i = Math.max(0, +p.image || 0), t = Math.max(0, +p.text || 0), n = v + i + t; return n ? { video: v / n, image: i / n, text: t / n } : null; };
+const boxWorth = (fmt, rels, kind) => { const r = (rels || []).filter((x) => typeof x === "number").sort((a, b) => b - a).slice(0, 3); return fmt && r.length ? fmt[kind] * (r.reduce((a, b) => a + b, 0) / r.length) : null; };
+// index (in the shown results) to insert the box before; resultRels.length = after the last; never 0 (the top result stays first)
+const boxAt = (fmt, resultRels, worth) => { for (let i = 1; i < resultRels.length; i++) if (typeof resultRels[i] === "number" && fmt.text * resultRels[i] < worth) return i; return resultRels.length; };
 
 // ===== Answer card, local part (no network): math, units incl. cooking, tip / percent, date math, patterns =====
 // answer(q, now) -> null, or { kind, label, value | title + href, detail, copy, swatch? }. Pure: the page draws it in
@@ -1409,7 +1417,7 @@ const qaAbout = (question, text) => {
   return n >= (ws.length >= 3 ? 2 : 1);
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, navName, navDist, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, relCore, related, topicOf, tidyTitle, FLAG_CATS, flagCats, flagCtxClean, flagPrompt, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippetAI, featuredSnippet, QA_LEAD, qaAbout };
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, navName, navDist, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, relCore, related, topicOf, tidyTitle, FLAG_CATS, flagCats, flagCtxClean, flagPrompt, fmtShares, boxWorth, boxAt, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippetAI, featuredSnippet, QA_LEAD, qaAbout };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -2272,7 +2280,10 @@ const earlyStart = () => {
     if (!eq && !wq && !cq && (SHOW.kp !== false || SHOW.mean !== false) && kpWanted(q)) ask("kp", key, { q: CT.kpQuery(q) });
     // Images row (spec 12): the image search starts now, in parallel, for clearly visual searches: picture words, or
     // a search you opened the Images tab for in the last 12 h (degoog still has that image search cached)
-    if (SHOW.img !== false && !shaped(q) && (CT.visualQ(q) || visualSeen.has(qHash(q)))) {
+    // ...or when the needs call (one GPU pass, asked now) says pictures serve this search better than an even split
+    // of the formats (1 / number of formats). No AI answer: picture searches only, as before.
+    const imgGo = () => {
+      if (early.get("img")?.key === key) return;
       const e = { key, data: undefined };
       early.set("img", e);
       fetch(`/api/search?q=${encodeURIComponent(q)}&type=images`).then((x) => (x.ok ? x.json() : null))
@@ -2281,6 +2292,17 @@ const earlyStart = () => {
           // Image AI scores the row's pictures now, in parallel with the web results
           if (e.data && VISON) { visKey(); visAsk(q, [...new Set(e.data.results.slice(0, 40).map((x) => origOf(x.thumbnail || "")).filter(Boolean))]).then(visRow); }
         }, () => { e.data = null; });
+    };
+    const pic = SHOW.img !== false && !shaped(q) && (CT.visualQ(q) || visualSeen.has(qHash(q)));
+    if (pic) imgGo();
+    if (!shaped(q)) {
+      const e = { key, data: undefined };
+      early.set("needs", e);
+      bridge("needs", { q }).then((j) => {
+        e.data = j && j.n ? j.n : null;
+        const f = e.data && CT.fmtShares(e.data.f);
+        if (f && SHOW.img !== false && f.image > 1 / Object.keys(f).length) imgGo();
+      }, () => { e.data = null; });
     }
     // Top stories: the News search starts now, in parallel, only for a search that looked like news last time
     if (SHOW.news && !shaped(q) && newsy.has(qHash(q))) {
@@ -2745,7 +2767,8 @@ const flagTop = () => {
     const a = el.querySelector("a.result-title") || el.querySelector("a[href]");
     const url = el.dataset.resultUrl || (a && a.href) || "";
     if (!/^https?:/.test(url)) continue;
-    out.push({ url, title: (((el.querySelector("a.result-title, .image-title, .video-title") || a || {}).textContent) || "").trim().slice(0, 200), snippet: (el.querySelector(".result-snippet")?.textContent || "").trim().slice(0, 300) });
+    const ai = AIW.get(aiKey(url));
+    out.push({ ai: ai && typeof ai.p === "number" ? Math.round(ai.p * 1000) / 1000 : null, url, title: (((el.querySelector("a.result-title, .image-title, .video-title") || a || {}).textContent) || "").trim().slice(0, 200), snippet: (el.querySelector(".result-snippet")?.textContent || "").trim().slice(0, 300) });
     if (out.length >= 10) break;
   }
   return out;
@@ -2764,15 +2787,15 @@ const flagCtx = () => {
       load[k] = Math.max(load[k] || 0, r.duration);
     }
   } catch {}
-  const boxes = [], seen = new Map();
+  const boxes = [];
   for (const id of ["at-a-glance", "results-list"]) {
     const root = document.getElementById(id);
     if (!root) continue;
     for (const el of root.children) {
       if (el.style.display === "none" || el.hidden || !el.getClientRects().length) continue;
       const k = `${id} > ${el.classList[0] || el.id || el.tagName.toLowerCase()}`;
-      if (!seen.has(k)) { const b = { box: k, n: 0 }; seen.set(k, b); boxes.push(b); }
-      seen.get(k).n++;
+      const last = boxes[boxes.length - 1];
+      if (last && last.box === k) last.n++; else boxes.push({ box: k, n: 1 });
     }
   }
   return { vw: innerWidth, vh: innerHeight, dpr: devicePixelRatio, phone: PHONE.matches, load, boxes };
@@ -3073,14 +3096,14 @@ const groups = () => {
   }
   // 2+ of a kind become one box, placed where the first of them ranked (the top result always stays a normal
   // result); up to 4 threads / 8 videos, joined by more as endless scroll loads them
-  const box = (kind, test, max, build, title, tab, label, isRow) => {
+  const box = (kind, test, max, build, title, tab, label, isRow, at) => {
     const c = rows.filter((r) => r !== top && test(r) && !used(r.el) && !r.el.dataset.ctUnrel);
     let s = G[kind];
     if (!s && c.length < 2) return;
     if (!s) {
       s = G[kind] = section(`ct-${kind}`, title);
       if (isRow) { const [wrap, row] = scroller(); s.append(wrap); s.row = row; s.wrap = wrap; } else { s.row = mk("div", "ct-list"); s.append(s.row); }
-      (c.find((r) => r.el.style.display !== "none") || c[0]).el.before(s);
+      if (at && at.before) at.before.before(s); else if (at && at.after) at.after.after(s); else (c.find((r) => r.el.style.display !== "none") || c[0]).el.before(s);
       const m = moreBtn(label, tab); if (m) s.append(m);
     }
     const n = s.row.children.length;
@@ -3089,12 +3112,22 @@ const groups = () => {
   };
   if (shaped()) return; // a plain list of the type asked for: no boxes or rows
   if (SHOW.forum) box("forum", (r) => !!r.forum, 4, forumRow, "Discussions and forums", "forums", "More discussions", false);
-  if (SHOW.video) box("video", (r) => r.video, 8, videoCard, "Videos", "videos", "More videos", true);
+  // Videos box and Images row go where they're worth more than the results (CT.boxAt): the needs call's format
+  // shares for this search x how well their items fit. Without the AI: degoog's own order, as before.
+  const fmt = CT.fmtShares(ready("needs", key)?.f);
+  const place = (worth) => {
+    const v = [...list.querySelectorAll(".result-item")].filter((el) => shown(el) && !info(el)?.video && !used(el));
+    if (!fmt || worth == null || !v.length) return null;
+    const i = CT.boxAt(fmt, v.map((el) => info(el)?.ai), worth);
+    return i >= v.length ? { after: v[v.length - 1] } : { before: v[i] };
+  };
+  if (SHOW.video) box("video", (r) => r.video, 8, videoCard, "Videos", "videos", "More videos", true, place(CT.boxWorth(fmt, rows.filter((r) => r.video).map((r) => r.ai), "video")));
 
   // Images row: drawn after the first result in this same pass, only if the image search is already in hand
   if (!G.img) {
     G.img = true;
     const j = ready("img", key);
+    const at = j && place(CT.boxWorth(fmt, (j.results || []).map((x) => x && x.ctRel), "image"));
     const t = j && [...list.querySelectorAll(".result-item")].find(shown);
     const th = visThr();
     const pics = j ? (j.results || []).filter((x) => x && x.thumbnail && x.url && relOk(x.title, x.url) && !(th && VS.p.get(origOf(x.thumbnail)) < th.low) && !aiImg((() => { try { return new URL(x.url).hostname.replace(/^www\./, ""); } catch { return ""; } })())).slice(0, 12) : [];
@@ -3111,7 +3144,7 @@ const groups = () => {
       }
       s.append(wrap);
       const m = moreBtn("More images", "images"); if (m) s.append(m);
-      t.after(s);
+      if (at && at.before) at.before.before(s); else if (at) at.after.after(s); else t.after(s);
       wrap.upd();
     }
   }

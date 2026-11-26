@@ -33,10 +33,11 @@ R_TASK = "Given a web search query, retrieve relevant passages that answer the q
 R_MAX = 512
 
 @torch.inference_mode()
-def rerank(q, docs):
+def rerank(q, docs, tasks=None):
+    # tasks: one instruction per doc (None = the default retrieval task), so many different questions share one pass
     out = []
     for i in range(0, len(docs), 16):
-        pairs = [f"<Instruct>: {R_TASK}\n<Query>: {q}\n<Document>: {d}" for d in docs[i:i + 16]]
+        pairs = [f"<Instruct>: {(tasks[i + k] if tasks and tasks[i + k] else R_TASK)}\n<Query>: {q}\n<Document>: {d}" for k, d in enumerate(docs[i:i + 16])]
         enc = rtok(pairs, padding=False, truncation="longest_first", return_attention_mask=False, max_length=R_MAX - len(R_PRE) - len(R_SUF), add_special_tokens=False)
         enc["input_ids"] = [R_PRE + ids + R_SUF for ids in enc["input_ids"]]
         x = rtok.pad(enc, padding=True, return_tensors="pt").to(dev)
@@ -152,9 +153,12 @@ async def rank(body: dict):
     t0 = time.perf_counter()
     q = str(body.get("q") or "")[:300]
     docs = [str(d)[:1500] for d in (body.get("docs") or [])][:64]
+    tasks = body.get("tasks")
+    tasks = [str(t or "")[:300] for t in tasks][:len(docs)] if isinstance(tasks, list) else None
+    if tasks is not None: tasks += [""] * (len(docs) - len(tasks))
     if not q or not docs: return {"s": [], "ms": 0}
     async with lock:
-        s = await asyncio.to_thread(rerank, q, docs)
+        s = await asyncio.to_thread(rerank, q, docs, tasks)
     return {"s": [round(x, 4) for x in s], "ms": round((time.perf_counter() - t0) * 1000)}
 
 @app.exception_handler(Exception)
