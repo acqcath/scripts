@@ -85,13 +85,13 @@ process.stdout.write(String(j.html || "").replace(/&lt;/g, "<").replace(/&gt;/g,
     if ($c) { docker exec $c rm -f /tmp/ct-flags.js 2>&1 | Out-Null }
   }
 }
-# Checks every hour (one small GitHub request; installs only when something changed), so a fix reaches the PC
-# within the hour. The job switches its own task to hourly once.
+# Checks every 5 minutes, on the clock's 5s (one small GitHub request, well under GitHub's 60 an hour; installs only
+# when something changed), so a fix reaches the PC within 5 minutes. The job switches its own task once.
 try {
   $task = Get-ScheduledTask -TaskName 'degoog clean-titles update' -ErrorAction Stop
   $tr = $task.Triggers | Select-Object -First 1
-  if (-not $tr -or -not $tr.Repetition -or $tr.Repetition.Interval -ne 'PT1H') {
-    $nt = New-ScheduledTaskTrigger -Once -At ((Get-Date).Date.AddMinutes(7)) -RepetitionInterval (New-TimeSpan -Hours 1)
+  if (-not $tr -or -not $tr.Repetition -or $tr.Repetition.Interval -ne 'PT5M') {
+    $nt = New-ScheduledTaskTrigger -Once -At ((Get-Date).Date) -RepetitionInterval (New-TimeSpan -Minutes 5)
     Set-ScheduledTask -TaskName 'degoog clean-titles update' -Trigger $nt -ErrorAction Stop | Out-Null
   }
 } catch {}
