@@ -1017,7 +1017,7 @@ const trendRefresh = async () => {
 };
 const trendSchedule = () => { trendLoad(); const run = () => trendRefresh().catch(() => {}); const a = setTimeout(run, 120000), b = setInterval(run, 12 * 3600000); if (a.unref) a.unref(); if (b.unref) b.unref(); };
 const isName = (w) => NAMES.has(w) || TREND.has(w) || (learned.cap && learned.cap[w] || 0) >= 2;
-// Settings > Clean Titles > "Learn from my search results" (off: nothing about your searches is stored or used)
+// Settings > Clean Titles > "Typo fixer: learn words from my results" (off: nothing about your searches is stored or used)
 let LEARN = false;
 // Settings > Clean Titles: which of Sitelinks / Discussions / Videos / Top stories to show (all on unless turned off)
 let SHOW = { sl: true, forum: true, video: true, news: true, ans: true, kp: true, img: true, qv: true, arch: true, mean: true, stars: true, plain: true, pw: true };
@@ -1918,7 +1918,7 @@ export default {
     { key: "showArchive", label: "Archived copy", type: "toggle", default: true, description: "In each result's menu: open a saved copy (archive.today, Wayback Machine, Ghostarchive), looked up when you tap." },
     { key: "sites", label: "Sites", type: "list", addLabel: "Add a site", description: "Prefer: moved up, no 2-per-site limit. Lower: moved down. Hide: never shown. Same list as Prefer / Normal / Lower / Hide in each result's menu, kept in degoog's own block and score lists.", itemSchema: [{ key: "site", label: "Site", type: "text", placeholder: "example.com" }, { key: "choice", label: "Choice", type: "select", options: ["prefer", "normal", "lower", "hide"], optionLabels: ["Prefer", "Normal", "Lower", "Hide"], default: "prefer" }] },
     { key: "autoLower", label: "Lower SEO junk automatically", type: "toggle", default: true, description: "Sites that show copy, SEO-bait, stale \"best 20XX\" or AI-written signs on most searches they're in (at least 5) are set to Lower, marked auto in the result menu. Only Lower, never Hide, and your own choice for a site always wins. Keeps only site names and two counts." },
-    { key: "learnFromResults", label: "Learn from my search results", type: "toggle", description: "Off: the typo fixer stores and uses nothing about your searches. On: it remembers words and names from your result titles, plus the Did you mean fixes you tap or turn down (kept on this server only)." },
+    { key: "learnFromResults", label: "Typo fixer: learn words from my results", type: "toggle", description: "Only for typo fixing. On: keeps counts of words and names seen in your result titles, plus the Did you mean fixes you tap or turn down, so names and new words stop being corrected. No list of your searches is kept. Stays on this server. Off: nothing is stored." },
   ],
   configure(s) {
     sitesFromSettings(s ? s.sites : undefined);
