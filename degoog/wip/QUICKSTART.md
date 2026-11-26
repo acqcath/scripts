@@ -10,8 +10,13 @@ create one; add_repo for a new repo is refused): a Report session gets every fla
 1. Fix each flag at the code level (core.js / script.js / index.js: ranking, relevance, junk rules, or the ⚑ box itself),
    add a test from the flag where possible (no searches from flags in this public repo), release, merge.
 2. `updateIssue` = the installer's self-check output after the auto-update: fix the FAIL rows like any other bug.
-3. Live look at the server (degoog.tigon-cat.ts.net, built-in browser): every action asks the user to approve, so read
-   the code first and, if still needed, do it all in ONE javascript call (all tabs, sizes, measurements). No screenshots.
+3. Live look at the server (degoog.tigon-cat.ts.net, built-in browser): the pane treats it as high-risk, so EVERY
+   action (each load, each JS call) needs its own approval and "site" access is never saved. Read the code first. If a
+   live look is still needed: one load of a search page, then ONE javascript call that does everything through
+   same-origin fetches (no further loads): status first via the bridge, e.g.
+   `const b=(r,p={})=>fetch("/api/command",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({query:"!cleantitles bridge "+r+" "+new URLSearchParams(p)})}).then(x=>x.json()).then(j=>{const t=document.createElement("textarea");t.innerHTML=j.html;return JSON.parse(t.value)}); await b("status")`
+   -> {ver, pageMissing, ai, flags, issue}. CT_VER is module-scoped (not on window). Max 2 approvals per look; never
+   a third: ask the user instead. No screenshots.
 
 Where code lives: **[MAP.md](MAP.md)** (every section, function and route with file:line; rebuilt by build.py). Read
 only those lines (`sed -n A,Bp files/x.js`).
