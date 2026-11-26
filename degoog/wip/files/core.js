@@ -632,3 +632,13 @@ export const blockGo = (share, cut) => typeof share === "number" && (cut == null
 // A block's share on the results' scale: the text share x how much better the block fits this search than a plain
 // list of web pages (both rated in the same needs pass: needs b.web). null without the AI.
 export const blockShare = (fmt, b, kind) => (fmt && b && typeof b[kind] === "number" && b.web > 0 ? fmt.text * b[kind] / b.web : null);
+// ===== M4: answer shape and contested check, from the needs call =====
+// The shape the AI rated best, when it beats an even split of the shapes and isn't a plain paragraph ("" = plain)
+export const shapePick = (n) => {
+  const s = n && n.s;
+  if (!s || typeof s !== "object") return "";
+  const e = Object.entries(s).filter(([, v]) => typeof v === "number").sort((a, b) => b[1] - a[1]);
+  return e.length && e[0][0] !== "plain" && e[0][1] > 1 / e.length ? e[0][0] : "";
+};
+// A question-style search: a direct answer rated at least as needed as doing or knowing in general
+export const questionStyle = (n) => { const x = n && n.n; return !!x && typeof x.question === "number" && x.question >= Math.max(+x.doing || 0, +x.knowing || 0); };

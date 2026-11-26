@@ -2,7 +2,7 @@
 
 Every section, function and route in degoog/wip/files with its line. Read the lines you need (`sed -n A,Bp file`), not whole files.
 
-## index.js (2059 lines)
+## index.js (2110 lines)
   - `braveOriginal` :13
   - `upgrade` :33
 - **Typo fixing and related searches, without Google** :57
@@ -164,44 +164,54 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - `flagJudge` :1555
   - `judgeNow` :1566
   - `flagCount` :1567
-  - `needsParse` :1585
-  - `cutFile` :1598
-  - `readCuts` :1600
-  - `cutAdd` :1601
-  - `cutNow` :1602
-  - `_cutReset` :1603
-  - `needsFor` :1605
-  - `globalThis.__ctResults` :1628
-  - route `/flag` :1666
-  - route `/flags` :1684
-  - route `/vis` :1704
-  - route `/status` :1717
-  - route `/needs` :1731
-  - route `/cut` :1737
-  - route `/rank` :1743
-  - route `/near` :1754
-  - route `/fix` :1764
-  - route `/qs` :1784
-  - route `/relay` :1795
-  - route `/sites` :1815
-  - route `/why` :1833
-  - route `/wd` :1838
-  - route `/qv` :1847
-  - route `/qvs` :1855
-  - route `/arch` :1864
-  - route `/kp` :1872
-  - route `/sports` :1880
-  - route `/cmu` :1888
-  - route `/eol` :1896
-  - route `/aiimg` :1906
-  - route `/seo` :1916
-  - route `/prefs` :1926
-  - route `/perf` :1932
-  - route `/learn` :1948
-  - route `/yt` :1961
-  - route `/hd` :1971
+  - `needsParse` :1588
+  - `cutFile` :1600
+  - `readCuts` :1602
+  - `cutAdd` :1603
+  - `cutNow` :1604
+  - `_cutReset` :1605
+  - `needsFor` :1607
+- **M4: the answer card's shape and the contested check, both written by ai-summary's model (aiAsk)** :1625
+  - `cell` :1635
+  - `shapeParse` :1636
+  - `sidesParse` :1655
+  - `resText` :1664
+  - `resIn` :1665
+  - `cached` :1667
+  - `shapeFor` :1668
+  - `sidesFor` :1672
+  - `globalThis.__ctResults` :1682
+  - route `/flag` :1720
+  - route `/flags` :1738
+  - route `/vis` :1758
+  - route `/needs` :1770
+  - route `/shape` :1776
+  - route `/sides` :1782
+  - route `/cut` :1788
+  - route `/rank` :1794
+  - route `/near` :1805
+  - route `/fix` :1815
+  - route `/qs` :1835
+  - route `/relay` :1846
+  - route `/sites` :1866
+  - route `/why` :1884
+  - route `/wd` :1889
+  - route `/qv` :1898
+  - route `/qvs` :1906
+  - route `/arch` :1915
+  - route `/kp` :1923
+  - route `/sports` :1931
+  - route `/cmu` :1939
+  - route `/eol` :1947
+  - route `/aiimg` :1957
+  - route `/seo` :1967
+  - route `/prefs` :1977
+  - route `/perf` :1983
+  - route `/learn` :1999
+  - route `/yt` :2012
+  - route `/hd` :2022
 
-## script.js (2401 lines)
+## script.js (2484 lines)
   - `bridge` :2
   - `aiKey` :21
   - `fadeIn` :72
@@ -307,31 +317,35 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - `aiWanted` :1829
   - `aiBox` :1845
   - `aiPass` :1858
-  - `ansCard` :1885
-  - `livePoll` :1948
-  - `fitLine` :1967
-  - `byWorth` :1978
-  - `ansPass` :1987
-  - `ansCopy` :2034
-  - `onlyPass` :2048
-- **Quick view (spec 11): your tap opens it under the result (it grows: your action), tap again to close** :2071
-  - `qvBox` :2073
-  - `qvs` :2139
-  - `starsWanted` :2140
-  - `starsPass` :2142
-  - `meanPass` :2174
-- **Knowledge panel (spec 3)** :2193
-  - `kpWanted` :2201
-  - `kpCard` :2207
-  - `kpPass` :2250
-  - `tabKind` :2280
-  - `tabKeep` :2281
-  - `safe` :2305
-  - `tabRescue` :2310
-  - `init` :2325
-- **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :2357
+  - `topRes` :1885
+  - `shapeAsk` :1888
+  - `shapeBody` :1902
+  - `sidesPass` :1926
+  - `ansCard` :1968
+  - `livePoll` :2031
+  - `fitLine` :2050
+  - `byWorth` :2061
+  - `ansPass` :2070
+  - `ansCopy` :2117
+  - `onlyPass` :2131
+- **Quick view (spec 11): your tap opens it under the result (it grows: your action), tap again to close** :2154
+  - `qvBox` :2156
+  - `qvs` :2222
+  - `starsWanted` :2223
+  - `starsPass` :2225
+  - `meanPass` :2257
+- **Knowledge panel (spec 3)** :2276
+  - `kpWanted` :2284
+  - `kpCard` :2290
+  - `kpPass` :2333
+  - `tabKind` :2363
+  - `tabKeep` :2364
+  - `safe` :2388
+  - `tabRescue` :2393
+  - `init` :2408
+- **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :2440
 
-## core.js (635 lines)
+## core.js (645 lines)
 - **Sites: registrable domain via the public suffix list** :4
   - `pslParse` :6
   - `regDomain` :27
@@ -416,6 +430,9 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - `cutMedian` :630
   - `blockGo` :631
   - `blockShare` :634
+- **M4: answer shape and contested check, from the needs call** :635
+  - `shapePick` :637
+  - `questionStyle` :644
 
 ## answers.js (828 lines)
 - **Answer card, local part (no network): math, units incl. cooking, tip / percent, date math, patterns** :1
@@ -508,7 +525,7 @@ Every section, function and route in degoog/wip/files with its line. Read the li
 
 ## setcss.js (12 lines)
 
-## custom.css (847 lines)
+## custom.css (874 lines)
 - Catppuccin Mocha colors :1
 - DESCRIPTION SIZE :22
 - v50 :24
@@ -592,6 +609,7 @@ Every section, function and route in degoog/wip/files with its line. Read the li
 - Phones :834
 - Image/video preview :840
 - Image AI :844
+- ===== M4 :848
 
 ## other
 - ../autoupdate-job.ps1: the PC's hourly update job (Issue() puts update problems on the server for ⚑ Report)

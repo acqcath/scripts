@@ -844,3 +844,30 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 /* Image AI: a card waits (picture hidden, its place kept) until the AI has scored it, at most 0.9 s */
 :is(.image-card, .video-card).ct-vpend img { opacity: 0 !important; }
 :is(.image-card, .video-card) img { transition: opacity .15s ease; }
+
+/* ===== M4: shaped answer in the AI spot (same 122px box; ⌄ opens it), both-sides panel ===== */
+#at-a-glance > .ct-ai.ct-shaped .ct-ai-line { display: none; }
+#at-a-glance > .ct-ai.ct-shaped .ct-ai-text { display: block; overflow: hidden; }
+#at-a-glance > .ct-ai.ct-shape.ct-ai-open { height: auto; }
+#at-a-glance > .ct-ai.ct-shape.ct-ai-open .ct-ai-text { height: auto; }
+#at-a-glance > .ct-ai.ct-shape.ct-ai-open .ct-ai-more { visibility: hidden; height: 8px; }
+.ct-sh { font-size: 15px; line-height: 24px; color: var(--text-primary); }
+.ct-sh ol { margin: 0; padding: 0 0 0 22px; }
+.ct-sh-time { list-style: none; padding: 0 !important; }
+.ct-sh-time li { display: flex; gap: 12px; }
+.ct-sh-d { flex: 0 0 auto; min-width: 56px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.ct-sh-table { border-collapse: collapse; width: 100%; table-layout: fixed; font-size: 14px; line-height: 24px; }
+.ct-sh-table th, .ct-sh-table td { padding: 0 8px 0 0; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.ct-sh-table th { font-weight: 500; color: var(--text-secondary); }
+.ct-sh-bars { display: grid; gap: 0; }
+.ct-sh-bar { display: grid; grid-template-columns: minmax(0, 30%) 1fr auto; align-items: center; gap: 8px; height: 24px; font-size: 14px; }
+.ct-sh-l { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); }
+.ct-sh-tr { height: 10px; border-radius: 5px; background: var(--bg-light); overflow: hidden; }
+.ct-sh-fill { display: block; height: 100%; border-radius: 5px; background: var(--text-link); }
+.ct-sh-v { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ct-sh-src { margin-top: 4px; font-size: 13px; line-height: 18px; color: var(--text-secondary); }
+.ct-sh-src a { color: var(--text-link) !important; text-decoration: none; }
+.ct-sh-src a:hover { text-decoration: underline; }
+.ct-sides-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.ct-sides-claim { font-size: 15px; line-height: 22px; color: var(--text-primary); }
+@media (max-width: 767px) { .ct-sides-cols { grid-template-columns: 1fr; gap: 12px; } }

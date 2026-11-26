@@ -804,3 +804,42 @@ test("page M2: the answer card takes its place by worth (a weak answer share sen
   const b = await run("what is the golden gate bridge", { res, aiw: aiw(0.92), engines: 40, bridge: { needs: { data: needs(0.9), delay: 5 } } });
   expect(b.document.querySelector("#at-a-glance .ct-ans")?.textContent || "").toContain("suspension bridge");
 });
+
+test("page M4: a shaped answer fills the AI spot (same box), falls back to ai-summary's text without one", async () => {
+  const res = Array.from({ length: 6 }, (_, i) => ({ title: `How to tie a tie step by step guide ${i + 1}`, url: `https://tie${i}.example.com/how-to-tie-${i}`, snippet: "Drape the tie, cross the wide end over, loop it up and through, pull tight." }));
+  const store = { "ct-sites-auto": JSON.stringify({ auto: [], seo: false, ai: { on: true } }) };
+  const needs = { n: { f: { video: 0.5, image: 0.1, text: 0.4 }, n: { question: 0.1, doing: 0.9, knowing: 0.2 }, b: { web: 0.5 }, s: { steps: 0.6, compare: 0.1, timeline: 0.1, chart: 0.1, plain: 0.1 }, ms: 5, cut: 9 } };
+  const steps = { a: { k: "steps", steps: ["Drape the tie", "Cross the wide end over", "Pull tight"], src: [0] } };
+  const a = await run("how to tie a tie", { res, store, engines: 40, bridge: { needs: { data: needs, delay: 5 }, shape: { data: steps, delay: 5 } } });
+  await new Promise((r) => setTimeout(r, 40));
+  expect(a.errors).toEqual([]);
+  const box = a.document.querySelector("#at-a-glance > .ct-ai");
+  expect(box.classList.contains("ct-shaped")).toBe(true);
+  expect(box.querySelectorAll(".ct-sh-steps li").length).toBe(3);
+  expect(box.querySelector(".ct-ai-label").textContent).toContain("Steps");
+  const b = await run("how to tie a tie", { res, store, engines: 40, bridge: { needs: { data: needs, delay: 5 }, shape: { data: { a: null }, delay: 5 } } });
+  await new Promise((r) => setTimeout(r, 40));
+  const box2 = b.document.querySelector("#at-a-glance > .ct-ai");
+  expect(box2 && box2.classList.contains("ct-shape")).toBe(false); // the plain AI spot again
+});
+
+test("page M4: both-sides panel only below the screen, only for a real split", async () => {
+  const res = Array.from({ length: 8 }, (_, i) => ({ title: `Is coffee bad for your heart research ${i + 1}`, url: `https://c${i}.example.com/coffee-heart-${i}`, snippet: "Coffee and heart health: what the research on coffee says about your heart." }));
+  const needs = { n: { f: { video: 0.1, image: 0.1, text: 0.8 }, n: { question: 0.9, doing: 0.1, knowing: 0.5 }, b: { web: 0.5 }, s: { plain: 1 }, ms: 5, cut: 9 } };
+  const d = { d: { split: true, a: { claim: "Moderate coffee lowers heart risk", src: [0] }, b: { claim: "Coffee raises blood pressure", src: [1] } } };
+  const calls = [];
+  const a = await run("is coffee bad for your heart", { res, calls, engines: 40, bridge: { needs: { data: needs, delay: 5 }, sides: { data: d, delay: 5 } } });
+  await new Promise((r) => setTimeout(r, 40));
+  expect(a.errors).toEqual([]);
+  expect(calls.some((c) => c.route === "sides")).toBe(true);
+  expect(a.document.querySelector(".ct-sides")).toBe(null); // nothing below the screen yet (all at top 0 here)
+  Object.defineProperty(a.win, "innerHeight", { value: -1, configurable: true });
+  a.win.dispatchEvent(new a.win.Event("scroll"));
+  const s = a.document.querySelector(".ct-sides");
+  expect(s).toBeTruthy();
+  expect(s.querySelectorAll(".ct-sides-c").length).toBe(2);
+  const c2 = [];
+  await run("how to tie a tie", { res, calls: c2, engines: 40, bridge: { needs: { data: { n: { ...needs.n, n: { question: 0.1, doing: 0.9, knowing: 0.2 } } }, delay: 5 } } });
+  await new Promise((r) => setTimeout(r, 20));
+  expect(c2.some((c) => c.route === "sides")).toBe(false); // not a question: never asked
+});

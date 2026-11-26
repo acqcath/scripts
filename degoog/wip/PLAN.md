@@ -41,7 +41,8 @@ Variety tie-break by content similarity, built but off until ⚑ "wrong order" r
 Built: core copyKey/sameCopy in planPage (any site, transitive, ctx.copies across endless-scroll pages; fold key
 `~sim:<doc key>`, page flag ctSim). core varietyOrder(items, margin) + VARIETY_MARGIN = null (off): to turn on, set
 it from the ⚑ "order" flags' ai tie margins and call it on the shown items in listPass.
-### M4: answer card shape + contested check
+### M4: answer card shape + contested check [WIP on branch v65-wip, not merged]
+Status: server /shape + /sides + needs group s built and tested; page shapeAsk/shapeBody/sidesPass + CSS built; page test "shaped answer fills the AI spot" FAILS (box lacks ct-shaped: check aiPass shape decision / shapeAsk firing in jsdom). Sides test not yet run. Then ctcheck rows, build v65, release.
 Shape (steps / X-vs-Y table / timeline / chart picture) from the needs call; text from ai-summary's model.
 Contested check: ai-summary's model, question-style searches only (from the needs call); the both-sides panel is
 inserted below the fold, so it never moves what is being read (the user agreed this beats reserved empty space).
