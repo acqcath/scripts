@@ -2,7 +2,7 @@
 
 Every section, function and route in degoog/wip/files with its line. Read the lines you need (`sed -n A,Bp file`), not whole files.
 
-## index.js (2110 lines)
+## index.js (2149 lines)
   - `braveOriginal` :13
   - `upgrade` :33
 - **Typo fixing and related searches, without Google** :57
@@ -180,36 +180,43 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - `cached` :1667
   - `shapeFor` :1668
   - `sidesFor` :1672
-  - `globalThis.__ctResults` :1682
-  - route `/flag` :1720
-  - route `/flags` :1738
-  - route `/vis` :1758
-  - route `/needs` :1770
-  - route `/shape` :1776
-  - route `/sides` :1782
-  - route `/cut` :1788
-  - route `/rank` :1794
-  - route `/near` :1805
-  - route `/fix` :1815
-  - route `/qs` :1835
-  - route `/relay` :1846
-  - route `/sites` :1866
-  - route `/why` :1884
-  - route `/wd` :1889
-  - route `/qv` :1898
-  - route `/qvs` :1906
-  - route `/arch` :1915
-  - route `/kp` :1923
-  - route `/sports` :1931
-  - route `/cmu` :1939
-  - route `/eol` :1947
-  - route `/aiimg` :1957
-  - route `/seo` :1967
-  - route `/prefs` :1977
-  - route `/perf` :1983
-  - route `/learn` :1999
-  - route `/yt` :2012
-  - route `/hd` :2022
+  - `speedAdd` :1686
+  - `median` :1687
+  - `rankWait` :1688
+  - `globalThis.__ctResults` :1689
+  - `ctResults` :1693
+  - `rankPart` :1703
+  - route `/flag` :1738
+  - route `/flags` :1756
+  - route `/vis` :1776
+  - route `/status` :1789
+  - route `/needs` :1803
+  - route `/shape` :1809
+  - route `/sides` :1815
+  - route `/speed` :1821
+  - route `/cut` :1827
+  - route `/rank` :1833
+  - route `/near` :1844
+  - route `/fix` :1854
+  - route `/qs` :1874
+  - route `/relay` :1885
+  - route `/sites` :1905
+  - route `/why` :1923
+  - route `/wd` :1928
+  - route `/qv` :1937
+  - route `/qvs` :1945
+  - route `/arch` :1954
+  - route `/kp` :1962
+  - route `/sports` :1970
+  - route `/cmu` :1978
+  - route `/eol` :1986
+  - route `/aiimg` :1996
+  - route `/seo` :2006
+  - route `/prefs` :2016
+  - route `/perf` :2022
+  - route `/learn` :2038
+  - route `/yt` :2051
+  - route `/hd` :2061
 
 ## script.js (2486 lines)
   - `bridge` :2
@@ -504,7 +511,7 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - `qaStem` :820
   - `qaAbout` :821
 
-## ctcheck.js (226 lines)
+## ctcheck.js (237 lines)
   - `row` :8
   - `parse` :9
   - `bridge` :10

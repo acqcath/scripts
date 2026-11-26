@@ -1575,6 +1575,7 @@ const flagCount = () => flagOpen().length + (flagIssue() ? 1 : 0);
 // Groups: f = format shares (sum 1), n = needs (each 0..1, independent), b = block fits (each 0..1). Cached per search.
 const NEED_TASK = "Given a web search query, judge whether the searcher needs this to be satisfied";
 const FMT_TASK = "Given a web search query, judge whether this kind of result is the best way to give the searcher what they need";
+const SHAPE_TASK = "Given a web search query, judge whether an answer in this shape would serve the searcher best";
 const BLOCK_TASK = "Given a web search query, judge whether this block of results would help the searcher";
 export const NEEDS = {
   f: [FMT_TASK, { video: "A video that shows it being done or demonstrated, step by step, in motion", image: "Pictures, photos, diagrams or charts that show what it looks like", text: "A written web page that explains or answers it in words" }],
@@ -1584,6 +1585,8 @@ export const NEEDS = {
   b: [BLOCK_TASK, { forums: "Forum and discussion threads where people share their own experience", news: "Top news stories reporting recent events", papers: "Scientific papers and research studies",
     info: "A fact panel about one person, place, organization or thing", answer: "A short direct answer shown above the results",
     web: "A list of ordinary web pages about it" }],
+  s: [SHAPE_TASK, { steps: "Numbered steps to follow in order", compare: "A side-by-side table comparing two or more options", timeline: "A timeline of dates and events in order",
+    chart: "A chart of numbers, amounts or shares", plain: "A short written summary paragraph" }],
 };
 export const needsParse = (s) => {
   let i = 0;
@@ -1592,8 +1595,7 @@ export const needsParse = (s) => {
     out[g] = {};
     for (const k of Object.keys(opts)) { const v = s[i++]; if (typeof v !== "number") return null; out[g][k] = v; }
   }
-  const t = out.f.video + out.f.image + out.f.text;
-  if (t > 0) for (const k of Object.keys(out.f)) out.f[k] /= t;
+  for (const g of ["f", "s"]) { const t = Object.values(out[g]).reduce((a, b) => a + b, 0); if (t > 0) for (const k of Object.keys(out[g])) out[g][k] /= t; }
   return out;
 };
 // First-screen cutoff (M2): the worth (text share x AI score) of the last result each page showed on its first screen,
@@ -1623,18 +1625,85 @@ export const needsFor = async (q) => {
   return run;
 };
 
+// ===== M4: the answer card's shape and the contested check, both written by ai-summary's model (aiAsk) =====
+// The needs call picks the shape (s: steps / compare / timeline / chart / plain); /shape asks the model to answer
+// in that shape from the top results only (JSON, checked here); /sides asks whether credible results disagree.
+const SHAPE_SYS = {
+  steps: 'Answer with the steps to do it, in order, each one short imperative sentence, at most 8. JSON only: {"steps": ["...", "..."], "src": [result numbers used]}',
+  compare: 'Answer with a comparison table of the options the search names (2 to 4 columns), at most 6 rows of aspects, each cell a few words. JSON only: {"cols": ["Option A", "Option B"], "rows": [["aspect", "A value", "B value"]], "src": [result numbers used]}',
+  timeline: 'Answer with the key dates and events in time order, at most 8, each event a few words. JSON only: {"events": [["date", "event"]], "src": [result numbers used]}',
+  chart: 'Answer with the numbers asked about as a bar chart, at most 8 bars, all in one unit. JSON only: {"unit": "unit", "bars": [["label", number]], "src": [result numbers used]}',
+};
+const SHAPE_HEAD = "You answer a web search using ONLY the numbered search results given. Never add facts they don't state. If they don't contain what the shape needs, reply {}. ";
+const cell = (x, n = 80) => String(x == null ? "" : x).replace(/\s+/g, " ").trim().slice(0, n);
+export const shapeParse = (k, txt, nres) => {
+  const m = /\{[\s\S]*\}/.exec(String(txt || ""));
+  if (!m) return null;
+  let j; try { j = JSON.parse(m[0]); } catch { return null; }
+  const src = (Array.isArray(j.src) ? j.src : []).map((i) => Math.round(+i) - 1).filter((i) => i >= 0 && i < nres).slice(0, 4);
+  if (k === "steps") { const a = (Array.isArray(j.steps) ? j.steps : []).map((x) => cell(x, 160)).filter(Boolean).slice(0, 8); return a.length >= 2 ? { k, steps: a, src } : null; }
+  if (k === "compare") {
+    const cols = (Array.isArray(j.cols) ? j.cols : []).map((x) => cell(x, 40)).filter(Boolean).slice(0, 4);
+    const rows = (Array.isArray(j.rows) ? j.rows : []).filter((r) => Array.isArray(r) && r.length === cols.length + 1).map((r) => r.map((x) => cell(x))).slice(0, 6);
+    return cols.length >= 2 && rows.length >= 2 ? { k, cols, rows, src } : null;
+  }
+  if (k === "timeline") { const e = (Array.isArray(j.events) ? j.events : []).filter((r) => Array.isArray(r) && r.length >= 2).map((r) => [cell(r[0], 30), cell(r[1], 120)]).filter((r) => r[0] && r[1]).slice(0, 8); return e.length >= 2 ? { k, events: e, src } : null; }
+  if (k === "chart") { const b = (Array.isArray(j.bars) ? j.bars : []).filter((r) => Array.isArray(r) && r.length >= 2 && Number.isFinite(+r[1]) && +r[1] >= 0).map((r) => [cell(r[0], 40), +r[1]]).filter((r) => r[0]).slice(0, 8); return b.length >= 2 && b.some((r) => r[1] > 0) ? { k, unit: cell(j.unit, 20), bars: b, src } : null; }
+  return null;
+};
+const SIDES_SYS = "You check whether credible sources disagree about the answer to a search question. Use ONLY the numbered search results given. " +
+  "Say split only when at least one credible result (an expert, official, scientific or established news source) on EACH side clearly states a conflicting answer; " +
+  "different emphasis, extra detail or one fringe page is not a split. JSON only: {\"split\": false} or " +
+  '{"split": true, "a": {"claim": "one short sentence", "src": [result numbers]}, "b": {"claim": "one short sentence", "src": [result numbers]}}';
+export const sidesParse = (txt, nres) => {
+  const m = /\{[\s\S]*\}/.exec(String(txt || ""));
+  if (!m) return null;
+  let j; try { j = JSON.parse(m[0]); } catch { return null; }
+  if (j.split !== true) return { split: false };
+  const side = (x) => { const src = [...new Set((x && Array.isArray(x.src) ? x.src : []).map((i) => Math.round(+i) - 1).filter((i) => i >= 0 && i < nres))].slice(0, 3); const claim = cell(x && x.claim, 200); return claim && src.length ? { claim, src } : null; };
+  const a = side(j.a), b = side(j.b);
+  return a && b && !a.src.some((i) => b.src.includes(i)) ? { split: true, a, b } : { split: false };
+};
+const resText = (rs) => rs.map((r, i) => `${i + 1}. ${cell(r.t, 200)} (${(() => { try { return new URL(r.u).hostname.replace(/^www\./, ""); } catch { return ""; } })()}): ${cell(r.s, 400)}`).join("\n");
+const resIn = (b) => (Array.isArray(b.r) ? b.r : []).slice(0, 8).map((r) => ({ t: String((r && r.t) || ""), s: String((r && r.s) || ""), u: /^https?:\/\//.test(String((r && r.u) || "")) ? String(r.u) : "" })).filter((r) => r.t && r.u);
+const SHC = new Map();
+const cached = (k, run) => { if (SHC.has(k)) return SHC.get(k); const p = run().then((v) => { if (v === undefined) SHC.delete(k); return v; }); SHC.set(k, p); if (SHC.size > 500) SHC.delete(SHC.keys().next().value); return p; };
+export const shapeFor = (q, k, rs) => (!SHAPE_SYS[k] || rs.length < 2 ? Promise.resolve(null) : cached(`s|${k}|${q.toLowerCase()}|${rs.map((r) => r.u).join("|")}`, async () => {
+  const t = await aiAsk([{ role: "system", content: SHAPE_HEAD + SHAPE_SYS[k] }, { role: "user", content: `Search: ${q}\n\nResults:\n${resText(rs)}` }], 700);
+  return t == null ? undefined : shapeParse(k, t, rs.length); // no model answer: not cached
+}));
+export const sidesFor = (q, rs) => (rs.length < 2 ? Promise.resolve(null) : cached(`b|${q.toLowerCase()}|${rs.map((r) => r.u).join("|")}`, async () => {
+  const t = await aiAsk([{ role: "system", content: SIDES_SYS }, { role: "user", content: `Search: ${q}\n\nResults:\n${resText(rs)}` }], 400);
+  return t == null ? undefined : sidesParse(t, rs.length);
+}));
+
 // A slow answer is never thrown away: the rank call keeps running past the wait below and fills AIC when it lands, so
 // the very next request for the same results (a tab switch, a reload) already has it. Same request twice at once
 // shares one run (INFL).
 const INFL = new Map();
 const RANK_WAIT_MS = 1600, RANK_RUN_MS = 6000;
+// Search time (measured): the last 50 reranker run times and the time this hook added to each search. When the
+// reranker's median run is over the wait, waiting is wasted (it'd time out anyway): the search goes on at once and
+// the scores are kept for the next request.
+const SPEED = { rank: [], hook: [] };
+const speedAdd = (a, ms) => { a.push(ms); if (a.length > 50) a.shift(); };
+export const median = (a) => { if (!a.length) return null; const b = [...a].sort((x, y) => x - y), m = b.length >> 1; return b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2; };
+export const rankWait = (runs) => { const m = median(runs); return m != null && runs.length >= 5 && m > RANK_WAIT_MS ? 0 : RANK_WAIT_MS; };
 globalThis.__ctResults = async (result, query, params) => {
+  const t0 = Date.now();
+  try { await ctResults(result, query, params); } finally { speedAdd(SPEED.hook, Date.now() - t0); }
+};
+const ctResults = async (result, query, params) => {
   const type = String((params && params.type) || "web");
   if (!result || !Array.isArray(result.results) || !query || type === "videos") return;
   const q = String(query).trim().slice(0, 300);
   const rs = result.results.slice(0, 60);
   if (!rs.length || q.startsWith("!")) return;
-  try { if (await doiNames(result.results)) result.ctPub = 1; } catch {}
+  // Publisher names and the reranker run side by side (they used to add up)
+  const doi = doiNames(result.results).then((n) => { if (n) result.ctPub = 1; }, () => {});
+  try { await rankPart(result, q, rs, type); } finally { await doi; }
+};
+const rankPart = async (result, q, rs, type) => {
   const key = `${type}|${q}|${rs.map((r) => r.url).join("|")}`;
   let got = AIC.get(key);
   if (!got) {
@@ -1645,7 +1714,9 @@ globalThis.__ctResults = async (result, query, params) => {
       const sents = [];
       if (type === "web" && (QLIKE.test(q) || q.split(/\s+/).length >= 2)) rs.slice(0, 6).forEach((r, i) => sentences(r.snippet).slice(0, 4).forEach((x) => sents.push([i, x])));
       run = (async () => {
+        const r0 = Date.now();
         const j = await vis("/rank", { q, docs: docs.concat(sents.map(([, x]) => x)) }, RANK_RUN_MS);
+        if (j) speedAdd(SPEED.rank, Date.now() - r0);
         if (!j || !Array.isArray(j.s)) return null;
         const g = { rel: j.s.slice(0, docs.length), best: {} };
         sents.forEach(([i, x], k) => { const v = j.s[docs.length + k]; if (typeof v === "number" && (!g.best[i] || v > g.best[i].p)) g.best[i] = { s: x, p: v }; });
@@ -1655,7 +1726,8 @@ globalThis.__ctResults = async (result, query, params) => {
       })().finally(() => INFL.delete(key));
       INFL.set(key, run);
     }
-    got = await Promise.race([run, new Promise((r) => { const t = setTimeout(() => r(null), RANK_WAIT_MS); if (t.unref) t.unref(); })]);
+    const wait = rankWait(SPEED.rank);
+    got = !wait ? null : await Promise.race([run, new Promise((r) => { const t = setTimeout(() => r(null), wait); if (t.unref) t.unref(); })]);
     if (!got) return;
   }
   rs.forEach((r, i) => { if (typeof got.rel[i] === "number") r.ctRel = got.rel[i]; if (got.best[i]) r.ctBest = got.best[i]; });
@@ -1725,7 +1797,7 @@ export const routes = [
       let ai = false;
       try { const r = await fetch(VIS + "/health", { signal: AbortSignal.timeout(1500) }); ai = r.ok; } catch {}
       const i = flagIssue();
-      return jsonOut({ ver, pageMissing: PAGE_MISSING, ai, aiMs: Date.now() - t0, flags: flagOpen().length, issue: i ? i.text.split("\n").slice(0, 3).join(" | ").slice(0, 300) : "", up: Math.round(process.uptime()) });
+      return jsonOut({ ver, pageMissing: PAGE_MISSING, ai, aiMs: Date.now() - t0, flags: flagOpen().length, issue: i ? i.text.split("\n").slice(0, 3).join(" | ").slice(0, 300) : "", up: Math.round(process.uptime()), speed: { hook: median(SPEED.hook), rank: median(SPEED.rank), n: SPEED.hook.length } });
     },
   },
   {
@@ -1733,6 +1805,24 @@ export const routes = [
     method: "get",
     path: "/needs",
     async handler(req) { const n = await needsFor(new URL(req.url).searchParams.get("q") || ""); return jsonOut({ n: n ? { ...n, cut: cutNow() } : null }); },
+  },
+  {
+    // Answer card in a shape (M4): body {q, k: steps|compare|timeline|chart, r: [{t, s, u}]} -> {a: shaped answer or null}
+    method: "post",
+    path: "/shape",
+    async handler(req) { let b = {}; try { b = await req.json(); } catch {} const q = String(b.q || "").trim().slice(0, 300); return jsonOut({ a: q ? (await shapeFor(q, String(b.k || ""), resIn(b))) || null : null }); },
+  },
+  {
+    // Contested check (M4): body {q, r: [{t, s, u}]} -> {d: {split, a: {claim, src}, b: {claim, src}} or null}
+    method: "post",
+    path: "/sides",
+    async handler(req) { let b = {}; try { b = await req.json(); } catch {} const q = String(b.q || "").trim().slice(0, 300); return jsonOut({ d: q ? (await sidesFor(q, resIn(b))) || null : null }); },
+  },
+  {
+    // Search time (self-check): median ms the hook added per search, the reranker's median run, the wait in use
+    method: "get",
+    path: "/speed",
+    async handler() { return jsonOut({ hook: median(SPEED.hook), rank: median(SPEED.rank), n: SPEED.hook.length, wait: rankWait(SPEED.rank) }); },
   },
   {
     // First-screen cutoff sample from the page: {w: worth of the last result on its first screen} -> {cut: median}
@@ -2062,8 +2152,8 @@ export default {
 };
 '@)
 [IO.File]::WriteAllText("$t\script.js", @'
-// clean-titles v65
-const CT_VER = "v65";
+// clean-titles v66
+const CT_VER = "v66";
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -2699,6 +2789,16 @@ const blockGo = (share, cut) => typeof share === "number" && (cut == null || sha
 // A block's share on the results' scale: the text share x how much better the block fits this search than a plain
 // list of web pages (both rated in the same needs pass: needs b.web). null without the AI.
 const blockShare = (fmt, b, kind) => (fmt && b && typeof b[kind] === "number" && b.web > 0 ? fmt.text * b[kind] / b.web : null);
+// ===== M4: answer shape and contested check, from the needs call =====
+// The shape the AI rated best, when it beats an even split of the shapes and isn't a plain paragraph ("" = plain)
+const shapePick = (n) => {
+  const s = n && n.s;
+  if (!s || typeof s !== "object") return "";
+  const e = Object.entries(s).filter(([, v]) => typeof v === "number").sort((a, b) => b[1] - a[1]);
+  return e.length && e[0][0] !== "plain" && e[0][1] > 1 / e.length ? e[0][0] : "";
+};
+// A question-style search: a direct answer rated at least as needed as doing or knowing in general
+const questionStyle = (n) => { const x = n && n.n; return !!x && typeof x.question === "number" && x.question >= Math.max(+x.doing || 0, +x.knowing || 0); };
 
 // ===== Answer card, local part (no network): math, units incl. cooking, tip / percent, date math, patterns =====
 // answer(q, now) -> null, or { kind, label, value | title + href, detail, copy, swatch? }. Pure: the page draws it in
@@ -3528,7 +3628,7 @@ const qaAbout = (question, text) => {
   return n >= (ws.length >= 3 ? 2 : 1);
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, navName, navDist, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, copyKey, sameCopy, jaccard, varietyOrder, VARIETY_MARGIN, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, relCore, related, topicOf, tidyTitle, FLAG_CATS, flagCats, flagCtxClean, flagPrompt, fmtShares, boxWorth, boxAt, cutMedian, blockGo, blockShare, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippetAI, featuredSnippet, QA_LEAD, qaAbout };
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, navName, navDist, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, copyKey, sameCopy, jaccard, varietyOrder, VARIETY_MARGIN, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, relCore, related, topicOf, tidyTitle, FLAG_CATS, flagCats, flagCtxClean, flagPrompt, fmtShares, boxWorth, boxAt, cutMedian, blockGo, blockShare, shapePick, questionStyle, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippetAI, featuredSnippet, QA_LEAD, qaAbout };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -5373,7 +5473,7 @@ const aiWanted = (q) => {
 // the placeholder lines once it streams. It never grows by itself: ⌄ opens it (your tap). No panel within degoog's
 // slot limit (SLOT_PLUGIN_TIMEOUT_MS 10 s, + 2 s for the trip) after the results, or a failed answer
 // -> "AI summary unavailable" in the same space.
-const AIS = { key: "", got: false, fail: false, open: false, t: 0 };
+const AIS = { key: "", got: false, fail: false, open: false, t: 0, shape: undefined, asked: false };
 const aiBox = () => {
   const box = mk("div", "ct-ai");
   const label = mk("div", "ct-ai-label");
@@ -5388,30 +5488,113 @@ const aiBox = () => {
   return box;
 };
 const aiPass = (g, key) => {
-  if (AIS.key !== key) { clearTimeout(AIS.t); Object.assign(AIS, { key, got: false, fail: false, open: false, t: 0 }); }
+  if (AIS.key !== key) { clearTimeout(AIS.t); Object.assign(AIS, { key, got: false, fail: false, open: false, t: 0, shape: undefined, asked: false }); }
+  // Answer shape (M4): decided by the needs call while ai-summary's panel hasn't come yet; the shaped answer fills
+  // this same spot (same size, so nothing moves) and ai-summary's panel stays hidden. Text from ai-summary's model.
+  if (aiVal && AIS.shape === undefined) { const nd = ready("needs", key); if (AIS.got || nd === null) AIS.shape = ""; else if (nd) AIS.shape = CT.shapePick(nd); }
   let n = 0;
   for (const p of g.querySelectorAll(".glance-ai")) {
     const w = [...g.children].find((c) => c.contains(p)) || p;
-    // Not an AI search (or a second panel): never drawn
-    if (!aiVal || n++) { w.style.display = "none"; w.classList.remove("ct-ai-panel"); continue; }
+    // Not an AI search (or a second panel, or a shaped answer has the spot): never drawn
+    if (!aiVal || AIS.shape || n++) { w.style.display = "none"; w.dataset.ctHid = "1"; w.classList.remove("ct-ai-panel"); continue; }
+    if (w.dataset.ctHid) { delete w.dataset.ctHid; w.style.display = ""; } // shown again after a shaped answer fell through
     w.classList.add("ct-ai-panel");
     AIS.got = true;
     if (p.querySelector('.glance-ai-stream[data-state="error"]')) AIS.fail = true;
   }
   if (!aiVal) return;
-  if (AIS.got && !n) AIS.fail = true; // ai-summary took its panel away ("hide on error")
+  if (!AIS.shape && AIS.got && !n) AIS.fail = true; // ai-summary took its panel away ("hide on error")
+  if (AIS.shape && !AIS.asked && document.querySelector("#results-list .result-item")) shapeAsk(g, key);
   if (!AIS.got && !AIS.t && drawnFor === key) AIS.t = setTimeout(() => { if (!AIS.got && AIS.key === key) { AIS.fail = true; const b = document.querySelector("#at-a-glance > .ct-ai"); if (b) b.classList.add("ct-ai-fail"); } }, 12000);
   let box = [...g.children].find((c) => c.classList.contains("ct-ai"));
   if (!box) { g.style.display = ""; box = aiBox(); g.prepend(box); }
   box.classList.toggle("ct-ai-fail", AIS.fail);
   box.classList.toggle("ct-ai-open", AIS.open && !AIS.fail);
-  g.classList.toggle("ct-ai-opened", AIS.open && !AIS.fail);
+  box.classList.toggle("ct-shape", !!AIS.shape);
+  g.classList.toggle("ct-ai-opened", AIS.open && !AIS.fail && !AIS.shape);
 };
+// The top results as the model sees them (title, snippet, address)
+const topRes = (n) => [...document.querySelectorAll("#results-list .result-item")].filter((el) => el.style.display !== "none" && !el.classList.contains("ct-grouped")).slice(0, n).map(info).filter(Boolean)
+  .map((r) => ({ t: r.title, s: r.snippet, u: r.href, h: r.h }));
+const SHAPE_NAME = { steps: "Steps", compare: "Comparison", timeline: "Timeline", chart: "Chart" };
+const shapeAsk = (g, key) => {
+  AIS.asked = true;
+  AIS.got = true; // the spot is ours now: ai-summary's timeout doesn't apply
+  const q = curQ(), rs = topRes(6), k = AIS.shape;
+  const back = () => { if (AIS.key !== key) return; AIS.shape = ""; AIS.got = false; clearTimeout(AIS.t); AIS.t = 0; aiPass(g, key); }; // no shaped answer: ai-summary's own text shows in the spot
+  bridge("shape", {}, JSON.stringify({ q, k, r: rs })).then((j) => {
+    if (AIS.key !== key) return;
+    const a = j && j.a, box = [...g.children].find((c) => c.classList.contains("ct-ai"));
+    if (!a || !box) return back();
+    box.querySelector(".ct-ai-label").replaceChildren(mk("span", "ct-ai-star", "✦"), ` AI summary · ${SHAPE_NAME[a.k] || ""}`);
+    box.querySelector(".ct-ai-text").append(shapeBody(a, rs));
+    box.classList.add("ct-shaped");
+  }, back);
+};
+const shapeBody = (a, rs) => {
+  const body = mk("div", "ct-sh");
+  if (a.k === "steps") { const ol = mk("ol", "ct-sh-steps"); a.steps.forEach((x) => ol.append(mk("li", "", x))); body.append(ol); }
+  else if (a.k === "timeline") { const ol = mk("ol", "ct-sh-time"); a.events.forEach(([d, e]) => { const li = mk("li"); li.append(mk("span", "ct-sh-d", d), mk("span", "", e)); ol.append(li); }); body.append(ol); }
+  else if (a.k === "compare") {
+    const t = mk("table", "ct-sh-table"), hd = mk("tr");
+    hd.append(mk("th"), ...a.cols.map((c) => mk("th", "", c)));
+    t.append(hd);
+    a.rows.forEach((r) => { const tr = mk("tr"); tr.append(mk("th", "", r[0]), ...r.slice(1).map((c) => mk("td", "", c))); t.append(tr); });
+    body.append(t);
+  } else if (a.k === "chart") {
+    const max = Math.max(...a.bars.map((b) => b[1])) || 1, box = mk("div", "ct-sh-bars");
+    a.bars.forEach(([l, v]) => { const row = mk("div", "ct-sh-bar"), tr = mk("span", "ct-sh-tr"), fill = mk("span", "ct-sh-fill"); fill.style.width = `${(100 * v) / max}%`; tr.append(fill); row.append(mk("span", "ct-sh-l", l), tr, mk("span", "ct-sh-v", `${v.toLocaleString()}${a.unit ? ` ${a.unit}` : ""}`)); box.append(row); });
+    body.append(box);
+  }
+  const src = (a.src || []).map((i) => rs[i]).filter(Boolean);
+  if (src.length) { const p = mk("div", "ct-sh-src"); p.append("From "); src.forEach((r, i) => { if (i) p.append(" · "); const l = mk("a", "", r.h); l.href = r.u; l.rel = "noopener"; p.append(l); }); body.append(p); }
+  return body;
+};
+
+// ===== Contested check (M4): question-style searches only (needs call). ai-summary's model reads the top results;
+// only when credible ones actually disagree, a both-sides panel goes in below the fold (never above what you see),
+// waiting for a result below the screen if none is there yet. =====
+const SD = { key: "", asked: false, d: null, done: false };
+const sidesPass = () => {
+  const key = searchId(location.href), list = document.getElementById("results-list");
+  if (SD.key !== key) { Object.assign(SD, { key, asked: false, d: null, done: false }); document.querySelectorAll(".ct-sides").forEach((x) => x.remove()); }
+  if (!webTab || SD.done || !list || shaped()) return;
+  if (!SD.asked) {
+    const nd = ready("needs", key);
+    if (nd === undefined || !list.querySelector(".result-item")) return;
+    SD.asked = true;
+    let pg = 1; try { pg = Number(new URL(key).searchParams.get("page") || 1); } catch {}
+    if (!nd || pg > 1 || !CT.questionStyle(nd)) { SD.done = true; return; }
+    const rs = topRes(8);
+    SD.rs = rs;
+    bridge("sides", {}, JSON.stringify({ q: curQ(), r: rs })).then((j) => { if (SD.key !== key) return; SD.d = j && j.d; if (!SD.d || !SD.d.split) SD.done = true; else safe("sides", sidesPass); }, () => { SD.done = true; });
+    return;
+  }
+  if (!SD.d) return;
+  const v = [...list.querySelectorAll(".result-item")].filter((el) => el.style.display !== "none" && !el.classList.contains("ct-grouped"));
+  const below = v.find((el) => el.getBoundingClientRect().top >= innerHeight);
+  if (!below) return; // wait for endless scroll to put a result below the screen
+  SD.done = true;
+  const s = section("ct-sides", "Sources disagree");
+  const cols = mk("div", "ct-sides-cols");
+  for (const side of [SD.d.a, SD.d.b]) {
+    const c = mk("div", "ct-sides-c");
+    c.append(mk("div", "ct-sides-claim", side.claim));
+    const p = mk("div", "ct-sh-src");
+    side.src.map((i) => SD.rs[i]).filter(Boolean).forEach((r, i) => { if (i) p.append(" · "); const l = mk("a", "", r.h); l.href = r.u; l.rel = "noopener"; p.append(l); });
+    c.append(p);
+    cols.append(c);
+  }
+  s.append(cols);
+  below.before(s);
+};
+addEventListener("scroll", () => { if (SD.d && !SD.done) safe("sides", sidesPass); }, { passive: true });
 document.addEventListener("click", (e) => {
   const b = e.target.closest && e.target.closest(".ct-ai-more");
   if (!b || AIS.fail) return;
   const g = document.getElementById("at-a-glance");
   AIS.open = true;
+  if (AIS.shape) { if (g) aiPass(g, AIS.key); return; } // a shaped answer just opens in place
   if (g) { aiPass(g, AIS.key); g.querySelector(".ct-ai-panel .glance-ai-expand")?.click(); } // ai-summary's own "read more": unclamps, opens its follow-up chat
 });
 const ansCard = (a) => {
@@ -5543,7 +5726,9 @@ const ansPass = () => {
     // drawn in this same pass. Not on page 2+, plain-list searches, or when an answer above came first.
     let pg = 1;
     try { pg = Number(new URL(key).searchParams.get("page") || 1); } catch {}
-    if (globalThis.CT_NOSNIP !== true && !ansVal && SHOW.ans !== false && webTab && !TYPE_WORDS.test(q) && !shaped(q) && pg <= 1) {
+    // A shaped answer picked by the needs call (steps, table...) is the richer answer for the spot: no snippet then
+    const shapeNext = aiVal && !!CT.shapePick(ready("needs", key));
+    if (globalThis.CT_NOSNIP !== true && !ansVal && !shapeNext && SHOW.ans !== false && webTab && !TYPE_WORDS.test(q) && !shaped(q) && pg <= 1) {
       const rs = [...document.querySelectorAll("#results-list .result-item")].filter((el) => el.style.display !== "none" && !el.classList.contains("ct-grouped")).slice(0, 6).map(info).filter(Boolean);
       const f = CT.featuredSnippetAI(q, rs) || (rs.some((r) => r.best) ? null : CT.featuredSnippet(q, rs));
       if (f) ansVal = { ...f, label: `From ${f.h}` };
@@ -5867,7 +6052,7 @@ const init = () => {
   safe("scan", () => scan(document.body));
   safe("skeleton", () => skel(document.body));
   safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("flag", flagBtn); safe("tabkeep", tabKeep);
-  safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass);
+  safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass); safe("sides", sidesPass);
   safe("drawn", markDrawn);
   // Runs right after degoog inserts results and before the screen updates; only looks inside what was added
   new MutationObserver((muts) => {
@@ -5879,7 +6064,7 @@ const init = () => {
     safe("rel", relPass);
     for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { safe("scan", () => scan(n)); safe("skeleton", () => skel(n)); safe("usage", () => noUsage(n)); }
     safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("flag", flagBtn); safe("tabkeep", tabKeep); safe("card", glance);
-    safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass); safe("preview", previewPass);
+    safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass); safe("preview", previewPass); safe("sides", sidesPass);
     safe("drawn", markDrawn);
     safe("ai", () => { const g = document.getElementById("at-a-glance"); if (g) aiPass(g, searchId(location.href)); });
   }).observe(document.body, { childList: true, subtree: true });
@@ -6882,6 +7067,33 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 :is(.image-card, .video-card).ct-vpend img { opacity: 0 !important; }
 :is(.image-card, .video-card) img { transition: opacity .15s ease; }
 
+/* ===== M4: shaped answer in the AI spot (same 122px box; ⌄ opens it), both-sides panel ===== */
+#at-a-glance > .ct-ai.ct-shaped .ct-ai-line { display: none; }
+#at-a-glance > .ct-ai.ct-shaped .ct-ai-text { display: block; overflow: hidden; }
+#at-a-glance > .ct-ai.ct-shape.ct-ai-open { height: auto; }
+#at-a-glance > .ct-ai.ct-shape.ct-ai-open .ct-ai-text { height: auto; }
+#at-a-glance > .ct-ai.ct-shape.ct-ai-open .ct-ai-more { visibility: hidden; height: 8px; }
+.ct-sh { font-size: 15px; line-height: 24px; color: var(--text-primary); }
+.ct-sh ol { margin: 0; padding: 0 0 0 22px; }
+.ct-sh-time { list-style: none; padding: 0 !important; }
+.ct-sh-time li { display: flex; gap: 12px; }
+.ct-sh-d { flex: 0 0 auto; min-width: 56px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.ct-sh-table { border-collapse: collapse; width: 100%; table-layout: fixed; font-size: 14px; line-height: 24px; }
+.ct-sh-table th, .ct-sh-table td { padding: 0 8px 0 0; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.ct-sh-table th { font-weight: 500; color: var(--text-secondary); }
+.ct-sh-bars { display: grid; gap: 0; }
+.ct-sh-bar { display: grid; grid-template-columns: minmax(0, 30%) 1fr auto; align-items: center; gap: 8px; height: 24px; font-size: 14px; }
+.ct-sh-l { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); }
+.ct-sh-tr { height: 10px; border-radius: 5px; background: var(--bg-light); overflow: hidden; }
+.ct-sh-fill { display: block; height: 100%; border-radius: 5px; background: var(--text-link); }
+.ct-sh-v { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ct-sh-src { margin-top: 4px; font-size: 13px; line-height: 18px; color: var(--text-secondary); }
+.ct-sh-src a { color: var(--text-link) !important; text-decoration: none; }
+.ct-sh-src a:hover { text-decoration: underline; }
+.ct-sides-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.ct-sides-claim { font-size: 15px; line-height: 22px; color: var(--text-primary); }
+@media (max-width: 767px) { .ct-sides-cols { grid-template-columns: 1fr; gap: 12px; } }
+
 '@)
 [IO.File]::WriteAllText("$t\setcss.js", @'
 const fs = require("fs");
@@ -7247,7 +7459,7 @@ docker restart $c | Out-Null
 $null = docker exec $c sh -c 'for i in $(seq 1 40); do curl -fs -o /dev/null http://127.0.0.1:${DEGOOG_PORT:-4444}/readyz && exit 0; sleep 1; done'
 
 $ss = docker exec $c cat /app/data/server-settings.json | Out-String | ConvertFrom-Json
-"plugin code inside the page (should be v65): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
+"plugin code inside the page (should be v66): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
 "page files (should be a ct and a psl file): " + (docker exec $c sh -c 'ls /app/src/public/ct/')
 "progressive results off (should be False): $($ss.settings.streamingEnabled -eq $true)"
 "typo fixer word list (should be about 82800): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/words.txt')
@@ -7316,6 +7528,17 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
     const bc = nc.j && nc.j.n && nc.j.n.b, bd = nd.j && nd.j.n && nd.j.n.b;
     const bn = (b) => (b ? `forums ${Number(b.forums).toFixed(2)} papers ${Number(b.papers).toFixed(2)} web ${Number(b.web).toFixed(2)}` : "no answer");
     row("Needs call: block judge (forums vs papers)", !bc || !bd ? "SKIP" : bc.forums > bc.papers && bd.papers > bd.forums, `keychron: ${bn(bc)} | crispr: ${bn(bd)}`);
+    // Answer shape + contested check (M4): the shape group of the needs call, then ai-summary's model on fixed results
+    const sa = na.j && na.j.n && na.j.n.s, sTop = sa ? Object.entries(sa).sort((x, y) => y[1] - x[1])[0][0] : "";
+    row("Needs call: shape judge (steps for a how-to)", !sa ? "SKIP" : sTop === "steps", sa ? Object.entries(sa).map(([k, v]) => `${k} ${Number(v).toFixed(2)}`).join(" ") : "no shape group");
+    const tie = [["How to tie a tie", "Drape the tie with the wide end longer. Cross the wide end over the narrow end. Bring it up through the neck loop. Pull it down through the knot and tighten."], ["Four-in-hand knot", "Cross wide over narrow, wrap it around once, pull up through the loop, tuck through the front and slide the knot up."]].map(([t, s], i) => ({ t, s, u: `https://example${i}.com/tie` }));
+    const sh = await bridge("shape", {}, JSON.stringify({ q: "how to tie a tie", k: "steps", r: tie })), a = sh.j && sh.j.a;
+    row("Shaped answer (ai-summary's model)", !sh.j ? false : !a ? "SKIP" : a.k === "steps" && Array.isArray(a.steps) && a.steps.length >= 2, a ? `${a.steps.length} steps, ${sh.ms} ms` : "no answer (ai-summary's model off or busy)");
+    const cof = [["Coffee linked to lower heart disease risk", "A large cohort study found 2-3 cups a day was linked to lower risk of heart disease and death."], ["Coffee raises blood pressure", "Caffeine raises blood pressure for hours; researchers advise people with hypertension to limit coffee."]].map(([t, s], i) => ({ t, s, u: `https://news${i}.org/coffee` }));
+    const sd = await bridge("sides", {}, JSON.stringify({ q: "is coffee bad for your heart", r: cof })), d = sd.j && sd.j.d;
+    row("Contested check (ai-summary's model)", !sd.j ? false : !d ? "SKIP" : typeof d.split === "boolean", d ? `split: ${d.split}, ${sd.ms} ms` : "no answer (ai-summary's model off or busy)");
+    const sp = await bridge("speed", {}), v = sp.j || {};
+    row("Search time added by clean-titles", !!sp.j, v.n ? `median ${v.hook} ms over ${v.n} searches; reranker ${v.rank ?? "-"} ms, wait ${v.wait} ms` : "no searches yet");
     const cu = await bridge("cut", {});
     row("First-screen cutoff store", !!(cu.j && "cut" in cu.j), cu.j && cu.j.cut != null ? `median ${Number(cu.j.cut).toFixed(3)}` : "no samples yet (blocks fetched until measured)");
   }

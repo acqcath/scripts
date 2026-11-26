@@ -1794,7 +1794,7 @@ export const routes = [
       let ai = false;
       try { const r = await fetch(VIS + "/health", { signal: AbortSignal.timeout(1500) }); ai = r.ok; } catch {}
       const i = flagIssue();
-      return jsonOut({ ver, pageMissing: PAGE_MISSING, ai, aiMs: Date.now() - t0, flags: flagOpen().length, issue: i ? i.text.split("\n").slice(0, 3).join(" | ").slice(0, 300) : "", up: Math.round(process.uptime()) });
+      return jsonOut({ ver, pageMissing: PAGE_MISSING, ai, aiMs: Date.now() - t0, flags: flagOpen().length, issue: i ? i.text.split("\n").slice(0, 3).join(" | ").slice(0, 300) : "", up: Math.round(process.uptime()), speed: { hook: median(SPEED.hook), rank: median(SPEED.rank), n: SPEED.hook.length } });
     },
   },
   {
