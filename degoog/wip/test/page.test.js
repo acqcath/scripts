@@ -843,3 +843,17 @@ test("page M4: both-sides panel only below the screen, only for a real split", a
   await new Promise((r) => setTimeout(r, 20));
   expect(c2.some((c) => c.route === "sides")).toBe(false); // not a question: never asked
 });
+
+test("page M5: opening a result sends only its block kind (no address) for the learning log", async () => {
+  const res = Array.from({ length: 4 }, (_, i) => ({ title: `Rust ownership explained clearly ${i + 1}`, url: `https://rs${i}.example.com/own-${i}`, snippet: "Ownership rules in Rust explained with examples." }));
+  const calls = [];
+  const a = await run("rust ownership", { res, calls, engines: 40 });
+  const link = a.document.querySelector("#results-list .result-item a[href^='http']");
+  link.addEventListener("click", (e) => e.preventDefault());
+  link.click();
+  await new Promise((r) => setTimeout(r, 10));
+  const c = calls.find((x) => x.route === "seen");
+  expect(c && c.params.get("k")).toBe("web");
+  expect(c.params.get("q")).toBe("rust ownership");
+  expect([...c.params.keys()].some((k) => /url|href|u$/.test(k))).toBe(false);
+});

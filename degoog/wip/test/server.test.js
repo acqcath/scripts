@@ -620,3 +620,36 @@ test("search time: the reranker wait is skipped once its measured median run is 
   expect(rankWait([2500, 2600, 2700, 2400, 3000])).toBe(0); // slow model: waiting would time out anyway
   expect(rankWait([2500, 2600])).toBe(1600); // too few runs to judge
 });
+
+import { needsKey, nudgeNeeds, learnFactors, learnWindow, sameParse, learnSearch, learnOpen, learnNudge, _learnReset } from "../files/index.js";
+test("M5: profile key, factors and nudge keep each group's total; no solves = unchanged", () => {
+  const n = { f: { video: 0.5, image: 0.1, text: 0.4 }, n: { doing: 0.9, knowing: 0.2 }, s: { steps: 0.6, plain: 0.1 }, b: { forums: 0.2, web: 0.5, answer: 0.3 } };
+  expect(needsKey(n)).toBe("video|doing|steps");
+  expect(learnFactors({}, ["a", "b"])).toEqual({ a: 1, b: 1 });
+  expect(nudgeNeeds(n, {})).toEqual(n);
+  const m = nudgeNeeds(n, { answer: 4 });
+  expect(m.b.answer).toBeGreaterThan(n.b.answer);
+  expect(m.b.forums + m.b.web + m.b.answer).toBeCloseTo(1, 6);
+  expect(m.f).toEqual(n.f);
+  expect(sameParse("SAME.")).toBe("same");
+  expect(sameParse("next question")).toBe("next");
+  expect(learnWindow([{ t: 0 }, { t: 10 }])).toBe(null);
+  expect(learnWindow([0, 10, 30, 60, 100, 150].map((t) => ({ t })))).toBe(30);
+});
+test("M5: a same-need search right after leaves the first unsolved; a next question credits the block opened", async () => {
+  _learnReset();
+  const n = { f: { video: 0.2, text: 0.8 }, n: { knowing: 0.9 }, s: { plain: 1 }, b: { forums: 0.3, web: 0.4, answer: 0.3 } };
+  const ask = (v) => async () => v;
+  let t = 0;
+  for (const q of ["a", "b", "c", "d", "e", "f"]) await learnSearch(q, n, (t += 600000), ask("next")); // gaps of 10 min: window 10 min
+  learnOpen("f", "forums");
+  await learnSearch("f again", n, (t += 60000), ask("same")); // 1 min later, same need: no credit
+  expect(learnNudge(n)).toEqual(n);
+  learnOpen("f again", "forums");
+  await learnSearch("g", n, (t += 60000), ask("next")); // solved: forums credited
+  const m = learnNudge(n);
+  expect(m.b.forums).toBeGreaterThan(n.b.forums);
+  expect(learnOpen("zzz", "forums")).toBe(false);
+  expect(learnOpen("g", "nonsense")).toBe(false);
+  _learnReset();
+});

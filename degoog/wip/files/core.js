@@ -642,3 +642,4 @@ export const shapePick = (n) => {
 };
 // A question-style search: a direct answer rated at least as needed as doing or knowing in general
 export const questionStyle = (n) => { const x = n && n.n; return !!x && typeof x.question === "number" && x.question >= Math.max(+x.doing || 0, +x.knowing || 0); };
+

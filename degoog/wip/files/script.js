@@ -642,6 +642,15 @@ const mediaFoldAdd = (kind, out) => {
 };
 // Image/video preview panel: the picture and the title open the page in one tap (like Google; degoog's picture opened
 // a zoom view and only the button visited), and its "more images" strip leaves out what the grid folded or hid
+// Unsolved-search learning (M5): which kind of block a link you open sat in goes to the server (its own private
+// log; no address is sent). Layout only: it nudges block shares for searches with the same needs profile.
+const SEEN_KIND = [[".ct-forum", "forums"], [".ct-paper", "papers"], [".ct-news", "news"], [".ct-video", "video"], [".ct-imgs", "image"], [".ct-kp", "info"], [".ct-ans, .ct-ai, #at-a-glance", "answer"], [".result-item", "web"]];
+document.addEventListener("click", (e) => {
+  const a = e.target?.closest?.("a[href]");
+  if (!a || !/^https?:/.test(a.href) || !a.closest("#results-list, #at-a-glance") || !webTab) return;
+  const hit = SEEN_KIND.find(([sel]) => a.closest(sel));
+  if (hit) bridge("seen", { q: curQ(), k: hit[1] }, "").catch(() => {});
+}, true);
 document.addEventListener("click", (e) => {
   if (!e.target?.closest?.("#media-preview-img")) return;
   const a = document.querySelector("#media-preview-info .media-preview-link");

@@ -1023,7 +1023,7 @@ const isName = (w) => NAMES.has(w) || TREND.has(w) || (learned.cap && learned.ca
 // Settings > Clean Titles > "Typo fixer: learn words from my results" (off: nothing about your searches is stored or used)
 let LEARN = false;
 // Settings > Clean Titles: which of Sitelinks / Discussions / Videos / Top stories to show (all on unless turned off)
-let SHOW = { sl: true, forum: true, video: true, news: true, ans: true, kp: true, img: true, qv: true, arch: true, mean: true, stars: true, plain: true, pw: true };
+let SHOW = { learn: true, sl: true, forum: true, video: true, news: true, ans: true, kp: true, img: true, qv: true, arch: true, mean: true, stars: true, plain: true, pw: true };
 const EMPTY = () => ({ w: {}, b: {}, keep: {}, fix: {}, cap: {} });
 const readLearned = () => { try { learned = Object.assign(EMPTY(), JSON.parse(fs.readFileSync(`${DIR}/learned.json`, "utf8"))); } catch { learned = EMPTY(); } };
 const PAIRS = new Map();
@@ -1607,6 +1607,77 @@ export const cutAdd = (w) => { w = +w; if (!Number.isFinite(w) || w < 0 || w > 1
 export const cutNow = () => { const v = [...readCuts()].sort((a, b) => a - b); if (!v.length) return null; const m = v.length >> 1; return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; };
 export const _cutReset = () => { CUTS = null; };
 const NEEDC = new Map(), NEEDI = new Map();
+
+// ===== Unsolved-search learning (M5): layout only, keyed by the needs profile, never sites or viewpoints =====
+// The profile of a search: its top format, top need and top answer shape from the needs call ("video|doing|steps")
+const topOf = (o) => { if (!o || typeof o !== "object") return ""; const e = Object.entries(o).filter(([, v]) => typeof v === "number").sort((a, b) => b[1] - a[1]); return e.length ? e[0][0] : ""; };
+export const needsKey = (n) => (n ? [topOf(n.f), topOf(n.n), topOf(n.s)].join("|") : "");
+// Which block a tapped link sat in, by the page's own block classes (videos and pictures are formats, the rest blocks)
+export const LEARN_KINDS = { video: "f", image: "f", text: "f", forums: "b", news: "b", papers: "b", info: "b", answer: "b", web: "b" };
+// Each kind's factor = (searches it solved + 1) / (the mean solves per kind in that group + 1): no solves -> 1 for all;
+// a kind that solved more than its share rises, one that solved less falls, by the measured counts only
+export const learnFactors = (st, keys) => {
+  const s = st || {}, tot = keys.reduce((a, k) => a + (+s[k] || 0), 0), mean = tot / (keys.length || 1);
+  return Object.fromEntries(keys.map((k) => [k, ((+s[k] || 0) + 1) / (mean + 1)]));
+};
+// The needs call's shares, nudged by what solved searches with this profile; each group keeps its total
+export const nudgeNeeds = (n, st) => {
+  if (!n || !st) return n;
+  const out = { ...n };
+  for (const g of ["f", "b"]) {
+    const o = n[g];
+    if (!o || typeof o !== "object") continue;
+    const keys = Object.keys(o).filter((k) => typeof o[k] === "number" && LEARN_KINDS[k] === g);
+    if (!keys.length) continue;
+    const fac = learnFactors(st, keys), sum = keys.reduce((a, k) => a + o[k], 0), raw = keys.map((k) => o[k] * fac[k]), rs = raw.reduce((a, x) => a + x, 0);
+    out[g] = { ...o };
+    keys.forEach((k, i) => { out[g][k] = rs > 0 ? (raw[i] * sum) / rs : o[k]; });
+  }
+  return out;
+};
+
+// The log (private, this server only): each search's time, words and profile, the block of the last link opened
+// from it, and whether the next search was the same need. Words are kept 30 days, the per-profile counts for good.
+const learnFile = () => `${DIR}/learn.json`;
+let UNS = null;
+const learnLoad = () => { if (!UNS) { try { UNS = JSON.parse(fs.readFileSync(learnFile(), "utf8")); } catch {} if (!UNS || !Array.isArray(UNS.log)) UNS = { log: [], stat: {} }; } return UNS; };
+let _lsT = 0;
+const learnSave = () => { clearTimeout(_lsT); _lsT = setTimeout(() => { try { fs.writeFileSync(`${learnFile()}.tmp`, JSON.stringify(UNS)); fs.renameSync(`${learnFile()}.tmp`, learnFile()); } catch {} }, 1000); if (_lsT.unref) _lsT.unref(); };
+// "Within minutes" = shorter than the median gap between your searches (measured from the log; 5+ gaps needed)
+export const learnWindow = (log) => { const g = []; for (let i = 1; i < log.length; i++) g.push(log[i].t - log[i - 1].t); return g.length >= 5 ? median(g) : null; };
+const SAME_SYS = "Two searches by one person, a few minutes apart. Answer with one word: SAME if the second search " +
+  "looks for the same thing as the first (the first didn't give it: reworded, narrowed, fixed), NEXT if it is a " +
+  "different or follow-up question (the first was answered).";
+export const sameParse = (t) => { const m = /\b(same|next)\b/i.exec(String(t || "")); return m ? m[1].toLowerCase() : null; };
+const credit = (e) => { if (e && e.open && e.k && !e.done) { const st = (UNS.stat[e.k] ||= {}); st[e.open] = (st[e.open] || 0) + 1; e.done = 1; } };
+// A new search: the one before it is judged (only inside the window, by ai-summary's model) and credited if solved
+export const learnSearch = async (q, n, now = Date.now(), ask = aiAsk) => {
+  const L = learnLoad(), k = needsKey(n);
+  L.log = L.log.filter((e) => now - e.t < 30 * 86400000);
+  const prev = L.log[L.log.length - 1];
+  if (prev && prev.q.toLowerCase() === q.toLowerCase()) return; // the same page again (reload, endless scroll)
+  const win = learnWindow(L.log), e = { t: now, q, k, open: "" };
+  L.log.push(e);
+  if (L.log.length > 2000) L.log.splice(0, L.log.length - 2000);
+  if (prev && !prev.done) {
+    if (win != null && now - prev.t < win) {
+      const v = sameParse(await ask([{ role: "system", content: SAME_SYS }, { role: "user", content: `First: ${prev.q}\nSecond: ${q}` }], 5).catch(() => null));
+      if (v === "same") prev.done = 1; // unsolved: what was opened from it gets no credit
+      else if (v === "next") credit(prev);
+    } else credit(prev);
+  }
+  learnSave();
+};
+// A link opened from a search's page: which block it sat in (the last one opened before the next search counts)
+export const learnOpen = (q, kind) => {
+  if (!LEARN_KINDS[kind]) return false;
+  const L = learnLoad();
+  for (let i = L.log.length - 1; i >= Math.max(0, L.log.length - 5); i--) if (L.log[i].q.toLowerCase() === q.toLowerCase()) { L.log[i].open = kind; learnSave(); return true; }
+  return false;
+};
+const SHOW_LEARN = () => SHOW.learn !== false;
+export const learnNudge = (n) => (n ? nudgeNeeds(n, learnLoad().stat[needsKey(n)]) : n);
+export const _learnReset = (x) => { UNS = x || { log: [], stat: {} }; };
 export const needsFor = async (q) => {
   q = String(q || "").trim().slice(0, 300);
   if (!q || q.startsWith("!")) return null;
@@ -1804,7 +1875,17 @@ export const routes = [
     // What this search needs: {n: {f, n, b, ms, cut}} (null when the AI is off); one batched GPU pass, cached per search
     method: "get",
     path: "/needs",
-    async handler(req) { const n = await needsFor(new URL(req.url).searchParams.get("q") || ""); return jsonOut({ n: n ? { ...n, cut: cutNow() } : null }); },
+    async handler(req) {
+      const q = String(new URL(req.url).searchParams.get("q") || "").trim().slice(0, 300), n = await needsFor(q);
+      if (n && SHOW_LEARN()) learnSearch(q, n).catch(() => {}); // never waited on: the search goes on at once
+      return jsonOut({ n: n ? { ...(SHOW_LEARN() ? learnNudge(n) : n), cut: cutNow() } : null });
+    },
+  },
+  {
+    // A link opened from the results (M5): {q, k: block kind} -> {ok}
+    method: "get",
+    path: "/seen",
+    async handler(req) { const p = new URL(req.url).searchParams; return jsonOut({ ok: SHOW_LEARN() && learnOpen(String(p.get("q") || "").trim().slice(0, 300), String(p.get("k") || "")) }); },
   },
   {
     // Answer card in a shape (M4): body {q, k: steps|compare|timeline|chart, r: [{t, s, u}]} -> {a: shaped answer or null}
@@ -2102,6 +2183,7 @@ export default {
     { key: "showImagesRow", label: "Images row", type: "toggle", default: true, description: "A row of pictures for searches that clearly want them (one extra Images search, usually from degoog's cache)." },
     { key: "plainLists", label: "Plain lists for type and site searches", type: "toggle", default: true, description: "Searches naming a type (pdf, reddit, recipe…) or a site get a plain list, official docs first for programming." },
     { key: "showPaywall", label: "Paywall tag", type: "toggle", default: true, description: "The word \"Paywall\" on results from subscription sites." },
+    { key: "learnLayout", label: "Learn the layout from searches", type: "toggle", default: true, description: "Kept on this server only: when a search didn't give you what you needed (you searched again for the same thing), the kinds of boxes that did solve similar searches move up. Layout only, never sites or viewpoints." },
     { key: "showQuickView", label: "Quick view", type: "toggle", default: true, description: "In each result's menu: the page's recipe, steps, facts or first paragraphs, read by your server when you tap." },
     { key: "showStars", label: "Ratings on recipe and review results", type: "toggle", default: true, description: "Rating and time on the first results' source line (your server reads those pages after the results are drawn)." },
     { key: "showArchive", label: "Archived copy", type: "toggle", default: true, description: "In each result's menu: open a saved copy (archive.today, Wayback Machine, Ghostarchive), looked up when you tap." },
@@ -2113,7 +2195,7 @@ export default {
     sitesFromSettings(s ? s.sites : undefined);
     SEO_ON = !(s && (s.autoLower === false || s.autoLower === "false"));
     const off = (k) => !!s && (s[k] === false || s[k] === "false");
-    SHOW = { sl: !off("showSitelinks"), forum: !off("showDiscussions"), video: !off("showVideos"), news: !off("showTopStories"), ans: !off("showAnswers"), kp: !off("showKnowledge"), img: !off("showImagesRow"), qv: !off("showQuickView"), arch: !off("showArchive"), mean: !off("showMeanings"), stars: !off("showStars"), plain: !off("plainLists"), pw: !off("showPaywall") };
+    SHOW = { sl: !off("showSitelinks"), forum: !off("showDiscussions"), video: !off("showVideos"), news: !off("showTopStories"), ans: !off("showAnswers"), kp: !off("showKnowledge"), img: !off("showImagesRow"), qv: !off("showQuickView"), arch: !off("showArchive"), mean: !off("showMeanings"), stars: !off("showStars"), plain: !off("plainLists"), pw: !off("showPaywall"), learn: !off("learnLayout") };
     const on = !!s && (s.learnFromResults === true || s.learnFromResults === "true");
     if (on === LEARN) return;
     LEARN = on;
@@ -2152,8 +2234,8 @@ export default {
 };
 '@)
 [IO.File]::WriteAllText("$t\script.js", @'
-// clean-titles v66
-const CT_VER = "v66";
+// clean-titles v67
+const CT_VER = "v67";
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -2799,6 +2881,7 @@ const shapePick = (n) => {
 };
 // A question-style search: a direct answer rated at least as needed as doing or knowing in general
 const questionStyle = (n) => { const x = n && n.n; return !!x && typeof x.question === "number" && x.question >= Math.max(+x.doing || 0, +x.knowing || 0); };
+
 
 // ===== Answer card, local part (no network): math, units incl. cooking, tip / percent, date math, patterns =====
 // answer(q, now) -> null, or { kind, label, value | title + href, detail, copy, swatch? }. Pure: the page draws it in
@@ -4274,6 +4357,15 @@ const mediaFoldAdd = (kind, out) => {
 };
 // Image/video preview panel: the picture and the title open the page in one tap (like Google; degoog's picture opened
 // a zoom view and only the button visited), and its "more images" strip leaves out what the grid folded or hid
+// Unsolved-search learning (M5): which kind of block a link you open sat in goes to the server (its own private
+// log; no address is sent). Layout only: it nudges block shares for searches with the same needs profile.
+const SEEN_KIND = [[".ct-forum", "forums"], [".ct-paper", "papers"], [".ct-news", "news"], [".ct-video", "video"], [".ct-imgs", "image"], [".ct-kp", "info"], [".ct-ans, .ct-ai, #at-a-glance", "answer"], [".result-item", "web"]];
+document.addEventListener("click", (e) => {
+  const a = e.target?.closest?.("a[href]");
+  if (!a || !/^https?:/.test(a.href) || !a.closest("#results-list, #at-a-glance") || !webTab) return;
+  const hit = SEEN_KIND.find(([sel]) => a.closest(sel));
+  if (hit) bridge("seen", { q: curQ(), k: hit[1] }, "").catch(() => {});
+}, true);
 document.addEventListener("click", (e) => {
   if (!e.target?.closest?.("#media-preview-img")) return;
   const a = document.querySelector("#media-preview-info .media-preview-link");
@@ -7459,7 +7551,7 @@ docker restart $c | Out-Null
 $null = docker exec $c sh -c 'for i in $(seq 1 40); do curl -fs -o /dev/null http://127.0.0.1:${DEGOOG_PORT:-4444}/readyz && exit 0; sleep 1; done'
 
 $ss = docker exec $c cat /app/data/server-settings.json | Out-String | ConvertFrom-Json
-"plugin code inside the page (should be v66): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
+"plugin code inside the page (should be v67): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
 "page files (should be a ct and a psl file): " + (docker exec $c sh -c 'ls /app/src/public/ct/')
 "progressive results off (should be False): $($ss.settings.streamingEnabled -eq $true)"
 "typo fixer word list (should be about 82800): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/words.txt')
@@ -7539,6 +7631,8 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
     row("Contested check (ai-summary's model)", !sd.j ? false : !d ? "SKIP" : typeof d.split === "boolean", d ? `split: ${d.split}, ${sd.ms} ms` : "no answer (ai-summary's model off or busy)");
     const sp = await bridge("speed", {}), v = sp.j || {};
     row("Search time added by clean-titles", !!sp.j, v.n ? `median ${v.hook} ms over ${v.n} searches; reranker ${v.rank ?? "-"} ms, wait ${v.wait} ms` : "no searches yet");
+    const se = await bridge("seen", { q: "", k: "web" });
+    row("Learning log (unsolved searches)", !!(se.j && "ok" in se.j), se.j ? "" : "no answer from /seen");
     const cu = await bridge("cut", {});
     row("First-screen cutoff store", !!(cu.j && "cut" in cu.j), cu.j && cu.j.cut != null ? `median ${Number(cu.j.cut).toFixed(3)}` : "no samples yet (blocks fetched until measured)");
   }

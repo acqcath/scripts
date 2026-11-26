@@ -68,6 +68,8 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
     row("Contested check (ai-summary's model)", !sd.j ? false : !d ? "SKIP" : typeof d.split === "boolean", d ? `split: ${d.split}, ${sd.ms} ms` : "no answer (ai-summary's model off or busy)");
     const sp = await bridge("speed", {}), v = sp.j || {};
     row("Search time added by clean-titles", !!sp.j, v.n ? `median ${v.hook} ms over ${v.n} searches; reranker ${v.rank ?? "-"} ms, wait ${v.wait} ms` : "no searches yet");
+    const se = await bridge("seen", { q: "", k: "web" });
+    row("Learning log (unsolved searches)", !!(se.j && "ok" in se.j), se.j ? "" : "no answer from /seen");
     const cu = await bridge("cut", {});
     row("First-screen cutoff store", !!(cu.j && "cut" in cu.j), cu.j && cu.j.cut != null ? `median ${Number(cu.j.cut).toFixed(3)}` : "no samples yet (blocks fetched until measured)");
   }
