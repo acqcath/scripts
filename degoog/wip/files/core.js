@@ -547,3 +547,19 @@ export const topicOf = (rel, words) => {
   return (r) => { const hits = [...new Set(topicToks(`${r.title} ${r.snippet || ""}`))].filter((t) => topic.has(t)); return hits.length >= 2 && hits.some((t) => titled.has(t)); };
 };
 export const tidyTitle = (t) => tidyText(t).replace(/^[\s|·•:,;–—-]+|[\s|·•:,;–—-]+$/g, "");
+
+
+// ===== ⚑ Report: the text the Claude Code session opens with (Claude's link takes about 14,000 characters: snippets
+// are dropped first, then the oldest waiting flags; the flag being reported always stays) =====
+export const flagPrompt = (flags, issue, max = 12000) => {
+  const head = "degoog clean-titles: fix what my degoog reported. Read degoog/wip/QUICKSTART.md in acqcath/scripts first and follow its \"Flags\" steps: " +
+    "commit the flags below to the private repo acqcath/degoog-flags, then fix the code so these searches come out right, release and merge. " +
+    "Keep my searches out of the public repo.\n";
+  const body = (fl, snip) => JSON.stringify({ flags: fl.map((f) => ({ at: new Date(f.t).toISOString(), q: f.q, tab: f.type, note: f.note, top: (f.top || []).map((r) => (snip ? { title: r.title, url: r.url, snippet: r.snippet } : { title: r.title, url: r.url })) })), updateIssue: issue || null });
+  let fl = (flags || []).slice(-20);
+  for (;;) {
+    for (const snip of [true, false]) { const s = head + body(fl, snip); if (s.length <= max || fl.length <= 1) { if (s.length <= max || !snip) return s.slice(0, max); } }
+    if (fl.length <= 1) return (head + body(fl, false)).slice(0, max);
+    fl = fl.slice(1);
+  }
+};

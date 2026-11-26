@@ -1474,6 +1474,17 @@ const doiNames = async (rs) => {
   for (const r of rs) { const p = doiPrefixOf(r.url); if (p && DOIP.has(p)) { r.ctPub = DOIP.get(p); n++; } }
   return n;
 };
+// ===== ⚑ Flags: "what's wrong with these results?" from the ⚑ in the tab row =====
+// Report in the ⚑ box keeps each flag (the search, the tab, your note, its top 10 results) in flags.json on this
+// server only, and opens a Claude Code session filled with it (core flagPrompt), plus anything not handed over yet:
+// the updater's last problem (update-issue.txt, written by the PC's hourly job). That session fixes the code.
+const flagsFile = () => `${DIR}/flags.json`, issueFile = () => `${DIR}/update-issue.txt`;
+let FLAGS = null;
+const readFlags = () => { if (FLAGS) return FLAGS; try { const j = JSON.parse(fs.readFileSync(flagsFile(), "utf8")); FLAGS = j && Array.isArray(j.list) ? j : { list: [], issueAt: 0 }; } catch { FLAGS = { list: [], issueAt: 0 }; } return FLAGS; };
+const saveFlags = () => { try { fs.writeFileSync(`${flagsFile()}.tmp`, JSON.stringify(FLAGS)); fs.renameSync(`${flagsFile()}.tmp`, flagsFile()); } catch {} };
+const flagIssue = () => { try { const st = fs.statSync(issueFile()); const t = st.mtimeMs; const text = fs.readFileSync(issueFile(), "utf8").trim(); return text && t > (readFlags().issueAt || 0) ? { t, text: text.slice(-3000) } : null; } catch { return null; } };
+const flagOpen = () => readFlags().list.filter((f) => !f.handed);
+
 // A slow answer is never thrown away: the rank call keeps running past the wait below and fills AIC when it lands, so
 // the very next request for the same results (a tab switch, a reload) already has it. Same request twice at once
 // shares one run (INFL).
@@ -1513,6 +1524,30 @@ globalThis.__ctResults = async (result, query, params) => {
 };
 
 export const routes = [
+  {
+    // ⚑ Report: {q, type, note, top: [{title, url, snippet}]} is kept, and it and everything waiting go to Claude
+    method: "post",
+    path: "/flag",
+    async handler(req) {
+      let b = {};
+      try { b = await req.json(); } catch {}
+      const F = readFlags(), issue = flagIssue(), now = Date.now();
+      for (const f of flagOpen()) f.handed = now;
+      if (issue) F.issueAt = issue.t;
+      const q = String(b.q || "").trim().slice(0, 300);
+      if (q) F.list.push({ id: now, t: now, handed: now, q, type: String(b.type || "web").slice(0, 40), note: String(b.note || "").trim().slice(0, 1000),
+        top: (Array.isArray(b.top) ? b.top : []).slice(0, 10).map((r) => ({ title: String((r && r.title) || "").slice(0, 200), url: String((r && r.url) || "").slice(0, 500), snippet: String((r && r.snippet) || "").slice(0, 300) })).filter((r) => /^https?:\/\//.test(r.url)) });
+      if (F.list.length > 500) F.list = F.list.slice(-500);
+      saveFlags();
+      return jsonOut({ ok: 1 });
+    },
+  },
+  {
+    // ⚑ What else goes along with the next Report: {flags: [not handed over], issue: the updater's last problem}
+    method: "post",
+    path: "/flags",
+    handler: () => { const i = flagIssue(); return jsonOut({ flags: flagOpen(), issue: i ? i.text : "" }); },
+  },
   {
     // Image AI: {q, u: [image addresses]} -> {p: [0..1 or null]} (how well each picture shows the search)
     method: "post",
@@ -1847,7 +1882,7 @@ export default {
 };
 '@)
 [IO.File]::WriteAllText("$t\script.js", @'
-// clean-titles v54
+// clean-titles v55
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -2398,6 +2433,22 @@ const topicOf = (rel, words) => {
   return (r) => { const hits = [...new Set(topicToks(`${r.title} ${r.snippet || ""}`))].filter((t) => topic.has(t)); return hits.length >= 2 && hits.some((t) => titled.has(t)); };
 };
 const tidyTitle = (t) => tidyText(t).replace(/^[\s|·•:,;–—-]+|[\s|·•:,;–—-]+$/g, "");
+
+
+// ===== ⚑ Report: the text the Claude Code session opens with (Claude's link takes about 14,000 characters: snippets
+// are dropped first, then the oldest waiting flags; the flag being reported always stays) =====
+const flagPrompt = (flags, issue, max = 12000) => {
+  const head = "degoog clean-titles: fix what my degoog reported. Read degoog/wip/QUICKSTART.md in acqcath/scripts first and follow its \"Flags\" steps: " +
+    "commit the flags below to the private repo acqcath/degoog-flags, then fix the code so these searches come out right, release and merge. " +
+    "Keep my searches out of the public repo.\n";
+  const body = (fl, snip) => JSON.stringify({ flags: fl.map((f) => ({ at: new Date(f.t).toISOString(), q: f.q, tab: f.type, note: f.note, top: (f.top || []).map((r) => (snip ? { title: r.title, url: r.url, snippet: r.snippet } : { title: r.title, url: r.url })) })), updateIssue: issue || null });
+  let fl = (flags || []).slice(-20);
+  for (;;) {
+    for (const snip of [true, false]) { const s = head + body(fl, snip); if (s.length <= max || fl.length <= 1) { if (s.length <= max || !snip) return s.slice(0, max); } }
+    if (fl.length <= 1) return (head + body(fl, false)).slice(0, max);
+    fl = fl.slice(1);
+  }
+};
 
 // ===== Answer card, local part (no network): math, units incl. cooking, tip / percent, date math, patterns =====
 // answer(q, now) -> null, or { kind, label, value | title + href, detail, copy, swatch? }. Pure: the page draws it in
@@ -3227,7 +3278,7 @@ const qaAbout = (question, text) => {
   return n >= (ws.length >= 3 ? 2 : 1);
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, navName, navDist, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, relCore, related, topicOf, tidyTitle, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippetAI, featuredSnippet, QA_LEAD, qaAbout };
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, navName, navDist, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, relCore, related, topicOf, tidyTitle, flagPrompt, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippetAI, featuredSnippet, QA_LEAD, qaAbout };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -4549,6 +4600,81 @@ const tools = () => {
   });
 };
 
+
+// ⚑ at the right end of the tab row (phone and PC) opens "What's wrong? (optional)" and one Report button. Report keeps
+// the search, your note and its top 10 results on your server and opens a Claude Code session (the Claude app on the
+// phone) filled with them and anything waiting (an update problem from the PC); you tap send there.
+// The link is a real link built before the tap, so phones open the Claude app (a link opened after a wait is blocked).
+const CLAUDE_REPO = "acqcath/scripts";
+const flagTop = () => {
+  const out = [];
+  for (const el of document.querySelectorAll("#results-list .result-item, #results-list .image-card, #results-list .video-card")) {
+    if (el.style.display === "none") continue;
+    const a = el.querySelector("a.result-title") || el.querySelector("a[href]");
+    const url = el.dataset.resultUrl || (a && a.href) || "";
+    if (!/^https?:/.test(url)) continue;
+    out.push({ url, title: (((el.querySelector("a.result-title, .image-title, .video-title") || a || {}).textContent) || "").trim().slice(0, 200), snippet: (el.querySelector(".result-snippet")?.textContent || "").trim().slice(0, 300) });
+    if (out.length >= 10) break;
+  }
+  return out;
+};
+const curType = () => { try { return new URL(location.href).searchParams.get("type") || "web"; } catch { return "web"; } };
+const flagBox = (btn) => {
+  let box = document.getElementById("ct-flagbox");
+  if (box) { box.remove(); btn.setAttribute("aria-expanded", "false"); return; }
+  btn.setAttribute("aria-expanded", "true");
+  box = document.createElement("div");
+  box.id = "ct-flagbox";
+  const l = mk("label", "", "");
+  const t = document.createElement("textarea");
+  t.rows = 2; t.maxLength = 1000; t.setAttribute("autocapitalize", "sentences");
+  l.append(mk("span", "", "What's wrong? (optional)"), t);
+  const go = mk("a", "ct-flag-go", "Report");
+  go.target = "_blank"; go.rel = "noopener";
+  const extra = mk("div", "ct-flag-st", "");
+  box.append(l, go, extra);
+  let wait = { flags: [], issue: "" };
+  const cur = () => ({ t: Date.now(), q: curQ(), type: curType(), note: t.value.trim(), top: flagTop() });
+  const link = () => {
+    const u = new URL("https://claude.ai/code/new");
+    u.searchParams.set("q", CT.flagPrompt([...wait.flags, cur()], wait.issue));
+    u.searchParams.set("repo", CLAUDE_REPO);
+    u.searchParams.set("branch", "main");
+    go.href = u.toString();
+  };
+  link();
+  t.addEventListener("input", link);
+  go.addEventListener("pointerdown", link);
+  bridge("flags", {}, "{}").then((j) => {
+    if (!j || !box.isConnected) return;
+    wait = { flags: Array.isArray(j.flags) ? j.flags : [], issue: String(j.issue || "") };
+    const n = wait.flags.length + (wait.issue ? 1 : 0);
+    if (n) extra.textContent = wait.issue && !wait.flags.length ? "Also sends the PC's last update problem." : `Also sends ${n} earlier report${n > 1 ? "s" : ""}.`;
+    link();
+  }).catch(() => {});
+  go.addEventListener("click", () => {
+    const c = cur();
+    bridge("flag", {}, JSON.stringify(c)).catch(() => {}); // keepalive: still lands as the page hands over to Claude
+    setTimeout(() => { box.remove(); btn.setAttribute("aria-expanded", "false"); }, 400);
+  });
+  (document.getElementById("ct-adv") || document.getElementById("results-tabs")).after(box);
+  if (!PHONE.matches) t.focus();
+};
+const flagBtn = () => {
+  const tabs = document.getElementById("results-tabs");
+  if (!tabs || !tabs.firstElementChild || document.getElementById("ct-flag") || !curQ()) return;
+  const f = document.createElement("button");
+  f.type = "button";
+  f.id = "ct-flag";
+  f.textContent = "⚑";
+  f.title = "Report a problem with these results";
+  f.setAttribute("aria-label", "Report a problem with these results");
+  f.setAttribute("aria-expanded", "false");
+  f.addEventListener("click", () => flagBox(f));
+  tabs.append(f);
+  tabsEdge();
+};
+
 // Image loading skeleton: degoog always draws 4 columns; match the real grid's 3/4/5/6 by width
 const skel = (root) => {
   const g = root.matches?.(".skeleton-image-grid") ? root : root.querySelector?.(".skeleton-image-grid");
@@ -5340,7 +5466,7 @@ const init = () => {
   safe("rel", relPass);
   safe("scan", () => scan(document.body));
   safe("skeleton", () => skel(document.body));
-  safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools);
+  safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("flag", flagBtn);
   safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass);
   safe("drawn", markDrawn);
   // Runs right after degoog inserts results and before the screen updates; only looks inside what was added
@@ -5352,7 +5478,7 @@ const init = () => {
     safe("tabs", tabPass);
     safe("rel", relPass);
     for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { safe("scan", () => scan(n)); safe("skeleton", () => skel(n)); safe("usage", () => noUsage(n)); }
-    safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("card", glance);
+    safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("flag", flagBtn); safe("card", glance);
     safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass); safe("preview", previewPass);
     safe("drawn", markDrawn);
     safe("ai", () => { const g = document.getElementById("at-a-glance"); if (g) aiPass(g, searchId(location.href)); });
@@ -6135,6 +6261,21 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 }
 #ct-tools:hover { color: var(--text-primary); }
 #ct-tools[aria-expanded="true"] { color: var(--text-primary); }
+/* ⚑ Flag: the tab row's last item, same height and baseline as the tabs. PC: right after Tools at the search bar's
+   edge. Phone: stays at the right edge while the tab row scrolls under it. Its box opens under the tabs like Tools'. */
+#ct-flag { position: relative; align-self: stretch; display: flex; align-items: center; background: none; border: 0; border-bottom: 3px solid transparent; padding: 0 4px 0 10px; font: inherit; font-size: 15px; line-height: 1; color: var(--text-secondary); cursor: pointer; flex: none; }
+#ct-flag:hover, #ct-flag[aria-expanded="true"] { color: var(--text-primary); }
+#results-tabs:not(:has(#ct-tools)) #ct-flag { margin-left: auto; }
+@media (max-width: 767px) {
+  #ct-flag { position: sticky; right: 0; z-index: 1; padding: 0 16px 0 12px; background: var(--bg); box-shadow: -10px 0 10px -4px var(--bg); }
+}
+#ct-flagbox { display: grid; gap: 8px; padding: 14px 0 16px; max-width: 600px; font-size: 13.5px; color: var(--text-secondary); }
+#ct-flagbox label { display: grid; gap: 6px; }
+#ct-flagbox textarea { font: inherit; color: var(--text-primary); background: var(--bg-light); border: 1px solid var(--border-light); border-radius: 8px; padding: 7px 10px; outline: none; resize: vertical; min-height: 2.6em; }
+#ct-flagbox textarea:focus { border-color: var(--primary); }
+.ct-flag-st:empty { display: none; }
+.ct-flag-go { justify-self: start; display: inline-block; font: 600 13.5px system-ui, sans-serif; padding: 8px 18px; border-radius: 999px; background: var(--primary); color: #11111b !important; text-decoration: none !important; cursor: pointer; }
+@media (max-width: 767px) { #ct-flagbox { padding: 12px 16px; } #ct-flagbox textarea { font-size: 16px; } }
 #ct-adv { display: grid; grid-template-columns: max-content minmax(0, 360px); gap: 8px 16px; align-items: center; padding: 14px 0 16px; max-width: 600px; font-size: 13.5px; color: var(--text-secondary); }
 #ct-adv label { display: contents; }
 #ct-adv input { font: inherit; color: var(--text-primary); background: var(--bg-light); border: 1px solid var(--border-light); border-radius: 8px; padding: 7px 10px; outline: none; }
@@ -6692,7 +6833,7 @@ docker restart $c | Out-Null
 $null = docker exec $c sh -c 'for i in $(seq 1 40); do curl -fs -o /dev/null http://127.0.0.1:${DEGOOG_PORT:-4444}/readyz && exit 0; sleep 1; done'
 
 $ss = docker exec $c cat /app/data/server-settings.json | Out-String | ConvertFrom-Json
-"plugin code inside the page (should be v54): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
+"plugin code inside the page (should be v55): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
 "page files (should be a ct and a psl file): " + (docker exec $c sh -c 'ls /app/src/public/ct/')
 "progressive results off (should be False): $($ss.settings.streamingEnabled -eq $true)"
 "typo fixer word list (should be about 82800): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/words.txt')
@@ -6748,6 +6889,8 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
   // Bridge round trip (the page's only way to the server)
   const p0 = await bridge("prefs");
   row("Page-to-server bridge", !!(p0.j && typeof p0.j === "object"), ms(p0));
+  const fl = await bridge("flags", {}, "{}");
+  row("Flag Report store (flags + update problem)", !!(fl.j && Array.isArray(fl.j.flags)), fl.j && fl.j.issue ? "an update problem is waiting for Report" : "");
 
   // Currency (ECB): fx.json fills ~30 s after start; wait up to 90 s
   let fx = null;

@@ -1318,6 +1318,81 @@ const tools = () => {
   });
 };
 
+
+// ⚑ at the right end of the tab row (phone and PC) opens "What's wrong? (optional)" and one Report button. Report keeps
+// the search, your note and its top 10 results on your server and opens a Claude Code session (the Claude app on the
+// phone) filled with them and anything waiting (an update problem from the PC); you tap send there.
+// The link is a real link built before the tap, so phones open the Claude app (a link opened after a wait is blocked).
+const CLAUDE_REPO = "acqcath/scripts";
+const flagTop = () => {
+  const out = [];
+  for (const el of document.querySelectorAll("#results-list .result-item, #results-list .image-card, #results-list .video-card")) {
+    if (el.style.display === "none") continue;
+    const a = el.querySelector("a.result-title") || el.querySelector("a[href]");
+    const url = el.dataset.resultUrl || (a && a.href) || "";
+    if (!/^https?:/.test(url)) continue;
+    out.push({ url, title: (((el.querySelector("a.result-title, .image-title, .video-title") || a || {}).textContent) || "").trim().slice(0, 200), snippet: (el.querySelector(".result-snippet")?.textContent || "").trim().slice(0, 300) });
+    if (out.length >= 10) break;
+  }
+  return out;
+};
+const curType = () => { try { return new URL(location.href).searchParams.get("type") || "web"; } catch { return "web"; } };
+const flagBox = (btn) => {
+  let box = document.getElementById("ct-flagbox");
+  if (box) { box.remove(); btn.setAttribute("aria-expanded", "false"); return; }
+  btn.setAttribute("aria-expanded", "true");
+  box = document.createElement("div");
+  box.id = "ct-flagbox";
+  const l = mk("label", "", "");
+  const t = document.createElement("textarea");
+  t.rows = 2; t.maxLength = 1000; t.setAttribute("autocapitalize", "sentences");
+  l.append(mk("span", "", "What's wrong? (optional)"), t);
+  const go = mk("a", "ct-flag-go", "Report");
+  go.target = "_blank"; go.rel = "noopener";
+  const extra = mk("div", "ct-flag-st", "");
+  box.append(l, go, extra);
+  let wait = { flags: [], issue: "" };
+  const cur = () => ({ t: Date.now(), q: curQ(), type: curType(), note: t.value.trim(), top: flagTop() });
+  const link = () => {
+    const u = new URL("https://claude.ai/code/new");
+    u.searchParams.set("q", CT.flagPrompt([...wait.flags, cur()], wait.issue));
+    u.searchParams.set("repo", CLAUDE_REPO);
+    u.searchParams.set("branch", "main");
+    go.href = u.toString();
+  };
+  link();
+  t.addEventListener("input", link);
+  go.addEventListener("pointerdown", link);
+  bridge("flags", {}, "{}").then((j) => {
+    if (!j || !box.isConnected) return;
+    wait = { flags: Array.isArray(j.flags) ? j.flags : [], issue: String(j.issue || "") };
+    const n = wait.flags.length + (wait.issue ? 1 : 0);
+    if (n) extra.textContent = wait.issue && !wait.flags.length ? "Also sends the PC's last update problem." : `Also sends ${n} earlier report${n > 1 ? "s" : ""}.`;
+    link();
+  }).catch(() => {});
+  go.addEventListener("click", () => {
+    const c = cur();
+    bridge("flag", {}, JSON.stringify(c)).catch(() => {}); // keepalive: still lands as the page hands over to Claude
+    setTimeout(() => { box.remove(); btn.setAttribute("aria-expanded", "false"); }, 400);
+  });
+  (document.getElementById("ct-adv") || document.getElementById("results-tabs")).after(box);
+  if (!PHONE.matches) t.focus();
+};
+const flagBtn = () => {
+  const tabs = document.getElementById("results-tabs");
+  if (!tabs || !tabs.firstElementChild || document.getElementById("ct-flag") || !curQ()) return;
+  const f = document.createElement("button");
+  f.type = "button";
+  f.id = "ct-flag";
+  f.textContent = "⚑";
+  f.title = "Report a problem with these results";
+  f.setAttribute("aria-label", "Report a problem with these results");
+  f.setAttribute("aria-expanded", "false");
+  f.addEventListener("click", () => flagBox(f));
+  tabs.append(f);
+  tabsEdge();
+};
+
 // Image loading skeleton: degoog always draws 4 columns; match the real grid's 3/4/5/6 by width
 const skel = (root) => {
   const g = root.matches?.(".skeleton-image-grid") ? root : root.querySelector?.(".skeleton-image-grid");
@@ -2109,7 +2184,7 @@ const init = () => {
   safe("rel", relPass);
   safe("scan", () => scan(document.body));
   safe("skeleton", () => skel(document.body));
-  safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools);
+  safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("flag", flagBtn);
   safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass);
   safe("drawn", markDrawn);
   // Runs right after degoog inserts results and before the screen updates; only looks inside what was added
@@ -2121,7 +2196,7 @@ const init = () => {
     safe("tabs", tabPass);
     safe("rel", relPass);
     for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { safe("scan", () => scan(n)); safe("skeleton", () => skel(n)); safe("usage", () => noUsage(n)); }
-    safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("card", glance);
+    safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("flag", flagBtn); safe("card", glance);
     safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass); safe("preview", previewPass);
     safe("drawn", markDrawn);
     safe("ai", () => { const g = document.getElementById("at-a-glance"); if (g) aiPass(g, searchId(location.href)); });
