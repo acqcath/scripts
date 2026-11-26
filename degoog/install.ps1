@@ -1495,7 +1495,7 @@ export const flagCtxClean = (c) => {
   const load = {};
   for (const [k, v] of Object.entries(c.load && typeof c.load === "object" ? c.load : {}).slice(0, 12)) { const n = num(v, 600000); if (n !== null) load[String(k).slice(0, 40)] = n; }
   const boxes = (Array.isArray(c.boxes) ? c.boxes : []).slice(0, 30).map((b) => ({ box: String((b && b.box) || "").slice(0, 60), n: num(b && b.n, 999) || 1 })).filter((b) => b.box);
-  return { vw: num(c.vw, 10000), vh: num(c.vh, 10000), dpr: Number.isFinite(+c.dpr) ? Math.round(+c.dpr * 100) / 100 : null, phone: !!c.phone, load, boxes };
+  return { ver: String(c.ver || "").slice(0, 20), vw: num(c.vw, 10000), vh: num(c.vh, 10000), dpr: Number.isFinite(+c.dpr) ? Math.round(+c.dpr * 100) / 100 : null, phone: !!c.phone, load, boxes };
 };
 
 // Same as core.js flagPrompt (test/flag.test.js checks they agree): the text a Claude Code session opens with
@@ -2032,7 +2032,8 @@ export default {
 };
 '@)
 [IO.File]::WriteAllText("$t\script.js", @'
-// clean-titles v61
+// clean-titles v62
+const CT_VER = "v62";
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -2597,7 +2598,7 @@ const flagCtxClean = (c) => {
   const load = {};
   for (const [k, v] of Object.entries(c.load && typeof c.load === "object" ? c.load : {}).slice(0, 12)) { const n = num(v, 600000); if (n !== null) load[String(k).slice(0, 40)] = n; }
   const boxes = (Array.isArray(c.boxes) ? c.boxes : []).slice(0, 30).map((b) => ({ box: String((b && b.box) || "").slice(0, 60), n: num(b && b.n, 999) || 1 })).filter((b) => b.box);
-  return { vw: num(c.vw, 10000), vh: num(c.vh, 10000), dpr: Number.isFinite(+c.dpr) ? Math.round(+c.dpr * 100) / 100 : null, phone: !!c.phone, load, boxes };
+  return { ver: String(c.ver || "").slice(0, 20), vw: num(c.vw, 10000), vh: num(c.vh, 10000), dpr: Number.isFinite(+c.dpr) ? Math.round(+c.dpr * 100) / 100 : null, phone: !!c.phone, load, boxes };
 };
 
 // ===== ⚑ Report: the text the Claude Code session opens with (Claude's link takes about 14,000 characters: snippets
@@ -4832,7 +4833,7 @@ const flagCtx = () => {
       if (last && last.box === k) last.n++; else boxes.push({ box: k, n: 1 });
     }
   }
-  return { vw: innerWidth, vh: innerHeight, dpr: devicePixelRatio, phone: PHONE.matches, load, boxes };
+  return { ver: typeof CT_VER === "string" ? CT_VER : "", vw: innerWidth, vh: innerHeight, dpr: devicePixelRatio, phone: PHONE.matches, load, boxes };
 };
 const curType = () => { try { return new URL(location.href).searchParams.get("type") || tabNow || "web"; } catch { return tabNow || "web"; } };
 const flagBox = (btn) => {
@@ -4858,7 +4859,8 @@ const flagBox = (btn) => {
   save.type = "submit";
   const st = mk("span", "ct-flag-st", "");
   const acts = mk("div", "ct-flag-acts", "");
-  acts.append(save, st);
+  // Which version this page runs (the auto-update installs new ones by itself): quiet, at the row's far end
+  acts.append(save, st, mk("span", "ct-flag-ver", `clean-titles ${typeof CT_VER === "string" ? CT_VER : ""}`));
   box.append(mk("span", "ct-flag-h", "What's wrong?"), chips, l, acts);
   box.addEventListener("submit", (e) => {
     e.preventDefault(); e.stopPropagation();
@@ -6533,6 +6535,7 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .ct-flag-cat[aria-pressed="true"] { background: rgba(205, 214, 244, .14); border-color: var(--primary); color: var(--text-primary); }
 .ct-flag-cat:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .ct-flag-st:empty { display: none; }
+.ct-flag-ver { margin-left: auto; font-size: 12px; color: var(--text-secondary); opacity: .7; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ct-flag-acts { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 #ct-flagbox .ct-flag-acts button { font: 600 13.5px system-ui, sans-serif; padding: 8px 18px; border-radius: 999px; background: var(--bg-light); color: var(--text-primary); border: 1px solid var(--border-light); cursor: pointer; }
 #ct-flagbox .ct-flag-acts button:disabled { opacity: .6; cursor: default; }
@@ -7098,7 +7101,7 @@ docker restart $c | Out-Null
 $null = docker exec $c sh -c 'for i in $(seq 1 40); do curl -fs -o /dev/null http://127.0.0.1:${DEGOOG_PORT:-4444}/readyz && exit 0; sleep 1; done'
 
 $ss = docker exec $c cat /app/data/server-settings.json | Out-String | ConvertFrom-Json
-"plugin code inside the page (should be v61): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
+"plugin code inside the page (should be v62): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
 "page files (should be a ct and a psl file): " + (docker exec $c sh -c 'ls /app/src/public/ct/')
 "progressive results off (should be False): $($ss.settings.streamingEnabled -eq $true)"
 "typo fixer word list (should be about 82800): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/words.txt')

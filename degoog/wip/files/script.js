@@ -1377,7 +1377,7 @@ const flagCtx = () => {
       if (last && last.box === k) last.n++; else boxes.push({ box: k, n: 1 });
     }
   }
-  return { vw: innerWidth, vh: innerHeight, dpr: devicePixelRatio, phone: PHONE.matches, load, boxes };
+  return { ver: typeof CT_VER === "string" ? CT_VER : "", vw: innerWidth, vh: innerHeight, dpr: devicePixelRatio, phone: PHONE.matches, load, boxes };
 };
 const curType = () => { try { return new URL(location.href).searchParams.get("type") || tabNow || "web"; } catch { return tabNow || "web"; } };
 const flagBox = (btn) => {
@@ -1403,7 +1403,8 @@ const flagBox = (btn) => {
   save.type = "submit";
   const st = mk("span", "ct-flag-st", "");
   const acts = mk("div", "ct-flag-acts", "");
-  acts.append(save, st);
+  // Which version this page runs (the auto-update installs new ones by itself): quiet, at the row's far end
+  acts.append(save, st, mk("span", "ct-flag-ver", `clean-titles ${typeof CT_VER === "string" ? CT_VER : ""}`));
   box.append(mk("span", "ct-flag-h", "What's wrong?"), chips, l, acts);
   box.addEventListener("submit", (e) => {
     e.preventDefault(); e.stopPropagation();

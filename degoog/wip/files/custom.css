@@ -644,6 +644,7 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .ct-flag-cat[aria-pressed="true"] { background: rgba(205, 214, 244, .14); border-color: var(--primary); color: var(--text-primary); }
 .ct-flag-cat:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .ct-flag-st:empty { display: none; }
+.ct-flag-ver { margin-left: auto; font-size: 12px; color: var(--text-secondary); opacity: .7; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ct-flag-acts { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 #ct-flagbox .ct-flag-acts button { font: 600 13.5px system-ui, sans-serif; padding: 8px 18px; border-radius: 999px; background: var(--bg-light); color: var(--text-primary); border: 1px solid var(--border-light); cursor: pointer; }
 #ct-flagbox .ct-flag-acts button:disabled { opacity: .6; cursor: default; }

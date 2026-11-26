@@ -26,18 +26,18 @@ Status line for the scheduled runs: the first milestone below without [done] is 
    tie margin.
 5. ctcheck.js row "Needs call": times it, and checks the format judge (how-to-tie-a-tie -> video first; a notation
    question -> not video).
-### M2 = v62: all blocks on one scale
+### M2: all blocks on one scale
 Forums, top stories, papers fetched (degoog types) only when share x 1.0 could beat the AI score of the last result
 on the first screen; that cutoff = running median kept on the server from recent searches. Info panel and answer
 card take their place by worth too.
-### M3 = v63: copies + variety
+### M3: copies + variety
 Copies fold into "+N similar pages" when title and snippet match after normalizing (one contains the other).
 Variety tie-break by content similarity, built but off until ⚑ "wrong order" reports give the margin.
-### M4 = v64: answer card shape + contested check
+### M4: answer card shape + contested check
 Shape (steps / X-vs-Y table / timeline / chart picture) from the needs call; text from ai-summary's model.
 Contested check: ai-summary's model, question-style searches only (from the needs call); the both-sides panel is
 inserted below the fold, so it never moves what is being read (the user agreed this beats reserved empty space).
-### M5 = v65: unsolved-search learning
+### M5: unsolved-search learning
 Private server log (search, time, last result opened). A next search within minutes -> ai-summary's model asks
 "same need or next question?"; only "same need" marks the earlier one unsolved, and the last result opened before a
 solved search is its solver. Nudges block shares for similar needs profiles. ⚑ notes fix general rules.

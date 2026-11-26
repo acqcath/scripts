@@ -7,7 +7,7 @@ core = open('files/core.js', encoding='utf-8').read() + '\n' + open('files/answe
 names = re.findall(r'^export const (\w+)', core, re.M)
 body = re.sub(r'^export const ', 'const ', core, flags=re.M)
 page = open('files/script.js', encoding='utf-8').read()
-out = f'// clean-titles {VERSION}\n' + 'const CT = (() => {\n' + body + '\nreturn { ' + ', '.join(names) + ' };\n})();\n' + page
+out = f'// clean-titles {VERSION}\n' + f'const CT_VER = "{VERSION}";\n' + 'const CT = (() => {\n' + body + '\nreturn { ' + ', '.join(names) + ' };\n})();\n' + page
 open('files/ct-page.js', 'w', encoding='utf-8').write(out)
 print('ct-page.js', len(out), 'chars;', len(names), 'core exports')
 
