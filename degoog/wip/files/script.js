@@ -1438,10 +1438,9 @@ const flagBox = (btn) => {
     // the browser's bars or iOS scrolling the page for the focused box never leave a gap or hide part of it
     if (TOUCH.matches) {
       b.style.top = b.style.left = "";
-      if (vv) { b.style.bottom = `${Math.max(0, Math.round(innerHeight - vv.height - vv.offsetTop))}px`; b.style.maxHeight = `${Math.round(vv.height - 8)}px`; }
+      if (vv) { b.style.setProperty("--ct-vis-h", `${Math.round(vv.height)}px`); b.style.setProperty("--ct-vis-b", `${Math.max(0, Math.round(innerHeight - vv.height - vv.offsetTop))}px`); }
       return;
     }
-    b.style.bottom = b.style.maxHeight = "";
     const r = btn.getBoundingClientRect(), w = b.offsetWidth || 440;
     b.style.top = `${Math.round(r.bottom + scrollY + 6)}px`;
     b.style.left = `${Math.round(Math.max(12, Math.min(r.right - w, innerWidth - w - 12)) + scrollX)}px`;

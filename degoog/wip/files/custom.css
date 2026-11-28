@@ -660,7 +660,7 @@ html.ct-sheet-open, html.ct-sheet-open body { overflow: hidden; overscroll-behav
 /* Phone (touch): bottom sheet; a narrow window with a mouse keeps the popover */
 @media (max-width: 767px) and (pointer: coarse) {
   #ct-flagscrim { background: rgba(0, 0, 0, .5); }
-  #ct-flagbox { position: fixed; left: 0; right: 0; bottom: 0; top: auto; width: auto; max-width: none; max-height: 85vh; overflow-y: auto; border-radius: 18px 18px 0 0; border-width: 1px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); gap: 14px; }
+  #ct-flagbox { position: fixed; left: 0; right: 0; bottom: var(--ct-vis-b, 0px); top: auto; width: auto; max-width: none; max-height: calc(var(--ct-vis-h, 100dvh) * .85); overflow-y: auto; border-radius: 18px 18px 0 0; border-width: 1px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); gap: 14px; }
   .ct-flag-cat { min-height: 36px; padding: 8px 14px; }
 }
 #ct-adv { display: grid; grid-template-columns: max-content minmax(0, 360px); justify-content: start; gap: 8px 16px; align-items: center; padding: 14px 0 16px; font-size: 13.5px; color: var(--text-secondary); }

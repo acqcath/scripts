@@ -2361,8 +2361,8 @@ export default {
 };
 '@)
 [IO.File]::WriteAllText("$t\script.js", @'
-// clean-titles v74
-const CT_VER = "v74";
+// clean-titles v75
+const CT_VER = "v75";
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -5283,10 +5283,9 @@ const flagBox = (btn) => {
     // the browser's bars or iOS scrolling the page for the focused box never leave a gap or hide part of it
     if (TOUCH.matches) {
       b.style.top = b.style.left = "";
-      if (vv) { b.style.bottom = `${Math.max(0, Math.round(innerHeight - vv.height - vv.offsetTop))}px`; b.style.maxHeight = `${Math.round(vv.height - 8)}px`; }
+      if (vv) { b.style.setProperty("--ct-vis-h", `${Math.round(vv.height)}px`); b.style.setProperty("--ct-vis-b", `${Math.max(0, Math.round(innerHeight - vv.height - vv.offsetTop))}px`); }
       return;
     }
-    b.style.bottom = b.style.maxHeight = "";
     const r = btn.getBoundingClientRect(), w = b.offsetWidth || 440;
     b.style.top = `${Math.round(r.bottom + scrollY + 6)}px`;
     b.style.left = `${Math.round(Math.max(12, Math.min(r.right - w, innerWidth - w - 12)) + scrollX)}px`;
@@ -7265,7 +7264,7 @@ html.ct-sheet-open, html.ct-sheet-open body { overflow: hidden; overscroll-behav
 /* Phone (touch): bottom sheet; a narrow window with a mouse keeps the popover */
 @media (max-width: 767px) and (pointer: coarse) {
   #ct-flagscrim { background: rgba(0, 0, 0, .5); }
-  #ct-flagbox { position: fixed; left: 0; right: 0; bottom: 0; top: auto; width: auto; max-width: none; max-height: 85vh; overflow-y: auto; border-radius: 18px 18px 0 0; border-width: 1px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); gap: 14px; }
+  #ct-flagbox { position: fixed; left: 0; right: 0; bottom: var(--ct-vis-b, 0px); top: auto; width: auto; max-width: none; max-height: calc(var(--ct-vis-h, 100dvh) * .85); overflow-y: auto; border-radius: 18px 18px 0 0; border-width: 1px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); gap: 14px; }
   .ct-flag-cat { min-height: 36px; padding: 8px 14px; }
 }
 #ct-adv { display: grid; grid-template-columns: max-content minmax(0, 360px); justify-content: start; gap: 8px 16px; align-items: center; padding: 14px 0 16px; font-size: 13.5px; color: var(--text-secondary); }
@@ -7914,7 +7913,7 @@ $null = docker exec $c sh -c 'for i in $(seq 1 40); do curl -fs -o /dev/null htt
 $ctT['ready'] = $ctSw.Elapsed.TotalSeconds
 
 $ss = docker exec $c cat /app/data/server-settings.json | Out-String | ConvertFrom-Json
-"plugin code inside the page (should be v74): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
+"plugin code inside the page (should be v75): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
 "page files (should be a ct and a psl file): " + (docker exec $c sh -c 'ls /app/src/public/ct/')
 "progressive results off (should be False): $($ss.settings.streamingEnabled -eq $true)"
 "typo fixer word list (should be about 82800): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/words.txt')
