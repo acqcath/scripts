@@ -433,6 +433,7 @@ export default {
   // because iPhone content blockers reject /api/plugin/ addresses. "!cleantitles bridge <route> <query string>"
   async execute(args) {
     const m = /^bridge\s+(\w+)\s*([\s\S]*)$/.exec(String(args || ""));
+    if (m && m[1] !== "flags") try { searchSeen(); } catch {} // a page in use (the PC job's own flags call isn't)
     if (!m) return { title: "Clean Titles & HD Thumbnails", html: INFO_HTML };
     const r = routes.find((x) => x.path === "/" + m[1]);
     if (!r) return { title: "", html: "" };

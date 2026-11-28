@@ -1,7 +1,7 @@
 # One-time setup: keeps clean-titles up to date by itself (your user, no admin). Sets up one hidden watcher, started
 # at logon from your Startup folder, that sleeps until something happens: a new release (a push ping, confirmed with
-# git), a ⚑ report saved in degoog, or a retry the job asked for. It installs only after degoog has had 2 minutes
-# without a search and no game or other full-screen app is running (degoog restarts for a few seconds). Rerunning
+# git), a ⚑ report saved in degoog, or a retry the job asked for. It installs only after degoog has had 15 s
+# without use and no game or other full-screen app is running (degoog restarts for a few seconds). Rerunning
 # this is safe; from an admin PowerShell it also removes the old every-minute task. Output of each run:
 # %LOCALAPPDATA%\clean-titles\last-run.txt (never the Desktop); a Windows notification only if something fails.
 # Remove: delete "degoog clean-titles watcher" from shell:startup and end the hidden powershell running watcher.ps1.

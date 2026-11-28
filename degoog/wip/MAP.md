@@ -238,7 +238,7 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
   - `ctResults` :71
   - `rankPart` :81
 
-## server/12-routes.js (451 lines)
+## server/12-routes.js (452 lines)
   - route `/flag` :6
   - route `/flags` :23
   - route `/fixednews` :43
@@ -627,12 +627,12 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
 
 ## setcss.js (12 lines)
 
-## ct-wait.js (63 lines)
-  - `out` :15
-  - `pc` :16
-  - `check` :18
-  - `sock` :30
-  - `listen` :42
+## ct-wait.js (69 lines)
+  - `out` :16
+  - `pc` :17
+  - `check` :19
+  - `sock` :31
+  - `listen` :43
 
 ## custom.css (926 lines)
 - Catppuccin Mocha colors :1

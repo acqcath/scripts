@@ -194,7 +194,7 @@ $watcher = @'
 # Startup folder. Checks nothing on a timer: it sleeps inside one docker exec (ct-wait.js in the degoog container),
 # which returns only when something happens: a release was pushed (ntfy ping from the repo's GitHub Action, then
 # confirmed with git), a ⚑ was saved, or the job asked to run again at a set time. Installs wait until degoog has had
-# 2 minutes without a search and no game or other full-screen app is running. Log: watcher.txt next to this file.
+# 15 s without a search and no game or other full-screen app is running. Log: watcher.txt next to this file.
 $d = Join-Path $env:LOCALAPPDATA 'clean-titles'; $j = Join-Path $d 'job.ps1'; $wjs = Join-Path $d 'ct-wait.js'
 try { (Get-Process -Id $PID).PriorityClass = 'BelowNormal' } catch {}
 $mx = New-Object Threading.Mutex($false, 'Local\degoog-clean-titles-watcher')
@@ -347,8 +347,9 @@ function Setup-Watcher {
       if ([Threading.Mutex]::TryOpenExisting('Local\degoog-clean-titles-watcher', [ref]$m)) { $m.Dispose() } else { Start-Process $exe -ArgumentList $al -WindowStyle Hidden }
     }
     if ($old) {
+      # the task's own run only empties its launcher; the watcher's first job run removes the task, from outside it
       [IO.File]::WriteAllText((Join-Path $dir 'update.ps1'), "# replaced by the watcher (watcher.ps1); this does nothing`r`n", (New-Object Text.UTF8Encoding $true))
-      try { Unregister-ScheduledTask -TaskName 'degoog clean-titles update' -Confirm:$false -ErrorAction Stop; Log "$(Get-Date -Format s) old every-minute task removed: the watcher does it all now" }
+      if ($env:CT_WATCHER) { try { Unregister-ScheduledTask -TaskName 'degoog clean-titles update' -Confirm:$false -ErrorAction Stop; Log "$(Get-Date -Format s) old every-minute task removed: the watcher does it all now" }
       catch {
         $nf = Join-Path $dir 'task-nag.txt'
         if (-not (Test-Path $nf) -or (Get-Item $nf).LastWriteTime -lt (Get-Date).AddHours(-20)) {
@@ -356,7 +357,7 @@ function Setup-Watcher {
           Log "$(Get-Date -Format s) the old every-minute task can't be removed by this user: $($_.Exception.Message)"
           Notify 'degoog: run the setup line once more in an admin PowerShell to remove the old every-minute task (the new watcher is already running).'
         }
-      }
+      } }
     }
   } catch { Log "watcher setup failed $(Get-Date -Format s): $($_.Exception.Message)"; Notify "degoog: the update watcher couldn't be set up. Details: $log" }
 }
@@ -418,5 +419,6 @@ try {
   Judge $sha $out
 } catch {
   Log "update check failed $(Get-Date -Format s): $($_.Exception.Message)"
+  NextRun (Get-Date).AddMinutes(10) # GitHub down or a download timed out: the watcher tries again then
 }
 SendReports

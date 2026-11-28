@@ -114,9 +114,9 @@ const pcListen = () => {
     if (srv.unref) srv.unref();
   } catch {}
 };
-// Each search: written at most every 10 s, the last one always (a trailing write)
+// Each search or page call (degoog in use): written at most every 5 s, the last one always (a trailing write)
 const searchSeen = () => {
   LAST_SEARCH = Date.now();
-  if (Date.now() - _pcAt >= 10000) return pcWrite();
-  if (!_pcT) { _pcT = setTimeout(() => { _pcT = null; pcWrite(); }, 10000); if (_pcT.unref) _pcT.unref(); }
+  if (Date.now() - _pcAt >= 5000) return pcWrite();
+  if (!_pcT) { _pcT = setTimeout(() => { _pcT = null; pcWrite(); }, 5000); if (_pcT.unref) _pcT.unref(); }
 };

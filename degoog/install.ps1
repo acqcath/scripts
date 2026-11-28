@@ -1716,11 +1716,11 @@ const pcListen = () => {
     if (srv.unref) srv.unref();
   } catch {}
 };
-// Each search: written at most every 10 s, the last one always (a trailing write)
+// Each search or page call (degoog in use): written at most every 5 s, the last one always (a trailing write)
 const searchSeen = () => {
   LAST_SEARCH = Date.now();
-  if (Date.now() - _pcAt >= 10000) return pcWrite();
-  if (!_pcT) { _pcT = setTimeout(() => { _pcT = null; pcWrite(); }, 10000); if (_pcT.unref) _pcT.unref(); }
+  if (Date.now() - _pcAt >= 5000) return pcWrite();
+  if (!_pcT) { _pcT = setTimeout(() => { _pcT = null; pcWrite(); }, 5000); if (_pcT.unref) _pcT.unref(); }
 };
 // ----- server/10-needs.js: what a search needs (one batched reranker pass), block cutoffs, unsolved-search learning -----
 // ===== What a search needs (user, 2026-11-26): ONE batched reranker pass per search, before the results arrive, so
@@ -2397,6 +2397,7 @@ export default {
   // because iPhone content blockers reject /api/plugin/ addresses. "!cleantitles bridge <route> <query string>"
   async execute(args) {
     const m = /^bridge\s+(\w+)\s*([\s\S]*)$/.exec(String(args || ""));
+    if (m && m[1] !== "flags") try { searchSeen(); } catch {} // a page in use (the PC job's own flags call isn't)
     if (!m) return { title: "Clean Titles & HD Thumbnails", html: INFO_HTML };
     const r = routes.find((x) => x.path === "/" + m[1]);
     if (!r) return { title: "", html: "" };
