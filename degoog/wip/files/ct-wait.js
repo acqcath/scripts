@@ -1,6 +1,6 @@
 // Runs inside the degoog container (docker exec ... bun /tmp/ct-wait.js), started by the PC's watcher, and sleeps
 // until there's something to do; then prints one JSON line and exits. Nothing is checked on a timer:
-//   {"kind":"reports"}             a ⚑ was saved (pc.json rev changed from the one the watcher last handled)
+//   {"kind":"reports","rev":"..."} a ⚑ was saved (pc.json rev changed from the one the watcher last handled)
 //   {"kind":"update","id":"..."}   a release was pushed (ntfy ping from the repo's GitHub Action), and no search ran
 //                                  for 2 minutes (pc.json last), so the install never restarts degoog mid-search
 //   {"kind":"idle"}                mode idle: no search for 2 minutes
@@ -17,7 +17,7 @@ const pc = () => { try { return JSON.parse(fs.readFileSync(`${dir}/pc.json`, "ut
 let idleT = null;
 const check = () => {
   const p = pc();
-  if (mode !== "idle" && p.rev && p.rev !== handled) return out({ kind: "reports" });
+  if (mode !== "idle" && p.rev && p.rev !== handled) return out({ kind: "reports", rev: p.rev });
   if (mode === "idle" || pending) {
     const left = (p.last || 0) + IDLE - Date.now();
     if (left <= 0) return out(mode === "idle" ? { kind: "idle" } : { kind: "update", id: pending });

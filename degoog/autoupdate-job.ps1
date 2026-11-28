@@ -268,7 +268,8 @@ function First-Line($exe, $argline) {
 # degoog isn't running: sleep until docker reports a container start (if docker itself isn't up yet, it comes up
 # with Windows: look again in 30 s)
 function Wait-Container { if ($null -eq (First-Line 'docker' 'events --filter type=container --filter event=start')) { Start-Sleep -Seconds 30 } }
-function Rev($c) { try { $t = docker exec $c cat "$DIRC/pc.json" 2>$null | Out-String; if ($t) { return [string](($t | ConvertFrom-Json).rev) } } catch {}; '' }
+# What's waiting to be sent right now (pc.json rev; "" = nothing); $null when it can't be read
+function Rev($c) { try { $t = docker exec $c cat "$DIRC/pc.json" 2>$null | Out-String; if ($t.Trim()) { return [string](($t | ConvertFrom-Json).rev) }; return '' } catch {}; $null }
 function Ms-Until-Timer {
   $f = Join-Path $d 'next-run.txt'
   if (-not (Test-Path $f)) { return 0 }
@@ -286,7 +287,7 @@ while ($true) {
     if (-not $c) { Wait-Container; continue }
     if (-not (Test-Path $wjs)) { Get-Files $sha; if (-not (Test-Path $wjs)) { Start-Sleep -Seconds 60; continue } }
     docker cp $wjs "${c}:/tmp/ct-wait.js" 2>$null | Out-Null
-    if ($null -eq $handled) { $handled = Rev $c }
+    if ($null -eq $handled) { $handled = Rev $c; if ($null -eq $handled) { $handled = '' } }
     $h = if ($handled) { $handled } else { '-' }; $s = if ($since) { $since } else { '-' }
     $t0 = Get-Date
     $line = First-Line 'docker' "exec $c bun /tmp/ct-wait.js $DIRC $TOPIC $s $h $(Ms-Until-Timer) $mode"
@@ -301,7 +302,11 @@ while ($true) {
     if ($ev.kind -ne 'reports') { $sha2 = Main-Sha; if ($sha2) { $sha = $sha2 }; Wait-NotBusy }
     $mode = 'wait'
     Run-Job $sha
-    $c2 = Container; $handled = if ($c2) { Rev $c2 } else { '' }
+    # handled = what was waiting after this run (a send that failed doesn't wake it again until a new ⚑); a timer
+    # the job didn't move forward is dropped, so neither can repeat in a loop
+    $c2 = Container; $r = if ($c2) { Rev $c2 } else { $null }
+    if ($null -ne $r) { $handled = $r } elseif ($ev.kind -eq 'reports') { $handled = [string]$ev.rev }
+    if ($ev.kind -eq 'timer' -and (Ms-Until-Timer) -le 1) { Remove-Item (Join-Path $d 'next-run.txt') -ErrorAction SilentlyContinue }
     # this watcher changed with that version: hand over to the new copy
     if ((Get-FileHash -LiteralPath $self).Hash -ne $selfHash) {
       WLog 'watcher updated: restarting it'
