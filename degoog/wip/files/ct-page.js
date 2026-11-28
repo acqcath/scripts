@@ -1,5 +1,5 @@
-// clean-titles v72
-const CT_VER = "v72";
+// clean-titles v73
+const CT_VER = "v73";
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -1920,6 +1920,9 @@ const hdImg = (img) => {
 };
 
 const PHONE = matchMedia("(max-width: 767px)");
+// Phone-style presentation (bottom sheet, sizes for reading at arm's length, tap targets) is for touch phones only; a
+// desktop window squeezed narrow keeps the desktop look and only reflows what no longer fits (same query as custom.css)
+const TOUCH = matchMedia("(max-width: 767px) and (pointer: coarse)");
 // v50 cut: v49 fetched missing YouTube descriptions and appended them after the result was on screen. That
 // grows the result (text changes, everything below moves) and it isn't sure to arrive, so no space can be kept for it.
 
@@ -2850,7 +2853,7 @@ const tools = () => {
       if (nq) location.href = goTo(nq);
     });
     tabs.after(f);
-    if (!PHONE.matches) f.elements.all.focus();
+    if (!TOUCH.matches) f.elements.all.focus();
   });
 };
 
@@ -2910,7 +2913,7 @@ const flagBox = (btn) => {
   const place = () => {
     const b = document.getElementById("ct-flagbox");
     if (!b) return;
-    if (PHONE.matches) { b.style.top = b.style.left = ""; return; }
+    if (TOUCH.matches) { b.style.top = b.style.left = ""; return; }
     const r = btn.getBoundingClientRect(), w = b.offsetWidth || 440;
     b.style.top = `${Math.round(r.bottom + scrollY + 6)}px`;
     b.style.left = `${Math.round(Math.max(12, Math.min(r.right - w, innerWidth - w - 12)) + scrollX)}px`;
@@ -2963,7 +2966,7 @@ const flagBox = (btn) => {
   document.body.append(scrim, box);
   place();
   addEventListener("keydown", esc); addEventListener("resize", place);
-  if (!PHONE.matches) t.focus();
+  if (!TOUCH.matches) t.focus();
 };
 // ⚑ sits in the header right after the settings gear (same round button); its box still opens over the results
 const flagPlace = () => {
@@ -3000,7 +3003,7 @@ const topGap = () => {
   }
   if (top === Infinity) return;
   const cur = parseFloat(lay.style.getPropertyValue("--ct-top")) || 0;
-  const want = PHONE.matches ? 16 : 20;
+  const want = TOUCH.matches ? 16 : 20;
   const next = Math.round(cur + want - (top - tabs.getBoundingClientRect().bottom));
   if (Math.abs(next - cur) >= 1) lay.style.setProperty("--ct-top", `${next}px`);
 };
