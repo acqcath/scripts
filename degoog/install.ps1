@@ -2419,8 +2419,8 @@ export default {
 };
 '@)
 [IO.File]::WriteAllText("$t\script.js", @'
-// clean-titles v94
-const CT_VER = "v94";
+// clean-titles v95
+const CT_VER = "v95";
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -8251,7 +8251,7 @@ $null = docker exec $c sh -c 'for i in $(seq 1 200); do curl -fs -o /dev/null ht
 $ctT['ready'] = $ctSw.Elapsed.TotalSeconds
 
 $ss = docker exec $c cat /app/data/server-settings.json | Out-String | ConvertFrom-Json
-"plugin code inside the page (should be v94): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
+"plugin code inside the page (should be v95): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
 "page files (should be a ct and a psl file): " + (docker exec $c sh -c 'ls /app/src/public/ct/')
 "progressive results off (should be False): $($ss.settings.streamingEnabled -eq $true)"
 "typo fixer word list (should be about 82800): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/words.txt')
