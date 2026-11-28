@@ -246,7 +246,7 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - route `/yt` :2256
   - route `/hd` :2266
 
-## script.js (2640 lines)
+## script.js (2643 lines)
   - `bridge` :2
   - `aiKey` :21
   - `fadeIn` :72
@@ -274,117 +274,117 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - `sizeHint` :403
   - `lowres` :411
   - `hdImg` :412
-  - `picKey` :458
-  - `hang` :470
-  - `row` :481
-  - `aiImg` :549
-- **Image AI (ct-vision on the PC's GPU, through this plugin's server)** :553
-  - `origOf` :557
-  - `VISON` :559
-  - `visThr` :561
-  - `visAsk` :567
-  - `visQueue` :572
-  - `visFlush` :582
-  - `visKey` :591
-  - `visRow` :593
-  - `visApply` :598
-  - `mediaRel` :617
-  - `mediaFold` :632
-  - `mediaFoldAdd` :639
-  - `previewPass` :680
-  - `relatedStrip` :694
-  - `relOk` :741
-  - `card` :742
-  - `handle` :762
-  - `scan` :771
-  - `bangFor` :795
-  - `markDrawn` :816
-  - `glance` :817
-  - `ask` :850
-  - `ready` :855
-  - `earlyStart` :857
-  - `nearWord` :934
-  - `lower` :945
-  - `extras` :947
-- **Site choices, People also ask, and search Tools** :1054
-  - `goTo` :1055
-  - `rowHost` :1061
-- **Sites: Prefer / Normal / Lower / Hide, one rounded group in each result's menu (replaces Rank / Block)** :1062
-  - `siteOf` :1067
-  - `siteItems` :1068
-  - `settingsFetch` :1120
-  - `saveSite` :1128
-  - `paaAnchor` :1179
-  - `paa` :1182
-  - `advParse` :1310
-  - `tools` :1322
-  - `flagTop` :1379
-  - `flagCtx` :1394
-  - `curType` :1419
-  - `flagBox` :1420
-  - `flagPlace` :1487
-  - `flagBtn` :1494
-  - `topGap` :1511
-  - `skel` :1527
-  - `noUsage` :1538
-- **Sitelinks, Discussions and forums, Videos, Top stories** :1547
-  - `ytId` :1552
-  - `VIDEO_URL` :1559
-  - `forumName` :1563
-  - `when` :1576
-  - `ago` :1584
-  - `fresh` :1595
-  - `hot` :1599
-  - `qHash` :1603
-  - `hashStore` :1604
-  - `info` :1622
-  - `mk` :1645
-  - `favImg` :1646
-  - `moreBtn` :1653
-  - `scroller` :1662
-  - `section` :1674
-  - `forumRow` :1677
-  - `siteName` :1690
-  - `videoCard` :1691
-  - `storyCard` :1713
-  - `used` :1730
-  - `shown` :1731
-  - `groups` :1732
-- **Answer card, local answers (core answers.js: math, units, cooking, tip/percent, dates, patterns)** :1898
-  - `cmuQ` :1904
-  - `aiWanted` :1909
-  - `aiBox` :1925
-  - `aiPass` :1938
-  - `topRes` :1965
-  - `shapeAsk` :1968
-  - `shapeBody` :1982
-  - `sidesPass` :2006
-  - `ansCard` :2048
-  - `livePoll` :2111
-  - `fitLine` :2130
-  - `byWorth` :2141
-  - `ansPass` :2150
-  - `ansCopy` :2199
-  - `onlyPass` :2213
-- **Quick view (spec 11): your tap opens it under the result (it grows: your action), tap again to close** :2236
-  - `qvBox` :2238
-  - `qvs` :2304
-  - `starsWanted` :2305
-  - `starsPass` :2307
-  - `meanPass` :2339
-- **Knowledge panel (spec 3)** :2358
-  - `kpWanted` :2366
-  - `kpCard` :2372
-  - `kpPass` :2415
-  - `money` :2446
-  - `prodCard` :2447
-  - `productPass` :2471
-  - `tabKind` :2513
-  - `tabKeep` :2514
-  - `safe` :2538
-  - `tabRescue` :2543
-  - `init` :2558
-- **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :2596
+  - `picKey` :461
+  - `hang` :473
+  - `row` :484
+  - `aiImg` :552
+- **Image AI (ct-vision on the PC's GPU, through this plugin's server)** :556
+  - `origOf` :560
+  - `VISON` :562
+  - `visThr` :564
+  - `visAsk` :570
+  - `visQueue` :575
+  - `visFlush` :585
+  - `visKey` :594
+  - `visRow` :596
+  - `visApply` :601
+  - `mediaRel` :620
+  - `mediaFold` :635
+  - `mediaFoldAdd` :642
+  - `previewPass` :683
+  - `relatedStrip` :697
+  - `relOk` :744
+  - `card` :745
+  - `handle` :765
+  - `scan` :774
+  - `bangFor` :798
+  - `markDrawn` :819
+  - `glance` :820
+  - `ask` :853
+  - `ready` :858
+  - `earlyStart` :860
+  - `nearWord` :937
+  - `lower` :948
+  - `extras` :950
+- **Site choices, People also ask, and search Tools** :1057
+  - `goTo` :1058
+  - `rowHost` :1064
+- **Sites: Prefer / Normal / Lower / Hide, one rounded group in each result's menu (replaces Rank / Block)** :1065
+  - `siteOf` :1070
+  - `siteItems` :1071
+  - `settingsFetch` :1123
+  - `saveSite` :1131
+  - `paaAnchor` :1182
+  - `paa` :1185
+  - `advParse` :1313
+  - `tools` :1325
+  - `flagTop` :1382
+  - `flagCtx` :1397
+  - `curType` :1422
+  - `flagBox` :1423
+  - `flagPlace` :1490
+  - `flagBtn` :1497
+  - `topGap` :1514
+  - `skel` :1530
+  - `noUsage` :1541
+- **Sitelinks, Discussions and forums, Videos, Top stories** :1550
+  - `ytId` :1555
+  - `VIDEO_URL` :1562
+  - `forumName` :1566
+  - `when` :1579
+  - `ago` :1587
+  - `fresh` :1598
+  - `hot` :1602
+  - `qHash` :1606
+  - `hashStore` :1607
+  - `info` :1625
+  - `mk` :1648
+  - `favImg` :1649
+  - `moreBtn` :1656
+  - `scroller` :1665
+  - `section` :1677
+  - `forumRow` :1680
+  - `siteName` :1693
+  - `videoCard` :1694
+  - `storyCard` :1716
+  - `used` :1733
+  - `shown` :1734
+  - `groups` :1735
+- **Answer card, local answers (core answers.js: math, units, cooking, tip/percent, dates, patterns)** :1901
+  - `cmuQ` :1907
+  - `aiWanted` :1912
+  - `aiBox` :1928
+  - `aiPass` :1941
+  - `topRes` :1968
+  - `shapeAsk` :1971
+  - `shapeBody` :1985
+  - `sidesPass` :2009
+  - `ansCard` :2051
+  - `livePoll` :2114
+  - `fitLine` :2133
+  - `byWorth` :2144
+  - `ansPass` :2153
+  - `ansCopy` :2202
+  - `onlyPass` :2216
+- **Quick view (spec 11): your tap opens it under the result (it grows: your action), tap again to close** :2239
+  - `qvBox` :2241
+  - `qvs` :2307
+  - `starsWanted` :2308
+  - `starsPass` :2310
+  - `meanPass` :2342
+- **Knowledge panel (spec 3)** :2361
+  - `kpWanted` :2369
+  - `kpCard` :2375
+  - `kpPass` :2418
+  - `money` :2449
+  - `prodCard` :2450
+  - `productPass` :2474
+  - `tabKind` :2516
+  - `tabKeep` :2517
+  - `safe` :2541
+  - `tabRescue` :2546
+  - `init` :2561
+- **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :2599
 
 ## core.js (649 lines)
 - **Sites: registrable domain via the public suffix list** :4
@@ -629,7 +629,7 @@ Every section, function and route in degoog/wip/files with its line. Read the li
 - Tools :615
 - Tools lives with the search it changes :616
 - ⚑ Flag :628
-- Phone :658
+- Phone (touch) :658
 - ===== Answer card (local answers) :675
 - Featured snippet :689
 - ===== AI summary spot :700

@@ -2361,8 +2361,8 @@ export default {
 };
 '@)
 [IO.File]::WriteAllText("$t\script.js", @'
-// clean-titles v72
-const CT_VER = "v72";
+// clean-titles v73
+const CT_VER = "v73";
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -4283,6 +4283,9 @@ const hdImg = (img) => {
 };
 
 const PHONE = matchMedia("(max-width: 767px)");
+// Phone-style presentation (bottom sheet, sizes for reading at arm's length, tap targets) is for touch phones only; a
+// desktop window squeezed narrow keeps the desktop look and only reflows what no longer fits (same query as custom.css)
+const TOUCH = matchMedia("(max-width: 767px) and (pointer: coarse)");
 // v50 cut: v49 fetched missing YouTube descriptions and appended them after the result was on screen. That
 // grows the result (text changes, everything below moves) and it isn't sure to arrive, so no space can be kept for it.
 
@@ -5213,7 +5216,7 @@ const tools = () => {
       if (nq) location.href = goTo(nq);
     });
     tabs.after(f);
-    if (!PHONE.matches) f.elements.all.focus();
+    if (!TOUCH.matches) f.elements.all.focus();
   });
 };
 
@@ -5273,7 +5276,7 @@ const flagBox = (btn) => {
   const place = () => {
     const b = document.getElementById("ct-flagbox");
     if (!b) return;
-    if (PHONE.matches) { b.style.top = b.style.left = ""; return; }
+    if (TOUCH.matches) { b.style.top = b.style.left = ""; return; }
     const r = btn.getBoundingClientRect(), w = b.offsetWidth || 440;
     b.style.top = `${Math.round(r.bottom + scrollY + 6)}px`;
     b.style.left = `${Math.round(Math.max(12, Math.min(r.right - w, innerWidth - w - 12)) + scrollX)}px`;
@@ -5326,7 +5329,7 @@ const flagBox = (btn) => {
   document.body.append(scrim, box);
   place();
   addEventListener("keydown", esc); addEventListener("resize", place);
-  if (!PHONE.matches) t.focus();
+  if (!TOUCH.matches) t.focus();
 };
 // ⚑ sits in the header right after the settings gear (same round button); its box still opens over the results
 const flagPlace = () => {
@@ -5363,7 +5366,7 @@ const topGap = () => {
   }
   if (top === Infinity) return;
   const cur = parseFloat(lay.style.getPropertyValue("--ct-top")) || 0;
-  const want = PHONE.matches ? 16 : 20;
+  const want = TOUCH.matches ? 16 : 20;
   const next = Math.round(cur + want - (top - tabs.getBoundingClientRect().bottom));
   if (Math.abs(next - cur) >= 1) lay.style.setProperty("--ct-top", `${next}px`);
 };
@@ -6614,7 +6617,7 @@ html:root { --ct-desc-pc: 15px; --ct-desc-phone: 13.5px; }
    one line, never wrapped, same 13px/18px as the site name so the line height never changes */
 .result-url-row .ct-date { flex: none; margin-left: -4px; font-size: 13px; line-height: 18px; white-space: nowrap; color: var(--text-cite); font-variant-numeric: tabular-nums; }
 .result-url-row .ct-date::before { content: "·"; margin-right: 4px; }
-@media (max-width: 767px) { .result-url-row .ct-date { color: var(--text-secondary); } }
+@media (max-width: 767px) and (pointer: coarse) { .result-url-row .ct-date { color: var(--text-secondary); } }
 .result-url-row .ct-paywall { flex: none; margin-left: -4px; font-size: 13px; line-height: 18px; white-space: nowrap; color: var(--text-secondary); }
 .result-url-row .ct-paywall::before { content: "·"; margin-right: 4px; }
 /* "N more from site.com ⌄": blue = tappable, underline on hover only; tucked under the site's 2nd result
@@ -6625,7 +6628,7 @@ html:root { --ct-desc-pc: 15px; --ct-desc-phone: 13.5px; }
 .ct-fold-b:hover { text-decoration: underline; }
 .ct-fold-b:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 4px; }
 .ct-chev { color: var(--text-secondary); }
-@media (max-width: 767px) { .ct-fold-b { min-height: 44px; } }
+@media (max-width: 767px) and (pointer: coarse) { .ct-fold-b { min-height: 44px; } }
 /* Other versions of one paper ("PDF · HTML · v7 latest"): small gray line, the links blue */
 .ct-alts { margin-top: 4px; font-size: 13px; line-height: 18px; color: var(--text-cite); white-space: nowrap; overflow: hidden; }
 .ct-alts a { color: var(--text-link); text-decoration: none; }
@@ -6838,9 +6841,9 @@ html:root { --ct-desc-pc: 15px; --ct-desc-phone: 13.5px; }
 .result-item .result-cite { max-width: 440px !important; }
 .result-item .result-cite { font-size: 13px !important; line-height: 18px !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; min-width: 0 !important; }
 .result-item .result-title { order: 1 !important; margin-top: 4px !important; font-size: 21px !important; line-height: 26px !important; font-weight: 400 !important; display: block !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; }
-@media (max-width: 767px) { .result-item .result-title { white-space: normal !important; display: -webkit-box !important; -webkit-line-clamp: 2 !important; -webkit-box-orient: vertical; } }
+@media (max-width: 767px) and (pointer: coarse) { .result-item .result-title { white-space: normal !important; display: -webkit-box !important; -webkit-line-clamp: 2 !important; -webkit-box-orient: vertical; } }
 /* Phones: title leads; summary and link line step back (smaller and greyer) so only the title asks for attention */
-@media (max-width: 767px) {
+@media (max-width: 767px) and (pointer: coarse) {
   .result-item .result-title { font-size: 18px !important; line-height: 23px !important; margin-top: 5px !important; letter-spacing: -0.1px; }
   /* .result-body raises priority: the shared rule further down would otherwise win on phones too */
   .result-item .result-body .result-snippet { font-size: var(--ct-desc-phone) !important; line-height: 19px !important; margin-top: 4px !important; color: var(--text-secondary) !important; }
@@ -6875,7 +6878,7 @@ html:root { --ct-desc-pc: 15px; --ct-desc-phone: 13.5px; }
   & .result-thumbnail-wrap { display: none !important; }
   & .result-snippet { -webkit-line-clamp: 2 !important; }
   /* Phones: forums keep the tighter 24px gaps (short results read better close together) */
-  @media (max-width: 767px) {
+  @media (max-width: 767px) and (pointer: coarse) {
     & .result-item { padding-block: 12px !important; }
     & .result-item:nth-child(1 of .result-item) { padding-top: 6px !important; }
   }
@@ -6927,7 +6930,7 @@ html:root { --ct-desc-pc: 15px; --ct-desc-phone: 13.5px; }
   }
   /* Phones: one card per row, Google News mobile style: every picture is a sharp 92px thumbnail beside
      the headline (news sources rarely have a sharp full-width copy, so big banners came out blurry) */
-  @media (max-width: 767px) {
+  @media (max-width: 767px) and (pointer: coarse) {
     & :has(> .result-item) { grid-template-columns: minmax(0, 1fr) !important; gap: 0 !important; margin: 0 !important; max-width: none !important; }
     & .result-item:has(.result-thumbnail-wrap:not([style*="none"]) img) { margin: 6px 0 !important; }
     & .result-title { font-size: 18px !important; line-height: 24px !important; }
@@ -6965,7 +6968,7 @@ html:root { --ct-desc-pc: 15px; --ct-desc-phone: 13.5px; }
     }
     & .result-snippet { -webkit-line-clamp: 2 !important; }
   }
-  @media (max-width: 767px) {
+  @media (max-width: 767px) and (pointer: coarse) {
     & .result-item:has(.degoog-result--thumb--video) { min-height: 72px !important; padding-left: 140px !important; padding-block: 12px !important; }
     & .result-item:has(.degoog-result--thumb--video) .result-thumbnail-wrap { width: 128px !important; height: 72px !important; top: 12px !important; }
     & .result-item .result-title { font-size: 16px !important; line-height: 21px !important; }
@@ -6999,7 +7002,7 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 :is(.results-tab, .result-item a, .result-thumbnail-wrap, .image-card) { -webkit-tap-highlight-color: transparent; }
 
 /* iPhone: text boxes at 16px so Safari doesn't zoom in when you tap the search bar */
-@media (max-width: 767px) {
+@media (max-width: 767px) and (pointer: coarse) {
   :is(input[type="text"], input[type="search"], input:not([type]), textarea:not(#ct-flagbox textarea)) { font-size: 16px !important; }
   .results-tab { padding-block: 12px !important; }
 }
@@ -7041,7 +7044,7 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 #at-a-glance :is(.weather-hero-icon, .weather-week-wrap, .math-calc-key, .math-calc-expr) { background: rgba(17, 17, 27, .45) !important; border: 0 !important; }
 #at-a-glance :is(.weather-hero, .weather-week th, .weather-week td, .command-help-table th, .command-help-table td) { border-color: rgba(88, 91, 112, .45) !important; }
 #at-a-glance .math-widget { background: none !important; }
-@media (max-width: 767px) {
+@media (max-width: 767px) and (pointer: coarse) {
   #at-a-glance > .command-result { padding: 16px 18px 12px !important; }
 }
 
@@ -7087,7 +7090,7 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 #at-a-glance .define-list li { font-size: 15px !important; line-height: 22px !important; margin: 0 0 8px !important; padding-left: 4px !important; color: var(--text-primary) !important; }
 #at-a-glance .define-list li::marker { color: var(--text-secondary); }
 #at-a-glance .define-example { display: block !important; font-size: 14px !important; line-height: 20px !important; margin-top: 2px !important; color: var(--text-secondary) !important; }
-@media (max-width: 767px) {
+@media (max-width: 767px) and (pointer: coarse) {
   #at-a-glance > .command-result:has(.define-result) { padding: 16px 18px 8px !important; }
   #at-a-glance .define-result .define-word { font-size: 24px !important; line-height: 32px !important; }
 }
@@ -7107,7 +7110,7 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .ct-seg-b[aria-pressed="true"] { background: rgba(205, 214, 244, .14); color: var(--text-primary); font-weight: 600; }
 .ct-seg-b:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
 .ct-seg-note { font-size: 12.5px; line-height: 18px; padding: 0 14px 8px; color: var(--text-secondary); }
-@media (max-width: 767px) { .ct-seg { min-width: 300px; } .ct-seg-b { min-height: 44px; } }
+@media (max-width: 767px) and (pointer: coarse) { .ct-seg { min-width: 300px; } .ct-seg-b { min-height: 44px; } }
 
 /* People also ask: Google's layout, sized like your results (heading = title size, answer = description, source = link line + title) */
 #ct-qa { margin: 12px 0 12px; }
@@ -7124,7 +7127,7 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .ct-qa-site img { width: 16px; height: 16px; border-radius: 4px; object-fit: contain; }
 .ct-qa-site cite { font-style: normal; font-size: 13px; line-height: 18px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ct-qa-src { display: block; margin: 4px 0 12px; font-size: 21px; line-height: 26px; color: var(--text-link); text-decoration: none; }
-@media (max-width: 767px) {
+@media (max-width: 767px) and (pointer: coarse) {
   #ct-qa h3 { font-size: 18px; line-height: 23px; }
   .ct-qa-text { font-size: var(--ct-desc-phone); line-height: 19px; color: var(--text-secondary); }
   .ct-qa-src { font-size: 18px; line-height: 23px; margin-top: 5px; }
@@ -7154,7 +7157,7 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .ct-fs { font-size: var(--ct-desc-pc); line-height: calc(var(--ct-desc-pc) * 1.47); color: var(--text-snippet); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 /* Videos and Top stories: a sideways row of News-style tiles, 3 across on PC, swipeable with a peek on phones */
 .ct-rowwrap { position: relative; }
-.ct-row { display: grid; grid-auto-flow: column; grid-auto-columns: calc((100% - 24px) / 3); gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior-x: contain; }
+.ct-row { display: grid; grid-auto-flow: column; grid-auto-columns: max(calc((100% - 24px) / 3), 200px); gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior-x: contain; }
 .ct-row::-webkit-scrollbar { display: none; }
 .ct-card { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding-bottom: 12px; border-radius: 12px; background: rgba(49, 50, 68, .45); overflow: hidden; text-decoration: none; scroll-snap-align: start; }
 .ct-card:hover { background: rgba(69, 71, 90, .45); }
@@ -7188,7 +7191,7 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 @media (hover: none) { .ct-arr { display: none; } }
 /* Narrow windows with a mouse: arrows stay inside the page (no sideways scroll) */
 @media (max-width: 767px) { .ct-prev { left: 0; } .ct-next { right: 0; } }
-@media (max-width: 767px) {
+@media (max-width: 767px) and (pointer: coarse) {
   .ct-gh { font-size: 18px; line-height: 23px; }
   .ct-ft { font-size: 16px; line-height: 22px; }
   .ct-fs { font-size: var(--ct-desc-phone); line-height: 19px; color: var(--text-secondary); }
@@ -7244,8 +7247,8 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .ct-flag-acts { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 #ct-flagbox .ct-flag-acts button { font: 600 13.5px system-ui, sans-serif; padding: 8px 20px; border-radius: 999px; background: var(--primary); color: #11111b; border: 0; cursor: pointer; }
 #ct-flagbox .ct-flag-acts button:disabled { opacity: .6; cursor: default; }
-/* Phone: bottom sheet */
-@media (max-width: 767px) {
+/* Phone (touch): bottom sheet; a narrow window with a mouse keeps the popover */
+@media (max-width: 767px) and (pointer: coarse) {
   #ct-flagscrim { background: rgba(0, 0, 0, .5); }
   #ct-flagbox { position: fixed; left: 0; right: 0; bottom: 0; top: auto; width: auto; max-width: none; max-height: 85vh; overflow-y: auto; border-radius: 18px 18px 0 0; border-width: 1px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); gap: 14px; }
   .ct-flag-cat { min-height: 36px; padding: 8px 14px; }
@@ -7280,11 +7283,11 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .ct-ans-src { display: inline-block; margin-top: 4px; font-size: 14px; line-height: 20px; color: var(--text-link); text-decoration: none; overflow-wrap: anywhere; }
 .ct-ans-src:visited { color: var(--text-link-visited); }
 .ct-ans-src:hover { text-decoration: underline; }
-@media (max-width: 767px) { .ct-ans-src { min-height: 44px; display: flex; align-items: center; } }
+@media (max-width: 767px) and (pointer: coarse) { .ct-ans-src { min-height: 44px; display: flex; align-items: center; } }
 .ct-ans-title:hover { text-decoration: underline; }
 .ct-ans-detail { margin-top: 2px; font-size: 13px; line-height: 18px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; font-variant-numeric: tabular-nums; }
 @media (hover: hover) { .ct-ans[data-copy]:hover .ct-ans-label::after { content: "⧉"; margin-left: 6px; font-size: 12px; color: var(--text-secondary); } }
-@media (max-width: 767px) { .ct-ans-title { min-height: 44px; display: flex; align-items: center; } }
+@media (max-width: 767px) and (pointer: coarse) { .ct-ans-title { min-height: 44px; display: flex; align-items: center; } }
 
 /* ===== AI summary spot: fixed size from before the results are drawn (label 18 + 4 + 3 lines of 24 + ⌄ line 28) =====
    ai-summary's panel stays degoog's child of #at-a-glance and is laid over the spot's 3 lines (takes no room). */
@@ -7384,12 +7387,12 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 
 /* Images row (spec 12): fixed tiles (image results carry no sizes, so a justified row would re-flow as pictures
    load); phone = swipe with the next tile peeking, PC = 6 equal tiles filling the width */
-.ct-imgs .ct-row { grid-auto-columns: calc((100% - 50px) / 6); gap: 10px; }
+.ct-imgs .ct-row { grid-auto-columns: max(calc((100% - 50px) / 6), 110px); gap: 10px; }
 .ct-im { display: block; aspect-ratio: 4 / 3; border-radius: 10px; overflow: hidden; background: var(--bg-light); scroll-snap-align: start; }
 .ct-im img { display: block; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .3s; }
 .ct-im img.ct-on { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .ct-im img { transition: none; } }
-@media (max-width: 767px) { .ct-imgs .ct-row { grid-auto-columns: 42%; gap: 8px; } }
+@media (max-width: 767px) and (pointer: coarse) { .ct-imgs .ct-row { grid-auto-columns: 42%; gap: 8px; } }
 /* Quick view: opened under the result by your tap; text only */
 .ct-qv { margin-top: 10px; padding: 12px 14px; border-radius: 12px; background: rgba(49, 50, 68, .45); font-size: 14px; line-height: 20px; color: var(--text-snippet); }
 .ct-qv-none { color: var(--text-secondary); }
@@ -7401,7 +7404,7 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .ct-qv-q { font-weight: 500; color: var(--text-primary); }
 .ct-qv-p { margin: 8px 0 0; }
 .ct-qv-more { display: inline-flex; align-items: center; min-height: 36px; margin-top: 2px; padding: 0; border: 0; background: none; font: inherit; color: var(--text-link); cursor: pointer; }
-@media (max-width: 767px) { .ct-qv-more { min-height: 44px; } }
+@media (max-width: 767px) and (pointer: coarse) { .ct-qv-more { min-height: 44px; } }
 .result-url-row .ct-stars-l { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 /* Meaning line: one line above the results; each word is a search that adds it */
 .ct-mean { display: flex; flex-wrap: wrap; align-items: center; min-height: 44px; margin: 0 0 4px; font-size: 14px; line-height: 20px; color: var(--text-secondary); }
@@ -7414,7 +7417,7 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
    favicon proxy (your server asks, cached; the browser never contacts the site), a letter tile when a site has none.
    Faster to spot a known site than reading grey text, and the box never changes size, so nothing moves. */
 /* Menu lines are tap targets: 44px on phones */
-@media (max-width: 767px) { .ct-arch, .ct-seg-b { min-height: 44px; } }
+@media (max-width: 767px) and (pointer: coarse) { .ct-arch, .ct-seg-b { min-height: 44px; } }
 
 /* ===== Vertical rhythm (one scale, by how things belong together) =====
    inside one result (source, title, description, its sitelinks / "N more" line): 2-10px, tight, they're one item
@@ -7436,7 +7439,7 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 /* Long unbroken strings (URLs, hashes, model numbers) wrap inside the column instead of running past it; descriptions
    hyphenate long words on narrow screens so lines stay even instead of ragged */
 .result-item :is(.result-title, .result-snippet), .ct-ct, .ct-ans-text, .ct-kp, .ct-ai-text { overflow-wrap: anywhere; }
-@media (max-width: 767px) { .result-snippet, .ct-ans-text, .ct-ai-text { hyphens: auto; } }
+@media (max-width: 767px) and (pointer: coarse) { .result-snippet, .ct-ans-text, .ct-ai-text { hyphens: auto; } }
 /* Phones: the answer area (answer card, AI summary, knowledge panel) keeps the same 24px before what follows as on
    PC (degoog's own 1rem made it 16 on phones only) */
 @media (max-width: 767px) {
@@ -7896,7 +7899,7 @@ $null = docker exec $c sh -c 'for i in $(seq 1 40); do curl -fs -o /dev/null htt
 $ctT['ready'] = $ctSw.Elapsed.TotalSeconds
 
 $ss = docker exec $c cat /app/data/server-settings.json | Out-String | ConvertFrom-Json
-"plugin code inside the page (should be v72): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
+"plugin code inside the page (should be v73): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
 "page files (should be a ct and a psl file): " + (docker exec $c sh -c 'ls /app/src/public/ct/')
 "progressive results off (should be False): $($ss.settings.streamingEnabled -eq $true)"
 "typo fixer word list (should be about 82800): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/words.txt')
