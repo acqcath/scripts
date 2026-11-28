@@ -1,0 +1,13 @@
+# Wakes the degoog watcher on the user's PC the moment a clean-titles release lands on main (no checking on a timer
+# there): one ntfy.sh message on the topic its ct-wait.js listens to. The message carries nothing; the PC confirms
+# the new main with git itself, so a stray message only causes a harmless look.
+name: degoog ping
+on:
+  push:
+    branches: [main]
+    paths: ["degoog/**"]
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - run: curl -fsS -m 30 --retry 3 -d "main" https://ntfy.sh/degoog-ct-acqcath-9f4k2x7q

@@ -59,11 +59,20 @@ test("flag: ⚑ box saves; no count, no send link", async () => {
   await win.happyDOM.close();
 });
 
-import { judgeParse } from "../files/index.js";
-test("flag: the local model's verdict is read safely", () => {
-  expect(judgeParse('ok {"send": true, "why": "3 junk-ranking reports"}')).toEqual({ send: true, why: "3 junk-ranking reports" });
-  expect(judgeParse('{"send": "yes"}')).toBe(null);
-  expect(judgeParse("no idea")).toBe(null);
+import { flagDue, fixedNews } from "../files/index.js";
+test("flag: sent as soon as a ⚑ or an update problem waits", () => {
+  expect(flagDue([], null)).toBe(false);
+  expect(flagDue([], { t: 1, text: "x" })).toBe(true);
+  expect(flagDue([{ t: 5 }], null)).toBe(true);
+});
+test("flag: a fixed report is told once, wherever degoog is opened first", () => {
+  const list = [{ id: 11, t: 11, q: "kalimba tabs", note: "porn in the results" }, { id: 12, t: 12, q: "rust book", note: "" }, { id: 13, t: 13, q: "x", note: "" }];
+  const fixed = { 11: "v93", 12: "v94" };
+  expect(fixedNews(list, fixed, 5)).toEqual([{ ver: "v93", what: "porn in the results" }, { ver: "v94", what: '"rust book"' }]);
+  expect(list[0].told).toBe(5);
+  expect(list[0].handed).toBe(5); // fixed = no longer waiting to be sent
+  expect(fixedNews(list, fixed, 6)).toEqual([]); // the second device gets nothing
+  expect(list[2].told).toBe(undefined);
 });
 
 test("⚑ categories and context: server and page agree, junk dropped", () => {
@@ -126,4 +135,28 @@ test("page: product panel in the right column", async () => {
   expect(card).toBeTruthy();
   expect(card.textContent).toContain("$299 – $349 (3 sellers)");
   expect(card.textContent).toContain("Released");
+});
+
+test("flag: a fixed report shows one small note at the bottom (told once by the server)", async () => {
+  const win = new Window({ url: "https://degoog.local/search?q=kalimba" });
+  const { document } = win;
+  document.body.innerHTML = '<div id="results-tabs"></div><div id="results-list"></div>';
+  let asked = 0;
+  win.fetch = async (url, init) => {
+    const q = init && init.body ? JSON.parse(init.body).query || "" : "";
+    let out = { ok: 1 };
+    if (/bridge fixednews /.test(q)) out = asked++ ? { items: [] } : { items: [{ ver: "v93", what: "porn under kalimba" }] };
+    return new win.Response(JSON.stringify({ html: JSON.stringify(out).replace(/&/g, "&amp;").replace(/</g, "&lt;") }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  class MO { constructor() {} observe() {} disconnect() {} takeRecords() { return []; } }
+  const scope = new Proxy(win, { has: () => true, get: (t, k) => { if (k === "MutationObserver") return MO; if (k === Symbol.unscopables) return undefined; if (!(k in t)) return globalThis[k]; const v = Reflect.get(t, k); return typeof v === "function" && typeof k === "string" && /^[a-z]/.test(k) ? v.bind(t) : v; }, set: (t, k, v) => { t[k] = v; return true; } });
+  globalThis.__ctAIW = win.__ctAIW = new Map(); globalThis.__ctPUBW = win.__ctPUBW = new Map();
+  new Function("scope", `with (scope) {\nconst __PLUGIN_ID__="clean-titles";\n${fs.readFileSync(new URL("../files/ct-page.js", import.meta.url), "utf8")}\n}`)(scope);
+  await new Promise((r) => setTimeout(r, 30));
+  const n = document.getElementById("ct-fixed");
+  expect(n && n.getAttribute("role")).toBe("status");
+  expect(n.textContent).toContain("Fixed in v93");
+  expect(n.textContent).toContain("porn under kalimba");
+  expect(asked).toBe(1);
+  await win.happyDOM.close();
 });

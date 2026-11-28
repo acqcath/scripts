@@ -146,3 +146,21 @@ const flagBtn = () => {
   if (PHONE.matches) { f.style.visibility = "hidden"; requestAnimationFrame(() => { flagPlace(); f.style.visibility = ""; }); }
   if (!flagPlace.on) { flagPlace.on = 1; PHONE.addEventListener("change", flagPlace); addEventListener("resize", flagPlace); }
 };
+// ===== "Fixed" note: the first time degoog is opened anywhere after a release fixed your report =====
+// The server tells each fix once (whichever device asks first), so seeing it on the phone means the PC won't show it.
+// A small note at the bottom for a few seconds (fixed position: nothing on the page moves); a tap closes it.
+const fixedNote = () => bridge("fixednews", {}, "").then((j) => {
+  const items = j && Array.isArray(j.items) ? j.items.filter((x) => x && x.what) : [];
+  if (!items.length || document.getElementById("ct-fixed")) return;
+  const n = mk("div", "ct-fixed");
+  n.id = "ct-fixed";
+  n.setAttribute("role", "status");
+  const vers = [...new Set(items.map((x) => x.ver))].join(", ");
+  n.append(mk("b", "", items.length === 1 ? `Fixed in ${vers}` : `${items.length} of your reports fixed (${vers})`));
+  for (const x of items.slice(0, 3)) n.append(mk("span", "ct-fixed-i", x.what));
+  if (items.length > 3) n.append(mk("span", "ct-fixed-i", `+${items.length - 3} more`));
+  const close = () => { n.classList.add("ct-out"); setTimeout(() => n.remove(), 300); };
+  n.addEventListener("click", close);
+  setTimeout(close, 8000);
+  document.body.append(n);
+}).catch(() => {});

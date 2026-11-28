@@ -58,6 +58,7 @@ const init = () => {
     if (vp && !/maximum-scale/.test(vp.content)) vp.content += ", maximum-scale=1";
   }
   safe("tabrescue", tabRescue);
+  safe("fixed", fixedNote);
   safe("query", readQuery);
   safe("early", earlyStart);
   safe("usage", () => noUsage(document.body));

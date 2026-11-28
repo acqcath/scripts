@@ -3,28 +3,28 @@
 Every section, function and route in degoog/wip/files with its line. Read the lines you need (`sed -n A,Bp file`), not whole files.
 Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-*.js (built into files/ct-page.js after core.js + answers.js): edit the modules.
 
-## server/01-base.js (175 lines)
-  - `braveOriginal` :14
-  - `upgrade` :34
-- **Sites: degoog's own block/score lists, read by /sites, Settings and anti-SEO** :58
-  - `plainHost` :60
-  - `sitesFromLists` :61
-  - `pagePartMissing` :77
-- **Sites in Settings: the same Prefer / Normal / Lower / Hide list as each result's menu** :90
-  - `cleanSite` :99
-  - `sitesOfRows` :101
-  - `rowsOfSites` :112
-  - `sameSites` :113
-  - `applySites` :115
-  - `_setDegoog` :133
-  - `degoog` :134
-  - `mirrorFile` :143
-  - `readMirror` :144
-  - `queueSites` :146
-  - `showSites` :147
-  - `mirrorTo` :149
-  - `sitesFromSettings` :156
-  - `_sitesIdle` :173
+## server/01-base.js (176 lines)
+  - `braveOriginal` :15
+  - `upgrade` :35
+- **Sites: degoog's own block/score lists, read by /sites, Settings and anti-SEO** :59
+  - `plainHost` :61
+  - `sitesFromLists` :62
+  - `pagePartMissing` :78
+- **Sites in Settings: the same Prefer / Normal / Lower / Hide list as each result's menu** :91
+  - `cleanSite` :100
+  - `sitesOfRows` :102
+  - `rowsOfSites` :113
+  - `sameSites` :114
+  - `applySites` :116
+  - `_setDegoog` :134
+  - `degoog` :135
+  - `mirrorFile` :144
+  - `readMirror` :145
+  - `queueSites` :147
+  - `showSites` :148
+  - `mirrorTo` :150
+  - `sitesFromSettings` :157
+  - `_sitesIdle` :174
 
 ## server/02-net.js (23 lines)
 - **Shared fetch helper: every outside request goes through here (timeout, size cap, never throws)** :2
@@ -176,23 +176,25 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
   - `doiAsk` :49
   - `doiNames` :56
 
-## server/09-flags.js (103 lines)
-- **⚑ Flags: "what's wrong with these results?" from the ⚑ in the tab row** :2
-  - `flagsFile` :6
-  - `installTiming` :8
-  - `readFlags` :10
-  - `saveFlags` :11
-  - `flagIssue` :12
-  - `flagOpen` :13
-  - `flagCats` :17
-  - `flagCtxClean` :20
-  - `flagPrompt` :33
-  - `aiAsk` :47
-  - `judgeParse` :82
-  - `flagHost` :87
-  - `flagJudge` :89
-  - `judgeNow` :100
-  - `flagCount` :101
+## server/09-flags.js (123 lines)
+- **⚑ Flags: "what's wrong with these results?" from the ⚑ in the tab row** :3
+  - `flagsFile` :7
+  - `installTiming` :9
+  - `readFlags` :11
+  - `saveFlags` :12
+  - `flagIssue` :13
+  - `flagOpen` :14
+  - `flagCats` :18
+  - `flagCtxClean` :21
+  - `flagPrompt` :34
+  - `aiAsk` :49
+  - `flagCount` :76
+- **Sending at once, "fixed" once, and what the PC's watcher sleeps on** :77
+  - `flagDue` :79
+  - `fixedNews` :82
+  - `pcWrite` :96
+  - `pcListen` :108
+  - `searchSeen` :118
 
 ## server/10-needs.js (130 lines)
   - `needsParse` :22
@@ -219,7 +221,7 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
   - `_learnReset` :111
   - `needsFor` :112
 
-## server/11-rank.js (111 lines)
+## server/11-rank.js (112 lines)
 - **M4: the answer card's shape and the contested check, both written by ai-summary's model (aiAsk)** :2
   - `cell` :12
   - `shapeParse` :13
@@ -233,43 +235,44 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
   - `median` :64
   - `rankWait` :65
   - `globalThis.__ctResults` :66
-  - `ctResults` :70
-  - `rankPart` :80
+  - `ctResults` :71
+  - `rankPart` :81
 
-## server/12-routes.js (440 lines)
+## server/12-routes.js (452 lines)
   - route `/flag` :6
-  - route `/flags` :24
-  - route `/vis` :44
-  - route `/status` :57
-  - route `/needs` :71
-  - route `/seen` :81
-  - route `/shape` :87
-  - route `/sides` :93
-  - route `/speed` :99
-  - route `/cut` :105
-  - route `/rank` :111
-  - route `/near` :122
-  - route `/fix` :132
-  - route `/qs` :152
-  - route `/relay` :163
-  - route `/sites` :183
-  - route `/why` :201
-  - route `/wd` :206
-  - route `/product` :215
-  - route `/qv` :225
-  - route `/qvs` :233
-  - route `/arch` :242
-  - route `/kp` :250
-  - route `/sports` :258
-  - route `/cmu` :266
-  - route `/eol` :274
-  - route `/aiimg` :284
-  - route `/seo` :294
-  - route `/prefs` :304
-  - route `/perf` :310
-  - route `/learn` :326
-  - route `/yt` :339
-  - route `/hd` :349
+  - route `/flags` :23
+  - route `/fixednews` :43
+  - route `/vis` :53
+  - route `/status` :66
+  - route `/needs` :80
+  - route `/seen` :90
+  - route `/shape` :96
+  - route `/sides` :102
+  - route `/speed` :108
+  - route `/cut` :114
+  - route `/rank` :120
+  - route `/near` :131
+  - route `/fix` :141
+  - route `/qs` :161
+  - route `/relay` :172
+  - route `/sites` :192
+  - route `/why` :210
+  - route `/wd` :215
+  - route `/product` :224
+  - route `/qv` :234
+  - route `/qvs` :242
+  - route `/arch` :251
+  - route `/kp` :259
+  - route `/sports` :267
+  - route `/cmu` :275
+  - route `/eol` :283
+  - route `/aiimg` :293
+  - route `/seo` :303
+  - route `/prefs` :313
+  - route `/perf` :319
+  - route `/learn` :335
+  - route `/yt` :348
+  - route `/hd` :358
 
 ## page/01-base.js (207 lines)
   - `bridge` :3
@@ -354,13 +357,15 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
   - `advParse` :258
   - `tools` :270
 
-## page/06-flag.js (149 lines)
+## page/06-flag.js (167 lines)
   - `flagTop` :5
   - `flagCtx` :20
   - `curType` :47
   - `flagBox` :48
   - `flagPlace` :125
   - `flagBtn` :132
+- **"Fixed" note: the first time degoog is opened anywhere after a release fixed your report** :149
+  - `fixedNote` :152
 
 ## page/07-layout.js (212 lines)
   - `topGap` :5
@@ -436,7 +441,7 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
   - `prodCard` :213
   - `productPass` :237
 
-## page/11-init.js (136 lines)
+## page/11-init.js (137 lines)
   - `tabKind` :2
   - `tabKeep` :3
   - `passReset` :31
@@ -444,7 +449,7 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
   - `safe` :33
   - `tabRescue` :38
   - `init` :53
-- **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :92
+- **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :93
 
 ## core.js (611 lines)
 - **Sites: registrable domain via the public suffix list** :4
@@ -622,7 +627,14 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
 
 ## setcss.js (12 lines)
 
-## custom.css (918 lines)
+## ct-wait.js (69 lines)
+  - `out` :16
+  - `pc` :17
+  - `check` :19
+  - `sock` :31
+  - `listen` :43
+
+## custom.css (926 lines)
 - Catppuccin Mocha colors :1
 - DESCRIPTION SIZE :22
 - v50 :24
@@ -710,6 +722,7 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
 - CJK opening bracket first in a title or snippet :886
 - Product panel (M6) :889
 - Loading placeholders in the shape of what comes (script :899
+- "Fixed" note (page/06 fixedNote) :918
 
 ## vision/app.py (191 lines)
   - `load` :21
