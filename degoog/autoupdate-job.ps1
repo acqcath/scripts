@@ -142,6 +142,13 @@ $git = (Get-Command git -ErrorAction SilentlyContinue).Source
 if (-not $git -and (Test-Path "$env:ProgramFiles\Git\cmd\git.exe")) { $git = "$env:ProgramFiles\Git\cmd\git.exe" }
 $env:CT_MAIN = ''
 if ($git) { try { $env:GIT_TERMINAL_PROMPT = '0'; $l = & $git -c credential.helper= ls-remote https://github.com/acqcath/scripts refs/heads/main 2>$null | Out-String; if ($l -match '^([0-9a-f]{40})') { $env:CT_MAIN = $Matches[1] } } catch {} }
+# Runs every minute, but the full job only when main moved (a new release: installed within a minute), hourly for
+# reports, or while a fix is on its way; otherwise it stops right here (one git ls-remote, no other work)
+$seenF = Join-Path $d 'main-seen.txt'; $fullF = Join-Path $d 'last-full.txt'
+$seen = if (Test-Path $seenF) { (Get-Content $seenF -Raw).Trim() } else { '' }
+$recent = (Test-Path $fullF) -and (Get-Item $fullF).LastWriteTime -gt (Get-Date).AddMinutes(-55)
+$watch = (Test-Path (Join-Path $d 'tried.txt')) -or (Test-Path (Join-Path $d 'watch-until.txt'))
+if ($recent -and -not $watch -and (-not $env:CT_MAIN -or $seen -eq $env:CT_MAIN)) { exit } # no git yet: hourly, as before
 $have = if (Test-Path "$j.sha") { (Get-Content "$j.sha" -Raw).Trim() } else { '' }
 if (-not $env:CT_MAIN -or $have -ne $env:CT_MAIN -or -not (Test-Path $j)) {
   try {
@@ -153,14 +160,14 @@ if (-not $env:CT_MAIN -or $have -ne $env:CT_MAIN -or -not (Test-Path $j)) {
     if ($b -match 'degoog') { [IO.File]::WriteAllText($j, $b, (New-Object Text.UTF8Encoding $true)); Set-Content -Path "$j.sha" -Value $env:CT_MAIN }
   } catch {}
 }
-if (Test-Path $j) { & $j } else { "job download failed $(Get-Date -Format s)" | Add-Content -Path (Join-Path $d 'last-run.txt') }
+if (Test-Path $j) { & $j; if ($env:CT_MAIN) { Set-Content -Path $seenF -Value $env:CT_MAIN }; Set-Content -Path $fullF -Value (Get-Date -Format s) } else { "job download failed $(Get-Date -Format s)" | Add-Content -Path (Join-Path $d 'last-run.txt') }
 '@
 try { if (-not (Test-Path $launch) -or (Get-Content $launch -Raw) -ne $launcher) { [IO.File]::WriteAllText($launch, $launcher, (New-Object Text.UTF8Encoding $true)) } } catch {}
 
 $tried = Join-Path $dir 'tried.txt'
-# The task itself, kept in its best shape by this job. How often: driven by your flag reports, not a fixed clock. Hourly
-# while nothing is on its way (that run also picks up new flag reports and sends them); every minute from the moment a
-# report is sent until its fix is installed (or 6 h), and while an installed version waits on its AI self-check.
+# The task itself, kept in its best shape by this job. It starts every minute; the launcher above stops at once unless
+# main moved (new release -> installed within a minute), an hour passed (new flag reports are sent), or a sent
+# report's fix / an AI self-check is still on its way (then the full job runs every minute, as before).
 # Daily trigger repeating for 1 day works on every Windows version, started through Windows 11's headless console so no window ever flashes
 # (powershell -WindowStyle Hidden still flashes, and stays open when Windows Terminal is the default). The headless
 # start is tested first (it must leave a marker file); if it fails, the plain hidden start stays and it's retried daily.
@@ -169,7 +176,7 @@ try {
   $wf = Join-Path $dir 'watch-until.txt'
   $fast = (Test-Path $tried) -or ((Test-Path $wf) -and ([datetime](Get-Content $wf -Raw).Trim()) -gt (Get-Date))
   if (-not $fast) { Remove-Item $wf -ErrorAction SilentlyContinue }
-  $want = if ($fast) { 'PT1M' } else { 'PT1H' }
+  $want = 'PT1M' # cheap: the launcher exits after one git ls-remote when there's nothing to do
   $task = Get-ScheduledTask -TaskName 'degoog clean-titles update' -ErrorAction Stop
   $tr = $task.Triggers | Select-Object -First 1
   $act = $task.Actions | Select-Object -First 1
@@ -194,7 +201,7 @@ try {
     $setArgs = @{ TaskName = 'degoog clean-titles update'; Trigger = $nt; ErrorAction = 'Stop' }
     if ($newAct) { $setArgs.Action = $newAct }
     Set-ScheduledTask @setArgs | Out-Null
-    Log "$(Get-Date -Format s) task set: every $(if ($fast) { 'minute' } else { 'hour' })$(if ($newAct) { ", start: $($newAct.Execute)" })"
+    Log "$(Get-Date -Format s) task set: every minute$(if ($fast) { ' (fix on its way)' })$(if ($newAct) { ", start: $($newAct.Execute)" })"
   }
 } catch { Log "task update failed $(Get-Date -Format s): $($_.Exception.Message)" }
 }
