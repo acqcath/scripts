@@ -78,6 +78,14 @@ earliest releaseDate). Wide: right column (inside the info panel if shown). Phon
 the first result below the screen (zero shift). Release date only from releaseDate (no "earliest dated result"
 guess: a page date isn't a release date). Switch: the Knowledge panel setting. Self-check row "Product panel".
 
+### Endless scroll (user, 2026-11-28: "the loading for when i scroll down is terrible ... keep [what's] at the top") [v90]
+- The next page starts loading two screens before the end of the list (custom.css `.degoog-infinite`; was 320 px).
+- What's already on screen never changes when a page goes in (page/08 `painted`): the top result's sitelinks and the
+  forum/video boxes don't take results from later pages (they grew, so everything under them jumped), a box only a later
+  page has enough for goes among that page's results; endless scroll's history rewrite is never a new search
+  (page/01 `sgKey`, `loaded`), which would clear every box, card and fold above.
+- Headless check (stub): `lost` 0, cls 0 with page 2, `ahead` 2120 px at 900 px tall.
+
 ### M7: notes match the code; clean, readable code; smoother page (user, 2026-11-28) [1-3 done (v85, v86); 4: v87 install batching, v88 pass timing in ⚑ ctx + headless stub (worst: list ~25 ms, gap ~15 ms, flag up to 24 ms per search), v89 cut them (list: public suffix list parsed at idle before the results, ~13 ms of it, and a faster parser; flag: phone placement in the next frame, no forced layout in the pass; gap: measures only the first showing result/picture/video, and skips batches that only change things below what it measured, so endless-scroll pages cost no gap pass; headless stub: realistic titles/sites + an endless-scroll page 2 with page2 ms and lost); next: 5]
 User's words: every note must match the code (a stale note made Claude say updates install hourly; they install
 ~1 min after a merge); optimize and smooth everything; no spaghetti: code Claude can read, change and understand.

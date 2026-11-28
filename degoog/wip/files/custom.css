@@ -910,3 +910,8 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
   background-size: 200% 100% !important; animation: skeleton-shimmer 1.6s ease-in-out infinite;
 }
 img.ct-ld { opacity: 0 !important; }
+/* Endless scroll starts the next page two screens before the end of the list instead of 320 px before it, so the
+   results are there before you reach them. degoog watches its line under the list (.degoog-infinite) coming near the
+   screen: the line's box reaches two screens up (negative margin, same padding: nothing moves, its placeholder still
+   draws right under the results) and lets taps through to the results it lies over. */
+.degoog-infinite { margin-top: -200vh !important; padding-top: 200vh !important; pointer-events: none; }

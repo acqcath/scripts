@@ -1,5 +1,5 @@
-// clean-titles v89
-const CT_VER = "v89";
+// clean-titles v90
+const CT_VER = "v90";
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -1547,7 +1547,9 @@ for (const m of ["pushState", "replaceState"]) {
   if (typeof o !== "function") continue;
   history[m] = function (st, ...rest) {
     const r = o.call(this, st, ...rest), k = sgKey(st);
-    if (k !== null) { if (m === "pushState" || (SGk && k !== SGk)) SG++; SGk = k; }
+    // endless scroll's rewrite (it carries loaded: N) is the same search even if it names it differently: a new search
+    // there cleared every box, card and fold the page had drawn above the new page (v90)
+    if (k !== null) { if (m === "pushState" || (SGk && k !== SGk && !(st.loaded > 0))) SG++; SGk = k; }
     return r;
   };
 }
@@ -3393,16 +3395,26 @@ const groups = () => {
   if (G.key !== key) {
     list.querySelectorAll(".ct-grp, .ct-sl").forEach((x) => x.remove());
     list.querySelectorAll(".ct-grouped").forEach((x) => x.classList.remove("ct-grouped"));
-    G = { key, sl: null, slTop: null, forum: null, video: null, paper: null, news: false, img: false, cut: false };
+    G = { key, sl: null, slTop: null, forum: null, video: null, paper: null, news: false, img: false, cut: false, old: new WeakSet(), mark: false };
   }
   for (const k of ["forum", "video", "paper", "sl"]) if (G[k] && !G[k].isConnected) G[k] = null; // degoog redrew the list
   const rows = [...list.querySelectorAll(".result-item")].filter((x) => x.style.display !== "none" || x.dataset.ctCap).map(info).filter(Boolean);
   const top = rows.find((r) => shown(r.el));
   if (!top) return;
+  // Endless scroll: what's already on screen never changes when the next page goes in (v90: the top result grew by
+  // a sitelink row and the boxes above took results from the new page, so everything under them jumped while you
+  // read further down). Painted = drawn in an earlier frame: those results stay as they are and painted boxes don't
+  // grow; a box that only the new page has enough for goes among the new page's results.
+  const painted = (x) => !!x && G.old.has(x);
+  if (!G.mark) {
+    G.mark = true;
+    requestAnimationFrame(() => { G.mark = false; if (G.key === key) for (const el of list.querySelectorAll(".result-item, .ct-grp, .ct-sl")) G.old.add(el); });
+  }
+  const late = rows.some((r) => painted(r.el));
 
   // Sitelinks: the top result's other pages from your results, under it (they leave the list, so no repeats)
   if (G.slTop !== top.el) { G.sl?.remove(); G.sl = null; G.slTop = top.el; }
-  if (SHOW.sl && !top.video && !top.forum) {
+  if (SHOW.sl && !top.video && !top.forum && !painted(G.sl || top.el)) {
     const base = top.href.split("#")[0];
     const same = rows.filter((r) => r !== top && r.h === top.h && !used(r.el) && !r.video && !r.forum && r.href.split("#")[0] !== base);
     const have = G.sl ? G.sl.children.length : 0;
@@ -3420,22 +3432,24 @@ const groups = () => {
     }
   }
   // 2+ of a kind become one box, placed where the first of them ranked (the top result always stays a normal
-  // result); up to 4 threads / 8 videos, joined by more as endless scroll loads them
+  // result); up to 4 threads / 8 videos, all from the page it was drawn with (later pages keep theirs, see painted)
   // extra: items from a search of that kind fetched for this page (no element; only when the box is first drawn,
   // so a box never grows after paint because of them)
   const box = (kind, test, max, build, title, tab, label, isRow, at, extra) => {
-    let c = rows.filter((r) => r !== top && test(r) && !used(r.el) && !r.el.dataset.ctUnrel);
     let s = G[kind];
+    if (painted(s)) return; // on screen already: never grows
+    let c = rows.filter((r) => r !== top && test(r) && !used(r.el) && !r.el.dataset.ctUnrel && !painted(r.el));
     if (!s && extra && extra.length) {
       const have = new Set(rows.map((r) => r.href.split("#")[0]));
       c = c.concat(extra.filter((r) => !have.has(r.href.split("#")[0]) && have.add(r.href.split("#")[0])));
     }
     if (!s && c.length < 2) return;
     if (!s) {
+      const first = c.find((r) => r.el && r.el.style.display !== "none") || c.find((r) => r.el);
+      if (late && !first) return; // nowhere to go below what's on screen
       s = G[kind] = section(`ct-${kind}`, title);
       if (isRow) { const [wrap, row] = scroller(); s.append(wrap); s.row = row; s.wrap = wrap; } else { s.row = mk("div", "ct-list"); s.append(s.row); }
-      const first = c.find((r) => r.el && r.el.style.display !== "none") || c.find((r) => r.el);
-      if (at && at.before) at.before.before(s); else if (at && at.after) endOf(at.after).after(s); else if (first) first.el.before(s); else top.el.after(s);
+      if (late) first.el.before(s); else if (at && at.before) at.before.before(s); else if (at && at.after) endOf(at.after).after(s); else if (first) first.el.before(s); else top.el.after(s);
       const m = moreBtn(label, tab); if (m) s.append(m);
     }
     const n = s.row.children.length;

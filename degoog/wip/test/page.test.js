@@ -875,5 +875,32 @@ test("page: News -> Web -> News again shows News's results (switching tabs fast 
   list.insertAdjacentHTML("beforeend", render(TPL, ctx(res[0], 9)));
   fire([list.lastElementChild]);
   expect(shown()).toBe(4);
+  // ...even when that rewrite names the search differently (v90: it started a new search and cleared what was above)
+  win.history.replaceState({ degoog: true, query: "kalimba ", type: "tab:engine:news", page: 1, loaded: 3 }, "", "/search?q=kalimba&type=news&loaded=3");
+  list.insertAdjacentHTML("beforeend", render(TPL, ctx(res[1], 10)));
+  fire([list.lastElementChild]);
+  expect(shown()).toBe(4);
+  expect(errors).toEqual([]);
+});
+
+test("page v90: endless scroll's next page never changes what's already on screen (sitelinks don't grow)", async () => {
+  const mkr = (h, p, t) => ({ title: t, url: `https://${h}/${p}`, snippet: `${t} for the rust programming language, with examples.`, sources: ["bing", "startpage"] });
+  const res = [mkr("doc.rust-lang.org", "book/ch01-00-getting-started.html", "Getting Started - The Rust Programming Language"),
+    mkr("doc.rust-lang.org", "book/ch04-01-what-is-ownership.html", "What is Ownership? - The Rust Programming Language"),
+    mkr("doc.rust-lang.org", "book/ch08-01-vectors.html", "Storing Lists of Values with Vectors - The Rust Programming Language"),
+    mkr("www.reddit.com", "r/rust/comments/abc/learning_rust_book/", "Learning the rust book in 2026 : r/rust"),
+    mkr("stackoverflow.com", "questions/123/rust-book-chapter", "Rust book chapter question - Stack Overflow")];
+  const { win, document, fire, errors } = await run("rust book", { res });
+  const list = document.getElementById("results-list");
+  const sl = () => document.querySelectorAll(".ct-sl .ct-sl-i").length;
+  const before = sl();
+  expect(before).toBe(2);
+  await new Promise((r) => win.requestAnimationFrame(() => r()));
+  await new Promise((r) => setTimeout(r, 5));
+  win.history.replaceState({ degoog: true, query: "rust book", type: "web", page: 1, loaded: 2 }, "", "/search?q=rust+book&loaded=2");
+  list.insertAdjacentHTML("beforeend", render(TPL, ctx(mkr("doc.rust-lang.org", "book/ch10-00-generics.html", "Generic Types, Traits, and Lifetimes - The Rust Programming Language"), 9)));
+  fire([list.lastElementChild]);
+  expect(sl()).toBe(before);
+  expect(list.lastElementChild.classList.contains("ct-grouped")).toBe(false);
   expect(errors).toEqual([]);
 });
