@@ -74,9 +74,11 @@ const fadeIn = (e) => { e.classList.add("ct-in"); e.addEventListener("animatione
 const tabsEdge = () => {
   const bar = document.getElementById("results-search-bar"), tabs = document.getElementById("results-tabs");
   if (!bar || !tabs) return;
-  const w = Math.round(bar.getBoundingClientRect().right - tabs.getBoundingClientRect().left + (parseFloat(getComputedStyle(tabs).paddingRight) || 0));
-  if (w > 200) tabs.style.setProperty("--ct-tabs-w", `${w}px`);
-  else tabs.style.removeProperty("--ct-tabs-w");
+  // as right padding, not a max-width: centered mode pins the row's width (max-width !important), and the divider
+  // stays edge to edge either way
+  const pr = Math.round(tabs.getBoundingClientRect().right - bar.getBoundingClientRect().right);
+  if (pr >= 0 && bar.getBoundingClientRect().width > 200) tabs.style.setProperty("--ct-tabs-pr", `${pr}px`);
+  else tabs.style.removeProperty("--ct-tabs-pr");
   if (!tabsEdge.ro && window.ResizeObserver) { tabsEdge.ro = new ResizeObserver(() => requestAnimationFrame(tabsEdge)); tabsEdge.ro.observe(bar); tabsEdge.ro.observe(tabs); }
 };
 const lineUp = () => {
