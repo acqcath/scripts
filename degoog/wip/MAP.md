@@ -253,80 +253,80 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - `fadeIn` :72
   - `favOf` :76
   - `tabsEdge` :77
-  - `lineUp` :91
-  - `searchId` :106
-  - `sameSearch` :107
-  - `curQ` :110
-  - `shaped` :111
-  - `nameLike` :120
-  - `stripTail` :121
-  - `cleanTitle` :132
-  - `readQuery` :180
-  - `junk` :192
-- **List pass (Web tab): dedupe -> site prefs -> 2 per site with folds, planned by core.js before paint** :200
-  - `PSL` :204
-  - `saveSites` :211
-  - `takeSites` :217
-  - `sitePrefs` :227
-  - `tabPass` :234
-  - `relPass` :268
-  - `listPass` :320
-  - `foldPass` :373
-  - `canHD` :398
-  - `sizeHint` :410
-  - `lowres` :418
-  - `hdImg` :419
-  - `picKey` :468
-  - `hang` :480
-  - `row` :491
-  - `aiImg` :559
-- **Image AI (ct-vision on the PC's GPU, through this plugin's server)** :563
-  - `origOf` :567
-  - `VISON` :569
-  - `visThr` :571
-  - `visAsk` :577
-  - `visQueue` :582
-  - `visFlush` :592
-  - `visKey` :601
-  - `visRow` :603
-  - `visApply` :608
-  - `mediaRel` :627
-  - `mediaFold` :642
-  - `mediaFoldAdd` :649
-  - `previewPass` :690
-  - `relatedStrip` :704
-  - `relOk` :751
-  - `card` :752
-  - `handle` :772
-  - `scan` :781
-  - `bangFor` :805
-  - `markDrawn` :826
-  - `glance` :827
-  - `ask` :860
-  - `ready` :865
-  - `earlyStart` :867
-  - `nearWord` :944
-  - `lower` :955
-  - `extras` :957
-- **Site choices, People also ask, and search Tools** :1064
-  - `goTo` :1065
-  - `rowHost` :1071
-- **Sites: Prefer / Normal / Lower / Hide, one rounded group in each result's menu (replaces Rank / Block)** :1072
-  - `siteOf` :1077
-  - `siteItems` :1078
-  - `settingsFetch` :1130
-  - `saveSite` :1138
-  - `paaAnchor` :1189
-  - `paa` :1192
-  - `advParse` :1320
-  - `tools` :1332
-  - `flagTop` :1389
-  - `flagCtx` :1404
-  - `curType` :1429
-  - `flagBox` :1430
-  - `flagPlace` :1507
-  - `flagBtn` :1514
-  - `topGap` :1531
+  - `lineUp` :87
+  - `searchId` :102
+  - `sameSearch` :103
+  - `curQ` :106
+  - `shaped` :107
+  - `nameLike` :116
+  - `stripTail` :117
+  - `cleanTitle` :128
+  - `readQuery` :176
+  - `junk` :188
+- **List pass (Web tab): dedupe -> site prefs -> 2 per site with folds, planned by core.js before paint** :196
+  - `PSL` :200
+  - `saveSites` :207
+  - `takeSites` :213
+  - `sitePrefs` :223
+  - `tabPass` :230
+  - `relPass` :264
+  - `listPass` :316
+  - `foldPass` :369
+  - `canHD` :394
+  - `sizeHint` :406
+  - `lowres` :414
+  - `hdImg` :415
+  - `picKey` :464
+  - `hang` :476
+  - `row` :487
+  - `aiImg` :555
+- **Image AI (ct-vision on the PC's GPU, through this plugin's server)** :559
+  - `origOf` :563
+  - `VISON` :565
+  - `visThr` :567
+  - `visAsk` :573
+  - `visQueue` :578
+  - `visFlush` :588
+  - `visKey` :597
+  - `visRow` :599
+  - `visApply` :604
+  - `mediaRel` :623
+  - `mediaFold` :638
+  - `mediaFoldAdd` :645
+  - `previewPass` :686
+  - `relatedStrip` :700
+  - `relOk` :747
+  - `card` :748
+  - `handle` :768
+  - `scan` :777
+  - `bangFor` :801
+  - `markDrawn` :822
+  - `glance` :823
+  - `ask` :856
+  - `ready` :861
+  - `earlyStart` :863
+  - `nearWord` :940
+  - `lower` :951
+  - `extras` :953
+- **Site choices, People also ask, and search Tools** :1060
+  - `goTo` :1061
+  - `rowHost` :1067
+- **Sites: Prefer / Normal / Lower / Hide, one rounded group in each result's menu (replaces Rank / Block)** :1068
+  - `siteOf` :1073
+  - `siteItems` :1074
+  - `settingsFetch` :1126
+  - `saveSite` :1134
+  - `paaAnchor` :1185
+  - `paa` :1188
+  - `advParse` :1316
+  - `tools` :1328
+  - `flagTop` :1386
+  - `flagCtx` :1401
+  - `curType` :1426
+  - `flagBox` :1427
+  - `flagPlace` :1504
+  - `flagBtn` :1511
+  - `topGap` :1528
   - `skel` :1555
   - `noUsage` :1566
 - **Sitelinks, Discussions and forums, Videos, Top stories** :1575
@@ -570,7 +570,7 @@ Every section, function and route in degoog/wip/files with its line. Read the li
 
 ## setcss.js (12 lines)
 
-## custom.css (904 lines)
+## custom.css (898 lines)
 - Catppuccin Mocha colors :1
 - DESCRIPTION SIZE :22
 - v50 :24
@@ -630,34 +630,33 @@ Every section, function and route in degoog/wip/files with its line. Read the li
 - Sitelinks :593
 - Narrow windows with a mouse :601
 - Tools :616
-- Tools lives with the search it changes :617
-- ⚑ Flag :629
-- Phone (touch) :659
-- ===== Answer card (local answers) :675
-- Featured snippet :689
-- ===== AI summary spot :700
-- The panel over the 3 lines :713
-- Opened with ⌄ (your tap) :721
-- CMU card details :729
-- Sports card :736
-- Knowledge panel (spec 3) :753
-- Wide screens :773
-- Same-shape results (spec 8) :787
-- "Only reddit :789
-- "Open archived copy" :792
-- Images row (spec 12) :796
-- Quick view :804
-- Meaning line :817
-- Site icons are back (user, 2026-11-23) :824
-- Menu lines are tap targets :827
-- ===== Vertical rhythm (one scale, by how things belong together) ===== :830
-- Line breaks that read well, for every piece of text :843
-- Phones :851
-- Image/video preview :857
-- Image AI :861
-- ===== M4 :865
-- CJK opening bracket first in a title or snippet :892
-- Product panel (M6) :895
+- ⚑ Flag :623
+- Phone (touch) :653
+- ===== Answer card (local answers) :669
+- Featured snippet :683
+- ===== AI summary spot :694
+- The panel over the 3 lines :707
+- Opened with ⌄ (your tap) :715
+- CMU card details :723
+- Sports card :730
+- Knowledge panel (spec 3) :747
+- Wide screens :767
+- Same-shape results (spec 8) :781
+- "Only reddit :783
+- "Open archived copy" :786
+- Images row (spec 12) :790
+- Quick view :798
+- Meaning line :811
+- Site icons are back (user, 2026-11-23) :818
+- Menu lines are tap targets :821
+- ===== Vertical rhythm (one scale, by how things belong together) ===== :824
+- Line breaks that read well, for every piece of text :837
+- Phones :845
+- Image/video preview :851
+- Image AI :855
+- ===== M4 :859
+- CJK opening bracket first in a title or snippet :886
+- Product panel (M6) :889
 
 ## other
 - ../autoupdate-job.ps1: the PC's hourly update job (Issue() puts update problems on the server for ⚑ Report)

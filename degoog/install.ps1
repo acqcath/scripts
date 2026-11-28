@@ -2363,8 +2363,8 @@ export default {
 };
 '@)
 [IO.File]::WriteAllText("$t\script.js", @'
-// clean-titles v80
-const CT_VER = "v80";
+// clean-titles v82
+const CT_VER = "v82";
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -3929,10 +3929,6 @@ const tabsEdge = () => {
   const pr = Math.round(tabs.getBoundingClientRect().right - bar.getBoundingClientRect().right);
   if (pr >= 0 && bar.getBoundingClientRect().width > 200) tabs.style.setProperty("--ct-tabs-pr", `${pr}px`);
   else tabs.style.removeProperty("--ct-tabs-pr");
-  // Tools sits at the bar's right edge whenever the tabs leave room (any width); only when the row has to scroll does
-  // it follow the last tab, behind a thin divider (measured, not a screen-size rule)
-  const t = document.getElementById("ct-tools");
-  if (t) { tabs.classList.remove("ct-tight"); if (t.offsetLeft - (t.previousElementSibling ? t.previousElementSibling.offsetLeft + t.previousElementSibling.offsetWidth : 0) < 8 || tabs.scrollWidth > tabs.clientWidth + 1) tabs.classList.add("ct-tight"); }
   if (!tabsEdge.ro && window.ResizeObserver) { tabsEdge.ro = new ResizeObserver(() => requestAnimationFrame(tabsEdge)); tabsEdge.ro.observe(bar); tabsEdge.ro.observe(tabs); }
 };
 const lineUp = () => {
@@ -5188,7 +5184,7 @@ const tools = () => {
   tabsEdge();
   t.addEventListener("click", () => {
     let f = document.getElementById("ct-adv");
-    if (f) { f.remove(); t.setAttribute("aria-expanded", "false"); return; }
+    if (f) { f.remove(); t.setAttribute("aria-expanded", "false"); topGap(); return; }
     t.setAttribute("aria-expanded", "true");
     let q = "";
     try { q = new URL(location.href).searchParams.get("q") || ""; } catch {}
@@ -5225,6 +5221,7 @@ const tools = () => {
       if (nq) location.href = goTo(nq);
     });
     tabs.after(f);
+    topGap();
     if (!TOUCH.matches) f.elements.all.focus();
   });
 };
@@ -5394,7 +5391,10 @@ const topGap = () => {
   if (top === Infinity) return;
   const cur = parseFloat(lay.style.getPropertyValue("--ct-top")) || 0;
   const want = TOUCH.matches ? 12 : 16;
-  const next = Math.round(cur + want - (top - tabs.getBoundingClientRect().bottom));
+  // measured from whatever sits right above the results: the tab row, or the open Tools fields under it (measuring from
+  // the tabs alone pulled the results up under the open fields)
+  const adv = document.getElementById("ct-adv"), above = Math.max(tabs.getBoundingClientRect().bottom, adv ? adv.getBoundingClientRect().bottom : 0);
+  const next = Math.round(cur + want - (top - above));
   if (Math.abs(next - cur) >= 1) lay.style.setProperty("--ct-top", `${next}px`);
 };
 
@@ -7240,16 +7240,10 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 }
 
 /* Tools: a small link beside the tabs, opening Google-style advanced search fields */
-/* Tools lives with the search it changes: on wider screens the tab row ends where the search bar ends, and Tools
-   sits at that edge, right under the bar's ✕ and → (one column: logo, bar, tabs, results), on every screen size.
-   Only when the tabs fill the row (script.js tabsEdge adds .ct-tight) does it follow the last tab behind a thin divider. Same size and baseline as the tabs. */
-#ct-tools { position: relative; align-self: stretch; display: flex; align-items: center; background: none; border: 0; border-bottom: 3px solid transparent; padding: 0 14px; margin-left: auto !important; font: inherit; font-size: .8125rem; color: var(--text-secondary); cursor: pointer; flex: none; }
-#results-tabs.ct-tight #ct-tools { margin-left: 4px !important; padding: 0 12px 0 16px; }
-#ct-tools::before { display: none; }
-#results-tabs.ct-tight #ct-tools::before { display: block; content: ""; position: absolute; left: 0; top: 50%; height: 16px; margin-top: -8px; width: 1px; background: var(--border-light); }
-@media (min-width: 768px) {
-  #results-tabs:has(#ct-tools) { padding-right: var(--ct-tabs-pr, 0px) !important; }
-}
+/* Tools follows the last tab (Science) behind a thin divider, on every screen size, inside the scrolling tab row.
+   Same size and baseline as the tabs. Its fields open under the tab row; script.js topGap keeps the results below them. */
+#ct-tools { position: relative; align-self: stretch; display: flex; align-items: center; background: none; border: 0; border-bottom: 3px solid transparent; padding: 0 12px 0 16px; margin-left: 4px; font: inherit; font-size: .8125rem; color: var(--text-secondary); cursor: pointer; flex: none; }
+#ct-tools::before { content: ""; position: absolute; left: 0; top: 50%; height: 16px; margin-top: -8px; width: 1px; background: var(--border-light); }
 #ct-tools:hover { color: var(--text-primary); }
 #ct-tools[aria-expanded="true"] { color: var(--text-primary); }
 /* ⚑ Flag: just before the settings gear, the same round button (PC: in the header row; phone: pinned just left of the
@@ -7933,7 +7927,7 @@ $null = docker exec $c sh -c 'for i in $(seq 1 40); do curl -fs -o /dev/null htt
 $ctT['ready'] = $ctSw.Elapsed.TotalSeconds
 
 $ss = docker exec $c cat /app/data/server-settings.json | Out-String | ConvertFrom-Json
-"plugin code inside the page (should be v80): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
+"plugin code inside the page (should be v82): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
 "page files (should be a ct and a psl file): " + (docker exec $c sh -c 'ls /app/src/public/ct/')
 "progressive results off (should be False): $($ss.settings.streamingEnabled -eq $true)"
 "typo fixer word list (should be about 82800): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/words.txt')

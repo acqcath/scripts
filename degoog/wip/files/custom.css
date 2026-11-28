@@ -614,16 +614,10 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 }
 
 /* Tools: a small link beside the tabs, opening Google-style advanced search fields */
-/* Tools lives with the search it changes: on wider screens the tab row ends where the search bar ends, and Tools
-   sits at that edge, right under the bar's ✕ and → (one column: logo, bar, tabs, results), on every screen size.
-   Only when the tabs fill the row (script.js tabsEdge adds .ct-tight) does it follow the last tab behind a thin divider. Same size and baseline as the tabs. */
-#ct-tools { position: relative; align-self: stretch; display: flex; align-items: center; background: none; border: 0; border-bottom: 3px solid transparent; padding: 0 14px; margin-left: auto !important; font: inherit; font-size: .8125rem; color: var(--text-secondary); cursor: pointer; flex: none; }
-#results-tabs.ct-tight #ct-tools { margin-left: 4px !important; padding: 0 12px 0 16px; }
-#ct-tools::before { display: none; }
-#results-tabs.ct-tight #ct-tools::before { display: block; content: ""; position: absolute; left: 0; top: 50%; height: 16px; margin-top: -8px; width: 1px; background: var(--border-light); }
-@media (min-width: 768px) {
-  #results-tabs:has(#ct-tools) { padding-right: var(--ct-tabs-pr, 0px) !important; }
-}
+/* Tools follows the last tab (Science) behind a thin divider, on every screen size, inside the scrolling tab row.
+   Same size and baseline as the tabs. Its fields open under the tab row; script.js topGap keeps the results below them. */
+#ct-tools { position: relative; align-self: stretch; display: flex; align-items: center; background: none; border: 0; border-bottom: 3px solid transparent; padding: 0 12px 0 16px; margin-left: 4px; font: inherit; font-size: .8125rem; color: var(--text-secondary); cursor: pointer; flex: none; }
+#ct-tools::before { content: ""; position: absolute; left: 0; top: 50%; height: 16px; margin-top: -8px; width: 1px; background: var(--border-light); }
 #ct-tools:hover { color: var(--text-primary); }
 #ct-tools[aria-expanded="true"] { color: var(--text-primary); }
 /* ⚑ Flag: just before the settings gear, the same round button (PC: in the header row; phone: pinned just left of the
