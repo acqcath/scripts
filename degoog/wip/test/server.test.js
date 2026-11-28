@@ -653,3 +653,21 @@ test("M5: a same-need search right after leaves the first unsolved; a next quest
   expect(learnOpen("g", "nonsense")).toBe(false);
   _learnReset();
 });
+
+// M6 product panel: one page's Product JSON-LD, and pages merged (maker page leads, price range across sellers)
+import { productFrom, productMerge } from "../files/index.js";
+test("product: JSON-LD read and merged across pages", () => {
+  const ld = (o) => `<html><head><script type="application/ld+json">${JSON.stringify(o)}</script></head></html>`;
+  const maker = productFrom(ld({ "@type": "Product", name: "DBR10 Powered Speaker", brand: { "@type": "Brand", name: "Yamaha" }, image: "https://usa.yamaha.com/dbr10.jpg", releaseDate: "2016-01-21", additionalProperty: [{ name: "Power", value: "700", unitText: "W" }, { name: "Woofer", value: "10 in" }] }), "https://usa.yamaha.com/products/dbr10");
+  const shop = productFrom(ld({ "@context": "https://schema.org", "@graph": [{ "@type": "Product", name: "Yamaha DBR10 10\" Powered Speaker", brand: "Yamaha", offers: { "@type": "AggregateOffer", lowPrice: "299.99", highPrice: "349.99", priceCurrency: "USD" }, aggregateRating: { ratingValue: 4.7, reviewCount: 312 } }] }), "https://www.sweetwater.com/dbr10");
+  const other = productFrom(ld({ "@type": "Product", name: "DXR12 mkII", brand: "Yamaha", offers: { price: 899, priceCurrency: "USD" } }), "https://shop.com/dxr12");
+  expect(productFrom("<html><p>no product</p></html>")).toBeNull();
+  const p = productMerge([shop, maker, other], [0.9, 0.8, 0.2]);
+  expect(p.name).toBe("DBR10 Powered Speaker"); // maker page leads
+  expect(p.img).toBe("https://usa.yamaha.com/dbr10.jpg");
+  expect(p.price).toEqual({ lo: 299.99, hi: 349.99, cur: "USD", sellers: 1 });
+  expect(p.rating.n).toBe(312);
+  expect(p.rel).toMatch(/2016/);
+  expect(p.specs[0]).toEqual(["Power", "700 W"]);
+  expect(p.from).not.toContain("shop.com"); // a different product stays out
+});

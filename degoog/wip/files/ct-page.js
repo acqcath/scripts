@@ -1,5 +1,5 @@
-// clean-titles v69
-const CT_VER = "v69";
+// clean-titles v70
+const CT_VER = "v70";
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -646,6 +646,9 @@ const shapePick = (n) => {
 // A question-style search: a direct answer rated at least as needed as doing or knowing in general
 const questionStyle = (n) => { const x = n && n.n; return !!x && typeof x.question === "number" && x.question >= Math.max(+x.doing || 0, +x.knowing || 0); };
 
+
+// Product panel (M6): worth drawing only with something a plain result doesn't show (price, rating, release, specs)
+const prodShow = (p) => !!(p && p.name && (p.price || p.rating || p.rel || (p.specs && p.specs.length >= 2)));
 
 // ===== Answer card, local part (no network): math, units incl. cooking, tip / percent, date math, patterns =====
 // answer(q, now) -> null, or { kind, label, value | title + href, detail, copy, swatch? }. Pure: the page draws it in
@@ -1475,7 +1478,7 @@ const qaAbout = (question, text) => {
   return n >= (ws.length >= 3 ? 2 : 1);
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, navName, navDist, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, copyKey, sameCopy, jaccard, varietyOrder, VARIETY_MARGIN, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, relCore, related, topicOf, tidyTitle, FLAG_CATS, flagCats, flagCtxClean, flagPrompt, fmtShares, boxWorth, boxAt, cutMedian, blockGo, blockShare, shapePick, questionStyle, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippetAI, featuredSnippet, QA_LEAD, qaAbout };
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, navName, navDist, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, copyKey, sameCopy, jaccard, varietyOrder, VARIETY_MARGIN, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, relCore, related, topicOf, tidyTitle, FLAG_CATS, flagCats, flagCtxClean, flagPrompt, fmtShares, boxWorth, boxAt, cutMedian, blockGo, blockShare, shapePick, questionStyle, prodShow, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippetAI, featuredSnippet, QA_LEAD, qaAbout };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -3890,6 +3893,74 @@ const kpPass = () => {
   if (fitRO) fitRO.observe(card);
 };
 
+// Product panel (M6): asked once the results are on the page, when the needs call says a product panel is worth more
+// than the first-screen cutoff (core blockGo, the same rule as the other blocks). The server reads the top results'
+// pages. Wide screens: the right column (under the info panel when there is one), so it moves nothing. Phones: it
+// arrives after the results are on screen, so it goes in at the first result below the screen (moves nothing seen).
+const PD = { key: "", asked: false, d: null, done: false };
+const money = (n, cur) => { try { return new Intl.NumberFormat("en-US", { style: "currency", currency: cur, maximumFractionDigits: n >= 100 ? 0 : 2 }).format(n); } catch { return `${n} ${cur}`; } };
+const prodCard = (p, wide) => {
+  const box = mk("aside", `ct-prod${wide ? " ct-prod-wide" : ""}`);
+  box.setAttribute("aria-label", `Product: ${p.name}`);
+  if (p.img) {
+    const ph = mk("div", "ct-prod-photo");
+    const im = new Image(); im.alt = ""; im.decoding = "async"; im.referrerPolicy = "no-referrer";
+    im.onload = () => im.classList.add("ct-on"); im.onerror = () => ph.remove();
+    im.src = p.img; ph.append(im); box.append(ph);
+  }
+  const head = mk("div", "ct-kp-head");
+  const name = mk("a", "ct-kp-name", p.name); if (/^https?:\/\//.test(p.url)) { name.href = p.url; name.rel = "noopener"; }
+  head.append(name);
+  if (p.brand) head.append(mk("div", "ct-kp-type", p.brand));
+  box.append(head);
+  const facts = mk("dl", "ct-kp-facts");
+  const f = (k, v) => { if (!v) return; const r = mk("div", "ct-kp-f"); r.append(mk("dt", "", k), mk("dd", "", v)); facts.append(r); };
+  if (p.price) f("Price", `${money(p.price.lo, p.price.cur)}${p.price.hi > p.price.lo ? ` – ${money(p.price.hi, p.price.cur)}` : ""}${p.price.sellers > 1 ? ` (${p.price.sellers} sellers)` : ""}`);
+  if (p.rating) f("Rating", `${p.rating.v.toFixed(1)} ★${p.rating.n ? ` (${p.rating.n.toLocaleString("en-US")})` : ""}`);
+  f("Released", p.rel);
+  for (const [k, v] of p.specs || []) f(k, v);
+  box.append(facts);
+  if (p.from && p.from.length) box.append(mk("div", "ct-kp-src", `From ${[...new Set(p.from)].slice(0, 4).join(" · ")}`));
+  return box;
+};
+const productPass = () => {
+  const key = searchId(location.href), list = document.getElementById("results-list");
+  if (PD.key !== key) { Object.assign(PD, { key, asked: false, d: null, done: false }); document.querySelectorAll(".ct-prod").forEach((x) => x.remove()); }
+  if (!webTab || SHOW.kp === false || PD.done || !list) return;
+  if (!PD.asked) {
+    const nd = ready("needs", key);
+    if (nd === undefined || !list.querySelector(".result-item")) return;
+    PD.asked = true;
+    let pg = 1; try { pg = Number(new URL(key).searchParams.get("page") || 1); } catch {}
+    const share = nd ? CT.blockShare(CT.fmtShares(nd.f), nd.b, "product") : null;
+    if (pg > 1 || !CT.blockGo(share, nd && nd.cut)) { PD.done = true; return; }
+    const rs = topRes(6);
+    bridge("product", { q: curQ(), u: rs.map((r) => r.u).join("|") }).then((j) => {
+      if (PD.key !== key) return;
+      PD.d = CT.prodShow(j && j.v) ? j.v : null;
+      if (!PD.d) PD.done = true; else safe("prod", productPass);
+    }, () => { PD.done = true; });
+    return;
+  }
+  if (!PD.d) return;
+  const wide = !!(window.matchMedia && matchMedia(KP_WIDE).matches);
+  if (wide) {
+    PD.done = true;
+    const kp = [...list.children].find((x) => x.classList.contains("ct-kp-wide"));
+    if (kp) { kp.append(prodCard(PD.d, true)); return; }
+    const col = mk("aside", "ct-kp ct-kp-wide ct-prod-col");
+    col.append(prodCard(PD.d, true));
+    list.prepend(col);
+    return;
+  }
+  const v = [...list.querySelectorAll(".result-item")].filter((el) => el.style.display !== "none" && !el.classList.contains("ct-grouped"));
+  const below = v.find((el) => el.getBoundingClientRect().top >= innerHeight);
+  if (!below) return; // wait for endless scroll to put a result below the screen
+  PD.done = true;
+  below.before(prodCard(PD.d, false));
+};
+addEventListener("scroll", () => { if (PD.d && !PD.done) safe("prod", productPass); }, { passive: true });
+
 // Tab row: degoog redraws its tabs when the page comes back into view (and when extensions are saved) and can leave a
 // copy of a tab, no active tab or the wrong one. One tab per kind, exactly one underlined (the one you're on), and
 // Tools then ⚑ last, after every redraw.
@@ -3958,7 +4029,7 @@ const init = () => {
   safe("scan", () => scan(document.body));
   safe("skeleton", () => skel(document.body));
   safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("flag", flagBtn); safe("tabkeep", tabKeep);
-  safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass); safe("sides", sidesPass);
+  safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass); safe("sides", sidesPass); safe("prod", productPass);
   safe("drawn", markDrawn);
   // Runs right after degoog inserts results and before the screen updates; only looks inside what was added
   new MutationObserver((muts) => {
@@ -3970,7 +4041,7 @@ const init = () => {
     safe("rel", relPass);
     for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { safe("scan", () => scan(n)); safe("skeleton", () => skel(n)); safe("usage", () => noUsage(n)); }
     safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("flag", flagBtn); safe("tabkeep", tabKeep); safe("card", glance);
-    safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass); safe("preview", previewPass); safe("sides", sidesPass);
+    safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass); safe("preview", previewPass); safe("sides", sidesPass); safe("prod", productPass);
     safe("drawn", markDrawn);
     safe("ai", () => { const g = document.getElementById("at-a-glance"); if (g) aiPass(g, searchId(location.href)); });
   }).observe(document.body, { childList: true, subtree: true });

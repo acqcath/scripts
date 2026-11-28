@@ -66,6 +66,15 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
     const cof = [["Coffee linked to lower heart disease risk", "A large cohort study found 2-3 cups a day was linked to lower risk of heart disease and death."], ["Coffee raises blood pressure", "Caffeine raises blood pressure for hours; researchers advise people with hypertension to limit coffee."]].map(([t, s], i) => ({ t, s, u: `https://news${i}.org/coffee` }));
     const sd = await bridge("sides", {}, JSON.stringify({ q: "is coffee bad for your heart", r: cof })), d = sd.j && sd.j.d;
     row("Contested check (ai-summary's model)", !sd.j ? false : !d ? "SKIP" : typeof d.split === "boolean", d ? `split: ${d.split}, ${sd.ms} ms` : "no answer (ai-summary's model off or busy)");
+    // Product panel (M6): the needs call's product fit for a product search, then the panel from its live top results
+    try {
+      const pq = "yamaha dbr10";
+      const nd = await bridge("needs", { q: pq }), nb = nd.j && nd.j.n && nd.j.n.b;
+      const sr = await (await fetch(`http://127.0.0.1:${PORT}/api/search?q=${encodeURIComponent(pq)}`, { signal: AbortSignal.timeout(20000) })).json();
+      const us = (sr.results || []).slice(0, 6).map((r) => r.url).filter(Boolean);
+      const pr = await bridge("product", { q: pq, u: us.join("|") }), pv = pr.j && pr.j.v;
+      row("Product panel", pv ? true : "INFO", `${nb ? `fit ${Number(nb.product).toFixed(2)} vs web ${Number(nb.web).toFixed(2)}; ` : ""}${pv ? `${pv.name}${pv.price ? `, ${pv.price.lo}-${pv.price.hi} ${pv.price.cur}` : ""}${pv.rel ? `, released ${pv.rel}` : ""}, from ${pv.from.join(" ")}, ${pr.ms} ms` : `no product data on the top ${us.length} pages (${pr.ms} ms)`}`);
+    } catch (e) { row("Product panel", "INFO", `could not run: ${String(e && e.message || e).slice(0, 60)}`); }
     const sp = await bridge("speed", {}), v = sp.j || {};
     row("Search time added by clean-titles", !!sp.j, v.n ? `median ${v.hook} ms over ${v.n} searches; reranker ${v.rank ?? "-"} ms (GPU ${v.gpu ?? "-"}, queued ${v.queue ?? "-"}), wait ${v.wait} ms` : "no searches yet");
     const se = await bridge("seen", { q: "", k: "web" });

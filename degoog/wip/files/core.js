@@ -643,3 +643,6 @@ export const shapePick = (n) => {
 // A question-style search: a direct answer rated at least as needed as doing or knowing in general
 export const questionStyle = (n) => { const x = n && n.n; return !!x && typeof x.question === "number" && x.question >= Math.max(+x.doing || 0, +x.knowing || 0); };
 
+
+// Product panel (M6): worth drawing only with something a plain result doesn't show (price, rating, release, specs)
+export const prodShow = (p) => !!(p && p.name && (p.price || p.rating || p.rel || (p.specs && p.specs.length >= 2)));

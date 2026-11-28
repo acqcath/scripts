@@ -2,7 +2,7 @@
 
 Every section, function and route in degoog/wip/files with its line. Read the lines you need (`sed -n A,Bp file`), not whole files.
 
-## index.js (2244 lines)
+## index.js (2357 lines)
   - `braveOriginal` :13
   - `upgrade` :33
 - **Typo fixing and related searches, without Google** :57
@@ -84,159 +84,169 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - `privateIp` :781
   - `publicUrl` :782
   - `qvFor` :792
-  - `starLine` :813
-  - `qvDomains` :820
-  - `qvBlocked` :821
-  - `qvCount` :823
-  - `starsFor` :829
-- **Sports (ESPN's public site API): a team's live, last or next game** :843
-  - `normT` :849
-  - `espnTeams` :850
-  - `teamsList` :855
-  - `teamFor` :863
-  - `scoreOf` :871
-  - `espnGame` :873
-  - `pickGame` :882
-  - `sportsFor` :892
-- **Will ai-summary answer? (so the page reserves its spot only when the summary is sure to come)** :914
-  - `aiStatus` :917
-- **Anti-SEO auto-Lower** :927
-  - `autoFile` :935
-  - `readAuto` :937
-  - `autoList` :938
-  - `seoReport` :940
-  - `fit` :980
-  - `isFunc` :983
-  - `funcOk` :984
-  - `trendLoad` :993
-  - `trendWords` :994
-  - `trendRefresh` :1002
-  - `trendSchedule` :1018
-  - `isName` :1019
-  - `EMPTY` :1024
-  - `readLearned` :1025
-  - `norm` :1029
-  - `toks` :1030
-  - `save` :1031
-  - `hasFile` :1049
-  - `ensureData` :1051
-  - `load` :1064
-  - `learn` :1089
-  - `keep` :1105
-  - `accept` :1107
-  - `dist` :1121
-  - `bingBackoff` :1137
-  - `suggestions` :1138
-  - `skip` :1168
-  - `bingFix` :1171
-  - `edits` :1201
-  - `slip` :1218
-  - `localFix` :1228
-  - `sk` :1328
-  - `soundAlike` :1333
-  - `broken` :1345
-  - `questions` :1346
-  - `check` :1373
-  - `check0` :1380
-  - `fixFor` :1406
-  - `vis` :1426
-  - `visDown` :1436
-  - `jsonOut` :1444
-  - `stripT` :1451
-  - `sentences` :1452
-  - `doiLoad` :1459
-  - `doiSave` :1460
-  - `doiNice` :1461
-  - `doiPrefixOf` :1468
-  - `doiAsk` :1469
-  - `doiNames` :1476
-- **⚑ Flags: "what's wrong with these results?" from the ⚑ in the tab row** :1485
-  - `flagsFile` :1489
-  - `readFlags` :1491
-  - `saveFlags` :1492
-  - `flagIssue` :1493
-  - `flagOpen` :1494
-  - `flagCats` :1498
-  - `flagCtxClean` :1500
-  - `flagPromptS` :1510
-  - `aiAsk` :1524
-  - `judgeParse` :1559
-  - `flagHost` :1564
-  - `flagJudge` :1566
-  - `judgeNow` :1577
-  - `flagCount` :1578
-  - `needsParse` :1599
-  - `cutFile` :1611
-  - `readCuts` :1613
-  - `cutAdd` :1614
-  - `cutNow` :1615
-  - `_cutReset` :1616
-- **Unsolved-search learning (M5): layout only, keyed by the needs profile, never sites or viewpoints** :1619
-  - `topOf` :1621
-  - `needsKey` :1622
-  - `learnFactors` :1627
-  - `nudgeNeeds` :1632
-  - `learnFile` :1649
-  - `learnLoad` :1651
-  - `learnSave` :1653
-  - `learnWindow` :1655
-  - `sameParse` :1659
-  - `credit` :1660
-  - `learnSearch` :1662
-  - `learnOpen` :1680
-  - `SHOW_LEARN` :1686
-  - `learnNudge` :1687
-  - `_learnReset` :1688
-  - `needsFor` :1689
-- **M4: the answer card's shape and the contested check, both written by ai-summary's model (aiAsk)** :1707
-  - `cell` :1717
-  - `shapeParse` :1718
-  - `sidesParse` :1737
-  - `resText` :1746
-  - `resIn` :1747
-  - `cached` :1749
-  - `shapeFor` :1750
-  - `sidesFor` :1754
-  - `speedAdd` :1768
-  - `median` :1769
-  - `rankWait` :1770
-  - `globalThis.__ctResults` :1771
-  - `ctResults` :1775
-  - `rankPart` :1785
-  - route `/flag` :1820
-  - route `/flags` :1838
-  - route `/vis` :1858
-  - route `/status` :1871
-  - route `/needs` :1885
-  - route `/seen` :1895
-  - route `/shape` :1901
-  - route `/sides` :1907
-  - route `/speed` :1913
-  - route `/cut` :1919
-  - route `/rank` :1925
-  - route `/near` :1936
-  - route `/fix` :1946
-  - route `/qs` :1966
-  - route `/relay` :1977
-  - route `/sites` :1997
-  - route `/why` :2015
-  - route `/wd` :2020
-  - route `/qv` :2029
-  - route `/qvs` :2037
-  - route `/arch` :2046
-  - route `/kp` :2054
-  - route `/sports` :2062
-  - route `/cmu` :2070
-  - route `/eol` :2078
-  - route `/aiimg` :2088
-  - route `/seo` :2098
-  - route `/prefs` :2108
-  - route `/perf` :2114
-  - route `/learn` :2130
-  - route `/yt` :2143
-  - route `/hd` :2153
+  - `ldNum` :813
+  - `metaTag` :814
+  - `ldImg` :815
+  - `ldOffers` :817
+  - `productFrom` :829
+  - `nameKey` :847
+  - `productMerge` :851
+  - `pageHtml` :876
+  - `productFor` :887
+  - `starLine` :915
+  - `qvDomains` :922
+  - `qvBlocked` :923
+  - `qvCount` :925
+  - `starsFor` :931
+- **Sports (ESPN's public site API): a team's live, last or next game** :945
+  - `normT` :951
+  - `espnTeams` :952
+  - `teamsList` :957
+  - `teamFor` :965
+  - `scoreOf` :973
+  - `espnGame` :975
+  - `pickGame` :984
+  - `sportsFor` :994
+- **Will ai-summary answer? (so the page reserves its spot only when the summary is sure to come)** :1016
+  - `aiStatus` :1019
+- **Anti-SEO auto-Lower** :1029
+  - `autoFile` :1037
+  - `readAuto` :1039
+  - `autoList` :1040
+  - `seoReport` :1042
+  - `fit` :1082
+  - `isFunc` :1085
+  - `funcOk` :1086
+  - `trendLoad` :1095
+  - `trendWords` :1096
+  - `trendRefresh` :1104
+  - `trendSchedule` :1120
+  - `isName` :1121
+  - `EMPTY` :1126
+  - `readLearned` :1127
+  - `norm` :1131
+  - `toks` :1132
+  - `save` :1133
+  - `hasFile` :1151
+  - `ensureData` :1153
+  - `load` :1166
+  - `learn` :1191
+  - `keep` :1207
+  - `accept` :1209
+  - `dist` :1223
+  - `bingBackoff` :1239
+  - `suggestions` :1240
+  - `skip` :1270
+  - `bingFix` :1273
+  - `edits` :1303
+  - `slip` :1320
+  - `localFix` :1330
+  - `sk` :1430
+  - `soundAlike` :1435
+  - `broken` :1447
+  - `questions` :1448
+  - `check` :1475
+  - `check0` :1482
+  - `fixFor` :1508
+  - `vis` :1528
+  - `visDown` :1538
+  - `jsonOut` :1546
+  - `stripT` :1553
+  - `sentences` :1554
+  - `doiLoad` :1561
+  - `doiSave` :1562
+  - `doiNice` :1563
+  - `doiPrefixOf` :1570
+  - `doiAsk` :1571
+  - `doiNames` :1578
+- **⚑ Flags: "what's wrong with these results?" from the ⚑ in the tab row** :1587
+  - `flagsFile` :1591
+  - `readFlags` :1593
+  - `saveFlags` :1594
+  - `flagIssue` :1595
+  - `flagOpen` :1596
+  - `flagCats` :1600
+  - `flagCtxClean` :1602
+  - `flagPromptS` :1612
+  - `aiAsk` :1626
+  - `judgeParse` :1661
+  - `flagHost` :1666
+  - `flagJudge` :1668
+  - `judgeNow` :1679
+  - `flagCount` :1680
+  - `needsParse` :1702
+  - `cutFile` :1714
+  - `readCuts` :1716
+  - `cutAdd` :1717
+  - `cutNow` :1718
+  - `_cutReset` :1719
+- **Unsolved-search learning (M5): layout only, keyed by the needs profile, never sites or viewpoints** :1722
+  - `topOf` :1724
+  - `needsKey` :1725
+  - `learnFactors` :1730
+  - `nudgeNeeds` :1735
+  - `learnFile` :1752
+  - `learnLoad` :1754
+  - `learnSave` :1756
+  - `learnWindow` :1758
+  - `sameParse` :1762
+  - `credit` :1763
+  - `learnSearch` :1765
+  - `learnOpen` :1783
+  - `SHOW_LEARN` :1789
+  - `learnNudge` :1790
+  - `_learnReset` :1791
+  - `needsFor` :1792
+- **M4: the answer card's shape and the contested check, both written by ai-summary's model (aiAsk)** :1810
+  - `cell` :1820
+  - `shapeParse` :1821
+  - `sidesParse` :1840
+  - `resText` :1849
+  - `resIn` :1850
+  - `cached` :1852
+  - `shapeFor` :1853
+  - `sidesFor` :1857
+  - `speedAdd` :1871
+  - `median` :1872
+  - `rankWait` :1873
+  - `globalThis.__ctResults` :1874
+  - `ctResults` :1878
+  - `rankPart` :1888
+  - route `/flag` :1923
+  - route `/flags` :1941
+  - route `/vis` :1961
+  - route `/status` :1974
+  - route `/needs` :1988
+  - route `/seen` :1998
+  - route `/shape` :2004
+  - route `/sides` :2010
+  - route `/speed` :2016
+  - route `/cut` :2022
+  - route `/rank` :2028
+  - route `/near` :2039
+  - route `/fix` :2049
+  - route `/qs` :2069
+  - route `/relay` :2080
+  - route `/sites` :2100
+  - route `/why` :2118
+  - route `/wd` :2123
+  - route `/product` :2132
+  - route `/qv` :2142
+  - route `/qvs` :2150
+  - route `/arch` :2159
+  - route `/kp` :2167
+  - route `/sports` :2175
+  - route `/cmu` :2183
+  - route `/eol` :2191
+  - route `/aiimg` :2201
+  - route `/seo` :2211
+  - route `/prefs` :2221
+  - route `/perf` :2227
+  - route `/learn` :2243
+  - route `/yt` :2256
+  - route `/hd` :2266
 
-## script.js (2545 lines)
+## script.js (2613 lines)
   - `bridge` :2
   - `aiKey` :21
   - `fadeIn` :72
@@ -364,14 +374,17 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - `kpWanted` :2339
   - `kpCard` :2345
   - `kpPass` :2388
-  - `tabKind` :2418
-  - `tabKeep` :2419
-  - `safe` :2443
-  - `tabRescue` :2448
-  - `init` :2463
-- **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :2501
+  - `money` :2419
+  - `prodCard` :2420
+  - `productPass` :2444
+  - `tabKind` :2486
+  - `tabKeep` :2487
+  - `safe` :2511
+  - `tabRescue` :2516
+  - `init` :2531
+- **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :2569
 
-## core.js (646 lines)
+## core.js (649 lines)
 - **Sites: registrable domain via the public suffix list** :4
   - `pslParse` :6
   - `regDomain` :27
@@ -459,6 +472,7 @@ Every section, function and route in degoog/wip/files with its line. Read the li
 - **M4: answer shape and contested check, from the needs call** :635
   - `shapePick` :637
   - `questionStyle` :644
+  - `prodShow` :648
 
 ## answers.js (828 lines)
 - **Answer card, local part (no network): math, units incl. cooking, tip / percent, date math, patterns** :1
@@ -530,7 +544,7 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - `qaStem` :820
   - `qaAbout` :821
 
-## ctcheck.js (239 lines)
+## ctcheck.js (248 lines)
   - `row` :8
   - `parse` :9
   - `bridge` :10
@@ -551,7 +565,7 @@ Every section, function and route in degoog/wip/files with its line. Read the li
 
 ## setcss.js (12 lines)
 
-## custom.css (892 lines)
+## custom.css (902 lines)
 - Catppuccin Mocha colors :1
 - DESCRIPTION SIZE :22
 - v50 :24
@@ -638,6 +652,7 @@ Every section, function and route in degoog/wip/files with its line. Read the li
 - Image AI :859
 - ===== M4 :863
 - CJK opening bracket first in a title or snippet :890
+- Product panel (M6) :893
 
 ## other
 - ../autoupdate-job.ps1: the PC's hourly update job (Issue() puts update problems on the server for ⚑ Report)
