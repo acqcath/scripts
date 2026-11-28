@@ -176,7 +176,7 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
   - `doiAsk` :49
   - `doiNames` :56
 
-## server/09-flags.js (123 lines)
+## server/09-flags.js (129 lines)
 - **⚑ Flags: "what's wrong with these results?" from the ⚑ in the tab row** :3
   - `flagsFile` :7
   - `installTiming` :9
@@ -186,15 +186,16 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
   - `flagOpen` :14
   - `flagCats` :18
   - `flagCtxClean` :21
-  - `flagPrompt` :34
-  - `aiAsk` :49
-  - `flagCount` :76
-- **Sending at once, "fixed" once, and what the PC's watcher sleeps on** :77
-  - `flagDue` :79
-  - `fixedNews` :82
-  - `pcWrite` :96
-  - `pcListen` :108
-  - `searchSeen` :118
+  - `flagSnapClean` :33
+  - `flagPrompt` :40
+  - `aiAsk` :55
+  - `flagCount` :82
+- **Sending at once, "fixed" once, and what the PC's watcher sleeps on** :83
+  - `flagDue` :85
+  - `fixedNews` :88
+  - `pcWrite` :102
+  - `pcListen` :114
+  - `searchSeen` :124
 
 ## server/10-needs.js (130 lines)
   - `needsParse` :22
@@ -357,15 +358,18 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
   - `advParse` :258
   - `tools` :270
 
-## page/06-flag.js (171 lines)
+## page/06-flag.js (229 lines)
   - `flagTop` :5
   - `flagCtx` :20
-  - `curType` :47
-  - `flagBox` :48
-  - `flagPlace` :129
-  - `flagBtn` :136
-- **"Fixed" note: the first time degoog is opened anywhere after a release fixed your report** :153
-  - `fixedNote` :156
+- **Layout snapshot: what the screen showed, as text, and anything that looks broken (any device)** :47
+  - `snapName` :58
+  - `snapTake` :63
+  - `curType` :103
+  - `flagBox` :104
+  - `flagPlace` :187
+  - `flagBtn` :194
+- **"Fixed" note: the first time degoog is opened anywhere after a release fixed your report** :211
+  - `fixedNote` :214
 
 ## page/07-layout.js (225 lines)
   - `topGap` :5

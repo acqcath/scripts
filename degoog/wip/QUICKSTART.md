@@ -1,7 +1,7 @@
 # clean-titles: quickstart (read this instead of all of HANDOFF.md; grep HANDOFF.md for details)
 
 ## Every degoog chat, first: Flags
-⚑ (degoog's tab row, every tab) saves reports on the server: the search, tab, chosen problem chips (core FLAG_CATS), optional note, context (viewport, load ms, visible blocks), top 10 results.
+⚑ (degoog's tab row, every tab) saves reports on the server: the search, tab, chosen problem chips (core FLAG_CATS), optional note, context (viewport, load ms, visible blocks), top 10 results. Plus two layout snapshots (v99, page/06 `snapTake`: box closed when ⚑ was tapped, box open at Save): every visible thing with place/size/text, the gap under the tabs, and `bugs` it detected (past the screen edge, text cut off, overlaps, failed pictures, placeholders left, focused box hidden by the keyboard), page errors and recent layout shifts. Read `bugs` first: the user expects the exact issue they saw to be found from it.
 The ⚑ shows nothing else (no count, no send link: the user asked). The PC's update job (../autoupdate-job.ps1
 `SendReports`) sends them into ONE standing cloud session with `claude -p --cloud <id> --output-format json` (prompt
 on stdin; `claude --cloud "<task>"` fails from a background job: "requires an interactive terminal"). The id lives in

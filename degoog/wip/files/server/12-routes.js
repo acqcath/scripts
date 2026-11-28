@@ -10,7 +10,7 @@ export const routes = [
       const q = String(b.q || "").trim().slice(0, 300);
       if (!q) return jsonOut({ n: flagCount() });
       const F = readFlags(), now = Date.now();
-      F.list.push({ id: now, t: now, q, type: String(b.type || "web").slice(0, 40), cats: flagCats(b.cats), note: String(b.note || "").trim().slice(0, 1000), ctx: flagCtxClean(b.ctx),
+      F.list.push({ id: now, t: now, q, type: String(b.type || "web").slice(0, 40), cats: flagCats(b.cats), note: String(b.note || "").trim().slice(0, 1000), ctx: flagCtxClean(b.ctx), snap: flagSnapClean(b.snap),
         top: (Array.isArray(b.top) ? b.top : []).slice(0, 10).map((r) => ({ ai: r && Number.isFinite(+r.ai) && r.ai !== null ? Math.max(0, Math.min(1, +r.ai)) : null, title: String((r && r.title) || "").slice(0, 200), url: String((r && r.url) || "").slice(0, 500), snippet: String((r && r.snippet) || "").slice(0, 300) })).filter((r) => /^https?:\/\//.test(r.url)) });
       if (F.list.length > 500) F.list = F.list.slice(-500);
       saveFlags(); pcWrite();

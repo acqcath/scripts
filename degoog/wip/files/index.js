@@ -1627,14 +1627,20 @@ export const flagCtxClean = (c) => {
   return { ver: String(c.ver || "").slice(0, 20), vw: num(c.vw, 10000), vh: num(c.vh, 10000), dpr: Number.isFinite(+c.dpr) ? Math.round(+c.dpr * 100) / 100 : null, phone: !!c.phone, load, boxes, passes, batches: num(c.batches, 1e6) };
 };
 
-// The prompt the PC job sends into the reports session (its link fits about 14,000 characters: snippets are dropped
-// first, then the oldest waiting flags; the newest flag always stays)
-export const flagPrompt = (flags, issue, max = 12000) => {
+// Layout snapshots from the page (box closed when ⚑ was tapped, box open at Save), clipped to sane sizes
+export const flagSnapClean = (a) => (Array.isArray(a) ? a : []).slice(0, 2).filter((x) => x && typeof x === "object").map((x) => {
+  const strs = (v, n, len) => (Array.isArray(v) ? v : []).slice(0, n).map((y) => String(y).slice(0, len));
+  return { state: String(x.state || "").slice(0, 10), view: String(x.view || "").slice(0, 120), ua: String(x.ua || "").slice(0, 160), gap: Number.isFinite(+x.gap) && x.gap !== null ? Math.round(+x.gap) : null,
+    bugs: strs(x.bugs, 30, 200), errors: strs(x.errors, 10, 200), shifts: strs(x.shifts, 8, 300), items: strs(x.items, 160, 140) };
+});
+// The prompt the PC job sends into the reports session (on stdin, kept under 60,000 characters: snippets and the
+// older reports' snapshot item lists are dropped first, then the oldest waiting flags; the newest flag always stays)
+export const flagPrompt = (flags, issue, max = 60000) => {
   const head = "degoog clean-titles: fix what my degoog reported. Read degoog/wip/QUICKSTART.md in acqcath/scripts first and follow its \"Flags\" steps: " +
     "fix the code so the searches below come out right, add tests, release and merge. " +
     "Put the id of every report the release fixes in degoog/wip/files/fixed.json (id: version), so my degoog tells me once it is in. " +
     "Keep my searches out of the public repo.\n";
-  const body = (fl, snip) => JSON.stringify({ flags: fl.map((f) => ({ id: f.id, at: new Date(f.t).toISOString(), q: f.q, tab: f.type, cats: f.cats || [], note: f.note, ctx: f.ctx || null, top: (f.top || []).map((r) => (snip ? { ai: r.ai ?? null, title: r.title, url: r.url, snippet: r.snippet } : { ai: r.ai ?? null, title: r.title, url: r.url })) })), updateIssue: issue || null });
+  const body = (fl, snip) => JSON.stringify({ flags: fl.map((f, i) => ({ snap: (f.snap || []).map((x) => (snip || i === fl.length - 1 ? x : { ...x, items: undefined })), id: f.id, at: new Date(f.t).toISOString(), q: f.q, tab: f.type, cats: f.cats || [], note: f.note, ctx: f.ctx || null, top: (f.top || []).map((r) => (snip ? { ai: r.ai ?? null, title: r.title, url: r.url, snippet: r.snippet } : { ai: r.ai ?? null, title: r.title, url: r.url })) })), updateIssue: issue || null });
   let fl = (flags || []).slice(-20);
   for (;;) {
     for (const snip of [true, false]) { const s = head + body(fl, snip); if (s.length <= max || fl.length <= 1) { if (s.length <= max || !snip) return s.slice(0, max); } }
@@ -1970,7 +1976,7 @@ export const routes = [
       const q = String(b.q || "").trim().slice(0, 300);
       if (!q) return jsonOut({ n: flagCount() });
       const F = readFlags(), now = Date.now();
-      F.list.push({ id: now, t: now, q, type: String(b.type || "web").slice(0, 40), cats: flagCats(b.cats), note: String(b.note || "").trim().slice(0, 1000), ctx: flagCtxClean(b.ctx),
+      F.list.push({ id: now, t: now, q, type: String(b.type || "web").slice(0, 40), cats: flagCats(b.cats), note: String(b.note || "").trim().slice(0, 1000), ctx: flagCtxClean(b.ctx), snap: flagSnapClean(b.snap),
         top: (Array.isArray(b.top) ? b.top : []).slice(0, 10).map((r) => ({ ai: r && Number.isFinite(+r.ai) && r.ai !== null ? Math.max(0, Math.min(1, +r.ai)) : null, title: String((r && r.title) || "").slice(0, 200), url: String((r && r.url) || "").slice(0, 500), snippet: String((r && r.snippet) || "").slice(0, 300) })).filter((r) => /^https?:\/\//.test(r.url)) });
       if (F.list.length > 500) F.list = F.list.slice(-500);
       saveFlags(); pcWrite();
