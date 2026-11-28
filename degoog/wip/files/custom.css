@@ -621,7 +621,7 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 #ct-tools:hover { color: var(--text-primary); }
 #ct-tools[aria-expanded="true"] { color: var(--text-primary); }
 /* ⚑ Flag: just before the settings gear, the same round button (PC: in the header row; phone: pinned just left of the
-   gear, placed by script.js flagPlace). Its box opens over the results under it. */
+   gear, placed by page/06-flag.js flagPlace, in the frame after it is added). Its box opens over the results under it. */
 #ct-flag { display: flex; align-items: center; justify-content: center; flex: none; box-sizing: border-box; height: 2.75rem; width: 2.75rem; margin: 0; padding: 0; border: 0; border-radius: 999px; background: none; font: inherit; font-size: 1.15rem; line-height: 1; color: var(--text-secondary); cursor: pointer; }
 #ct-flag:hover, #ct-flag[aria-expanded="true"] { background: var(--bg-hover); color: var(--text-primary); }
 @media (min-width: 768px) {

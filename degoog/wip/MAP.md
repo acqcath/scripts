@@ -289,24 +289,24 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
   - `readQuery` :185
   - `junk` :197
 
-## page/02-list.js (362 lines)
+## page/02-list.js (364 lines)
 - **List pass (Web tab): dedupe -> site prefs -> 2 per site with folds, planned by core.js before paint** :2
   - `PSL` :6
-  - `saveSites` :13
-  - `takeSites` :19
-  - `sitePrefs` :29
-  - `tabPass` :36
-  - `relPass` :70
-  - `listPass` :122
-  - `foldPass` :175
-  - `canHD` :200
-  - `sizeHint` :212
-  - `lowres` :220
-  - `hdImg` :221
-  - `picKey` :270
-  - `hang` :282
-  - `row` :293
-  - `aiImg` :361
+  - `saveSites` :15
+  - `takeSites` :21
+  - `sitePrefs` :31
+  - `tabPass` :38
+  - `relPass` :72
+  - `listPass` :124
+  - `foldPass` :177
+  - `canHD` :202
+  - `sizeHint` :214
+  - `lowres` :222
+  - `hdImg` :223
+  - `picKey` :272
+  - `hang` :284
+  - `row` :295
+  - `aiImg` :363
 
 ## page/03-images.js (245 lines)
 - **Image AI (ct-vision on the PC's GPU, through this plugin's server)** :5
@@ -354,7 +354,7 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
   - `advParse` :258
   - `tools` :270
 
-## page/06-flag.js (147 lines)
+## page/06-flag.js (149 lines)
   - `flagTop` :5
   - `flagCtx` :20
   - `curType` :47
@@ -362,19 +362,20 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
   - `flagPlace` :125
   - `flagBtn` :132
 
-## page/07-layout.js (184 lines)
-  - `topGap` :4
-- **Loading skeletons in the shape of what comes** :30
-  - `skelGet` :37
-  - `skelPut` :38
-  - `skelKey` :39
-  - `textTop` :42
-  - `skelBlock` :46
-  - `skelShape` :48
-  - `skelLearn` :77
-  - `skel` :108
-  - `picLoad` :162
-  - `noUsage` :176
+## page/07-layout.js (212 lines)
+  - `topGap` :5
+  - `gapSkip` :43
+- **Loading skeletons in the shape of what comes** :58
+  - `skelGet` :65
+  - `skelPut` :66
+  - `skelKey` :67
+  - `textTop` :70
+  - `skelBlock` :74
+  - `skelShape` :76
+  - `skelLearn` :105
+  - `skel` :136
+  - `picLoad` :190
+  - `noUsage` :204
 
 ## page/08-blocks.js (354 lines)
 - **Sitelinks, Discussions and forums, Videos, Top stories** :3
@@ -445,90 +446,90 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
   - `init` :53
 - **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :92
 
-## core.js (612 lines)
+## core.js (611 lines)
 - **Sites: registrable domain via the public suffix list** :4
   - `pslParse` :6
-  - `regDomain` :27
-- **Dedupe: one key per document** :46
-  - `shortTarget` :50
-  - `wikiKey` :55
-  - `arxivId` :77
-  - `docKey` :86
-  - `titleKey` :112
-  - `deduper` :120
-  - `dedupe` :138
-  - `addAlt` :144
-  - `altLabels` :146
-- **Site cap: 2 per site, the rest folded** :160
-  - `namedSites` :162
-  - `siteNamed` :171
-  - `capSites` :172
-- **One page of results, planned before paint** :184
-  - `listCtx` :187
-- **Site searches ("asura scans", "asurascaxs")** :188
-  - `navName` :193
-  - `lev` :201
-  - `navDist` :211
-- **Same-shape results (spec 8)** :218
-  - `shapeOf` :221
-  - `filterSite` :225
-  - `onlyLine` :234
-  - `onlyQuery` :236
-  - `docsFor` :241
-  - `hostOf` :248
-  - `planPage` :253
-  - `plainWords` :311
-  - `copyKey` :312
-  - `within` :313
-  - `sameCopy` :314
-  - `bag` :318
-  - `jaccard` :319
-  - `varietyOrder` :320
-- **Sites: Prefer / Normal / Lower / Hide, stored in degoog's own lists** :334
-  - `unblockText` :339
-- **Anti-SEO: signs on one search's web results (the server adds them up per site)** :344
-  - `aiTell` :351
-  - `staleBest` :353
-  - `snipWords` :361
-  - `overlap` :368
-  - `seoSigns` :372
-  - `seoVerdict` :397
-- **Paywall tag** :399
-  - `paywalled` :404
-- **Snippet cleanup** :406
-  - `cleanSnippet` :410
-  - `doiPublisher` :420
-  - `tidyText` :428
-  - `dateLabel` :455
-  - `relDate` :462
-- **Patterns ("paste anything")** :473
-  - `upsValid` :475
-  - `isbnValid` :482
-  - `cmuCourse` :489
-- **News / Science / Forums tabs: each favours its own kind (user, 2026-11-23), from 64 recorded tab searches** :501
-  - `tabLow` :511
-- **Relevance (one rule for every topic; no lists, nothing to train or maintain)** :522
-  - `relToks` :528
-  - `relWords` :530
-  - `relIdent` :535
-  - `relHit` :536
-  - `matchShare` :537
-  - `relJudgeable` :543
-  - `relCore` :547
-  - `related` :554
-  - `topicToks` :560
-  - `topicOf` :561
-  - `tidyTitle` :573
-  - `fmtShares` :584
-  - `boxWorth` :585
-  - `boxAt` :587
-  - `cutMedian` :593
-  - `blockGo` :594
-  - `blockShare` :597
-- **M4: answer shape and contested check, from the needs call** :598
-  - `shapePick` :600
-  - `questionStyle` :607
-  - `prodShow` :611
+  - `regDomain` :26
+- **Dedupe: one key per document** :45
+  - `shortTarget` :49
+  - `wikiKey` :54
+  - `arxivId` :76
+  - `docKey` :85
+  - `titleKey` :111
+  - `deduper` :119
+  - `dedupe` :137
+  - `addAlt` :143
+  - `altLabels` :145
+- **Site cap: 2 per site, the rest folded** :159
+  - `namedSites` :161
+  - `siteNamed` :170
+  - `capSites` :171
+- **One page of results, planned before paint** :183
+  - `listCtx` :186
+- **Site searches ("asura scans", "asurascaxs")** :187
+  - `navName` :192
+  - `lev` :200
+  - `navDist` :210
+- **Same-shape results (spec 8)** :217
+  - `shapeOf` :220
+  - `filterSite` :224
+  - `onlyLine` :233
+  - `onlyQuery` :235
+  - `docsFor` :240
+  - `hostOf` :247
+  - `planPage` :252
+  - `plainWords` :310
+  - `copyKey` :311
+  - `within` :312
+  - `sameCopy` :313
+  - `bag` :317
+  - `jaccard` :318
+  - `varietyOrder` :319
+- **Sites: Prefer / Normal / Lower / Hide, stored in degoog's own lists** :333
+  - `unblockText` :338
+- **Anti-SEO: signs on one search's web results (the server adds them up per site)** :343
+  - `aiTell` :350
+  - `staleBest` :352
+  - `snipWords` :360
+  - `overlap` :367
+  - `seoSigns` :371
+  - `seoVerdict` :396
+- **Paywall tag** :398
+  - `paywalled` :403
+- **Snippet cleanup** :405
+  - `cleanSnippet` :409
+  - `doiPublisher` :419
+  - `tidyText` :427
+  - `dateLabel` :454
+  - `relDate` :461
+- **Patterns ("paste anything")** :472
+  - `upsValid` :474
+  - `isbnValid` :481
+  - `cmuCourse` :488
+- **News / Science / Forums tabs: each favours its own kind (user, 2026-11-23), from 64 recorded tab searches** :500
+  - `tabLow` :510
+- **Relevance (one rule for every topic; no lists, nothing to train or maintain)** :521
+  - `relToks` :527
+  - `relWords` :529
+  - `relIdent` :534
+  - `relHit` :535
+  - `matchShare` :536
+  - `relJudgeable` :542
+  - `relCore` :546
+  - `related` :553
+  - `topicToks` :559
+  - `topicOf` :560
+  - `tidyTitle` :572
+  - `fmtShares` :583
+  - `boxWorth` :584
+  - `boxAt` :586
+  - `cutMedian` :592
+  - `blockGo` :593
+  - `blockShare` :596
+- **M4: answer shape and contested check, from the needs call** :597
+  - `shapePick` :599
+  - `questionStyle` :606
+  - `prodShow` :610
 
 ## answers.js (828 lines)
 - **Answer card, local part (no network): math, units incl. cooking, tip / percent, date math, patterns** :1

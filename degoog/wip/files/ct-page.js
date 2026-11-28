@@ -1,5 +1,5 @@
-// clean-titles v88
-const CT_VER = "v88";
+// clean-titles v89
+const CT_VER = "v89";
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -8,21 +8,20 @@ const CT = (() => {
 // The list arrives compiled as a tree string (reversed labels): "uk(co,org,...),jp(ac,...)", "!" = also a rule itself
 const pslParse = (enc) => {
   const root = {}, stack = [];
-  let name = "", cur = root, last = null;
-  // Small hand parser: one pass, no regex backtracking
-  for (let i = 0; i <= enc.length; i++) {
-    const ch = enc[i];
-    if (ch === undefined || ch === "," || ch === "(" || ch === ")") {
-      if (name) {
-        const also = name.endsWith("!"), k = also ? name.slice(0, -1) : name;
-        const n = cur[k] || (cur[k] = {});
-        if (ch !== "(" || also) n.$ = 1;
-        last = n;
-        name = "";
-      }
-      if (ch === "(") { stack.push(cur); cur = last; }
-      else if (ch === ")") cur = stack.pop();
-    } else name += ch;
+  let cur = root, last = null, s = 0;
+  // Small hand parser: one pass over char codes, names cut with slice (no per-character string building, no regex)
+  for (let i = 0, n = enc.length; i <= n; i++) {
+    const c = i < n ? enc.charCodeAt(i) : 44; // 44 "," 40 "(" 41 ")" 33 "!"
+    if (c !== 44 && c !== 40 && c !== 41) continue;
+    if (i > s) {
+      const also = enc.charCodeAt(i - 1) === 33, k = enc.slice(s, also ? i - 1 : i);
+      const node = cur[k] || (cur[k] = {});
+      if (c !== 40 || also) node.$ = 1;
+      last = node;
+    }
+    if (c === 40) { stack.push(cur); cur = last; }
+    else if (c === 41) cur = stack.pop();
+    s = i + 1;
   }
   return root;
 };
@@ -1653,6 +1652,8 @@ const junk = (el) => {
 // If it failed to load, sites are whole host names (never a guessed suffix).
 let PSL0;
 const PSL = () => (PSL0 !== undefined ? PSL0 : (PSL0 = typeof window.CT_PSL === "string" && window.CT_PSL ? CT.pslParse(window.CT_PSL) : null));
+// Parsed while the page waits for degoog's first results (idle time), not in the first results pass (~5-13 ms there)
+(window.requestIdleCallback ? (f) => requestIdleCallback(f, { timeout: 1500 }) : (f) => setTimeout(f, 50))(() => { try { PSL(); } catch {} });
 // Prefer / Lower / Hide per site: this browser's copy of your choices in degoog's lists ({domain: choice}),
 // refreshed from the server on each page load. degoog already applied them on the server; the page uses them for
 // the 2-per-site limit (Prefer skips it) and keeps them within each endless-scroll page.
@@ -2981,13 +2982,17 @@ const flagBtn = () => {
   f.addEventListener("click", () => flagBox(f));
   f.textContent = "⚑";
   g.before(f); // ⚑ then gear on every screen size (the gear keeps degoog's own outer-edge spot)
-  flagPlace();
+  // Phone: placed in the next frame, when the browser lays the page out anyway (reading the gear's spot here forced
+  // an extra layout in the middle of the results pass); hidden until then so it never shows in the wrong spot
+  if (PHONE.matches) { f.style.visibility = "hidden"; requestAnimationFrame(() => { flagPlace(); f.style.visibility = ""; }); }
   if (!flagPlace.on) { flagPlace.on = 1; PHONE.addEventListener("change", flagPlace); addEventListener("resize", flagPlace); }
 };
 // ----- page/07-layout.js: top gap, loading skeletons in the real shape, picture loading -----
 // Gap from the tab row to the first thing under it (answer card, info panel or the first result's source line):
 // measured, so empty or hidden blocks above the results can't add to it; the same on every tab and screen size
+let gapEl = null; // what topGap last found highest (the first result's source line, the answer card...)
 const topGap = () => {
+  gapEl = null;
   const tabs = document.getElementById("results-tabs"), lay = document.getElementById("results-layout");
   if (!tabs || !lay) return;
   // The answer area counts as empty when nothing in it is showing (hidden leftovers otherwise kept degoog's
@@ -2995,15 +3000,23 @@ const topGap = () => {
   const g = document.getElementById("at-a-glance");
   if (g) g.classList.toggle("ct-blank", ![...g.children].some((e) => e.getClientRects().length));
   let top = Infinity;
-  for (const e of lay.querySelectorAll("#ct-fix, #at-a-glance > *, #sidebar-col > *, .result-item .result-url-row, .skeleton-card, .ct-skc, .ct-skimg, .command-result, .image-card, .video-card")) {
+  // Results, pictures and videos: only the first showing one of each list (or picture column) can be the highest, so
+  // the rest (hundreds after a few endless-scroll pages) aren't measured
+  const firsts = [];
+  const first = (els) => { for (const e of els) if (e.getBoundingClientRect().height > 0) { firsts.push(e); return; } };
+  first(lay.querySelectorAll(".result-item .result-url-row"));
+  for (const c of lay.querySelectorAll(".image-column")) first(c.querySelectorAll(".image-card"));
+  first(lay.querySelectorAll(".image-grid > .image-card"));
+  first(lay.querySelectorAll(".video-card"));
+  for (const e of [...lay.querySelectorAll("#ct-fix, #at-a-glance > *, #sidebar-col > *, .skeleton-card, .ct-skc, .ct-skimg, .command-result"), ...firsts]) {
     const r = e.getBoundingClientRect();
     if (!(r.height > 0) || r.top >= top) continue; // a box's text never starts above its top: no style read needed
     // a line of text starts where its letters start, not where its line spacing starts; a measured placeholder row
     // where its result's link line will start
     const t = e.dataset.ut != null ? r.top + +e.dataset.ut : textTop(e, r);
-    if (t < top) top = t;
+    if (t < top) { top = t; gapEl = e; }
   }
-  if (top === Infinity) return;
+  if (top === Infinity) { gapEl = null; return; }
   const cur = parseFloat(lay.style.getPropertyValue("--ct-top")) || 0;
   const want = TOUCH.matches ? 12 : 16;
   // measured from whatever sits right above the results: the tab row, or the open Tools fields under it (measuring from
@@ -3011,6 +3024,24 @@ const topGap = () => {
   const adv = document.getElementById("ct-adv"), above = Math.max(tabs.getBoundingClientRect().bottom, adv ? adv.getBoundingClientRect().bottom : 0);
   const next = Math.round(cur + want - (top - above));
   if (Math.abs(next - cur) >= 1) lay.style.setProperty("--ct-top", `${next}px`);
+};
+
+// topGap is needed again unless everything that changed sits after the thing it found highest, in the results list or
+// endless scroll's line under it (a page going in under the results, its placeholder, a fold or sitelink row): then nothing above
+// moved and measuring would only force the browser to lay out the new page in the middle of the pass (~6 ms a page)
+const gapSkip = (muts) => {
+  const e = gapEl, list = document.getElementById("results-list");
+  if (!e || !list || !e.isConnected || e.closest(".result-item")?.style.display === "none") return false;
+  const after = (n) => { const p = e.compareDocumentPosition(n); return n === e || (p & 4 && !(p & 8)); }; // 4 following, 8 contains e
+  for (const m of muts) {
+    // inside the list, endless scroll's "more" line under it, or the list's own box (that line going in)
+    const t = m.target;
+    if (m.type !== "childList" || !(list.contains(t) || t === list.parentElement || t.closest?.(".degoog-infinite"))) return false;
+    if (t !== e && after(t)) continue; // the whole box that changed comes after it
+    for (const n of m.addedNodes) if (!after(n)) return false;
+    if (m.removedNodes.length && !(m.previousSibling && (after(m.previousSibling) || e.compareDocumentPosition(m.previousSibling) & 8))) return false;
+  }
+  return true;
 };
 
 // ===== Loading skeletons in the shape of what comes =====
@@ -4227,7 +4258,7 @@ const init = () => {
     safe("tabs", tabPass);
     safe("rel", relPass);
     for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { safe("scan", () => scan(n)); safe("skeleton", () => skel(n)); safe("usage", () => noUsage(n)); }
-    safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("flag", flagBtn); safe("gap", topGap); safe("tabkeep", tabKeep); safe("card", glance);
+    safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("flag", flagBtn); if (!gapSkip(muts)) safe("gap", topGap); safe("tabkeep", tabKeep); safe("card", glance);
     safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass); safe("preview", previewPass); safe("sides", sidesPass); safe("prod", productPass);
     safe("drawn", markDrawn); safe("skellearn", skelLearn);
     safe("ai", () => { const g = document.getElementById("at-a-glance"); if (g) aiPass(g, searchId()); });

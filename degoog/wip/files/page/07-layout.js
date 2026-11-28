@@ -1,7 +1,9 @@
 // ----- page/07-layout.js: top gap, loading skeletons in the real shape, picture loading -----
 // Gap from the tab row to the first thing under it (answer card, info panel or the first result's source line):
 // measured, so empty or hidden blocks above the results can't add to it; the same on every tab and screen size
+let gapEl = null; // what topGap last found highest (the first result's source line, the answer card...)
 const topGap = () => {
+  gapEl = null;
   const tabs = document.getElementById("results-tabs"), lay = document.getElementById("results-layout");
   if (!tabs || !lay) return;
   // The answer area counts as empty when nothing in it is showing (hidden leftovers otherwise kept degoog's
@@ -9,15 +11,23 @@ const topGap = () => {
   const g = document.getElementById("at-a-glance");
   if (g) g.classList.toggle("ct-blank", ![...g.children].some((e) => e.getClientRects().length));
   let top = Infinity;
-  for (const e of lay.querySelectorAll("#ct-fix, #at-a-glance > *, #sidebar-col > *, .result-item .result-url-row, .skeleton-card, .ct-skc, .ct-skimg, .command-result, .image-card, .video-card")) {
+  // Results, pictures and videos: only the first showing one of each list (or picture column) can be the highest, so
+  // the rest (hundreds after a few endless-scroll pages) aren't measured
+  const firsts = [];
+  const first = (els) => { for (const e of els) if (e.getBoundingClientRect().height > 0) { firsts.push(e); return; } };
+  first(lay.querySelectorAll(".result-item .result-url-row"));
+  for (const c of lay.querySelectorAll(".image-column")) first(c.querySelectorAll(".image-card"));
+  first(lay.querySelectorAll(".image-grid > .image-card"));
+  first(lay.querySelectorAll(".video-card"));
+  for (const e of [...lay.querySelectorAll("#ct-fix, #at-a-glance > *, #sidebar-col > *, .skeleton-card, .ct-skc, .ct-skimg, .command-result"), ...firsts]) {
     const r = e.getBoundingClientRect();
     if (!(r.height > 0) || r.top >= top) continue; // a box's text never starts above its top: no style read needed
     // a line of text starts where its letters start, not where its line spacing starts; a measured placeholder row
     // where its result's link line will start
     const t = e.dataset.ut != null ? r.top + +e.dataset.ut : textTop(e, r);
-    if (t < top) top = t;
+    if (t < top) { top = t; gapEl = e; }
   }
-  if (top === Infinity) return;
+  if (top === Infinity) { gapEl = null; return; }
   const cur = parseFloat(lay.style.getPropertyValue("--ct-top")) || 0;
   const want = TOUCH.matches ? 12 : 16;
   // measured from whatever sits right above the results: the tab row, or the open Tools fields under it (measuring from
@@ -25,6 +35,24 @@ const topGap = () => {
   const adv = document.getElementById("ct-adv"), above = Math.max(tabs.getBoundingClientRect().bottom, adv ? adv.getBoundingClientRect().bottom : 0);
   const next = Math.round(cur + want - (top - above));
   if (Math.abs(next - cur) >= 1) lay.style.setProperty("--ct-top", `${next}px`);
+};
+
+// topGap is needed again unless everything that changed sits after the thing it found highest, in the results list or
+// endless scroll's line under it (a page going in under the results, its placeholder, a fold or sitelink row): then nothing above
+// moved and measuring would only force the browser to lay out the new page in the middle of the pass (~6 ms a page)
+const gapSkip = (muts) => {
+  const e = gapEl, list = document.getElementById("results-list");
+  if (!e || !list || !e.isConnected || e.closest(".result-item")?.style.display === "none") return false;
+  const after = (n) => { const p = e.compareDocumentPosition(n); return n === e || (p & 4 && !(p & 8)); }; // 4 following, 8 contains e
+  for (const m of muts) {
+    // inside the list, endless scroll's "more" line under it, or the list's own box (that line going in)
+    const t = m.target;
+    if (m.type !== "childList" || !(list.contains(t) || t === list.parentElement || t.closest?.(".degoog-infinite"))) return false;
+    if (t !== e && after(t)) continue; // the whole box that changed comes after it
+    for (const n of m.addedNodes) if (!after(n)) return false;
+    if (m.removedNodes.length && !(m.previousSibling && (after(m.previousSibling) || e.compareDocumentPosition(m.previousSibling) & 8))) return false;
+  }
+  return true;
 };
 
 // ===== Loading skeletons in the shape of what comes =====

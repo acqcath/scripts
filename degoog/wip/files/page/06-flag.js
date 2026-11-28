@@ -141,6 +141,8 @@ const flagBtn = () => {
   f.addEventListener("click", () => flagBox(f));
   f.textContent = "⚑";
   g.before(f); // ⚑ then gear on every screen size (the gear keeps degoog's own outer-edge spot)
-  flagPlace();
+  // Phone: placed in the next frame, when the browser lays the page out anyway (reading the gear's spot here forced
+  // an extra layout in the middle of the results pass); hidden until then so it never shows in the wrong spot
+  if (PHONE.matches) { f.style.visibility = "hidden"; requestAnimationFrame(() => { flagPlace(); f.style.visibility = ""; }); }
   if (!flagPlace.on) { flagPlace.on = 1; PHONE.addEventListener("change", flagPlace); addEventListener("resize", flagPlace); }
 };

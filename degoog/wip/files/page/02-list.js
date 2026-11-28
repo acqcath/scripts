@@ -4,6 +4,8 @@
 // If it failed to load, sites are whole host names (never a guessed suffix).
 let PSL0;
 const PSL = () => (PSL0 !== undefined ? PSL0 : (PSL0 = typeof window.CT_PSL === "string" && window.CT_PSL ? CT.pslParse(window.CT_PSL) : null));
+// Parsed while the page waits for degoog's first results (idle time), not in the first results pass (~5-13 ms there)
+(window.requestIdleCallback ? (f) => requestIdleCallback(f, { timeout: 1500 }) : (f) => setTimeout(f, 50))(() => { try { PSL(); } catch {} });
 // Prefer / Lower / Hide per site: this browser's copy of your choices in degoog's lists ({domain: choice}),
 // refreshed from the server on each page load. degoog already applied them on the server; the page uses them for
 // the 2-per-site limit (Prefer skips it) and keeps them within each endless-scroll page.
