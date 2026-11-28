@@ -1,5 +1,5 @@
-// clean-titles v83
-const CT_VER = "v83";
+// clean-titles v84
+const CT_VER = "v84";
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -1581,8 +1581,28 @@ const lineUp = () => {
 addEventListener("resize", () => requestAnimationFrame(lineUp), { passive: true });
 // Same search even if degoog tidied the address (e.g. dropped a #) meanwhile
 // Which search a page address is, ignoring what endless scroll adds while you scroll (&loaded=2) and any #
-const searchId = (h) => { try { const u = new URL(h); u.hash = ""; u.searchParams.delete("loaded"); return u.toString(); } catch { return String(h).split("#")[0]; } };
-const sameSearch = (k) => searchId(location.href) === searchId(k);
+const urlId = (h) => { try { const u = new URL(h); u.hash = ""; u.searchParams.delete("loaded"); return u.toString(); } catch { return String(h).split("#")[0]; } };
+// Each time degoog starts drawing a list (a search, a tab, a page; also back/forward, and the same search again) is its
+// own search here, even at an address seen before: Web -> News -> Web -> News used to find News's results already
+// "seen" from its first visit and hid them all as copies (no results after switching tabs). degoog marks its own
+// history entries {degoog: true, query, type, page}: every new entry it pushes is a new search; a rewrite of the
+// entry is one only when the query or page changed (endless scroll and a command's settled type keep both; the first
+// load's rewrite only records it, so work started for that first search stays its own). Overlays (picture preview)
+// push entries without the mark, so they never start a new search.
+let SG = 0, SGk = "";
+const sgKey = (st) => (st && st.degoog ? `${st.query}\u0001${st.page || 1}` : null);
+for (const m of ["pushState", "replaceState"]) {
+  const o = history[m];
+  if (typeof o !== "function") continue;
+  history[m] = function (st, ...rest) {
+    const r = o.call(this, st, ...rest), k = sgKey(st);
+    if (k !== null) { if (m === "pushState" || (SGk && k !== SGk)) SG++; SGk = k; }
+    return r;
+  };
+}
+addEventListener("popstate", (e) => { SG++; SGk = sgKey(e.state) || ""; }, true);
+const searchId = () => `${urlId(location.href)}|${SG}`;
+const sameSearch = (k) => searchId() === k;
 // Same-shape results (spec 8): the search names a type of result (pdf, reddit, docs, recipe, video…) or a site to
 // filter by: a plain list of that type, with no boxes, rows, panels, People also ask or AI on top.
 const curQ = () => { try { return (new URL(location.href).searchParams.get("q") || "").trim(); } catch { return ""; } };
@@ -1716,9 +1736,9 @@ const tabPass = () => {
   if (!tab) return;
   const list = document.getElementById("results-list");
   if (!list) return;
-  const fresh = [...list.querySelectorAll(":scope > .result-item")].filter((el) => !tabPlanned.has(el));
+  const fresh = [...list.children].filter((el) => el.classList.contains("result-item") && !tabPlanned.has(el));
   if (!fresh.length) return;
-  const key = searchId(location.href);
+  const key = searchId();
   if (TP.key !== key) TP = { key, seen: new Map(), titles: new Set() };
   const low = [];
   for (const el of fresh) {
@@ -1748,7 +1768,7 @@ const relPass = () => {
   if (!list) return;
   const fresh = [...list.children].filter((el) => el.classList.contains("result-item") && !relPlanned.has(el));
   if (!fresh.length) return;
-  const key = searchId(location.href);
+  const key = searchId();
   if (RP.key !== key) RP = { key, n: 0, rel: [], core: null };
   // Words of the corrected search too, when degoog searched a typo fix ("Showing results for …")
   const words = [...new Set([...qWords, ...CT.relWords(document.querySelector("#ct-fix a")?.textContent || "")])];
@@ -1802,7 +1822,7 @@ const listPass = () => {
   const fresh = [...list.querySelectorAll(".result-item")].filter((el) => !planned.has(el));
   if (!fresh.length) return;
   fresh.forEach((el) => planned.add(el));
-  const key = searchId(location.href);
+  const key = searchId();
   // New search, or degoog redrew the whole list: start over
   if (!LP || LP.key !== key || !LP.first.isConnected) {
     list.querySelectorAll(".ct-fold").forEach((x) => x.remove());
@@ -2076,7 +2096,7 @@ const visFlush = () => {
   const timer = setTimeout(show, 900);
   visAsk(q0, [...new Set(batch.map(([el]) => el.dataset.ctV))]).then(() => { clearTimeout(timer); visApply(); show(); });
 };
-const visKey = () => { const key = searchId(location.href); if (VS.key !== key) { VS.key = key; VS.p.clear(); VS.q = []; } };
+const visKey = () => { const key = searchId(); if (VS.key !== key) { VS.key = key; VS.p.clear(); VS.q = []; } };
 // Web's Images row: pictures the AI sees as off-topic leave the row (also when the score comes after the row is drawn)
 const visRow = () => {
   const th = visThr();
@@ -2104,7 +2124,7 @@ const visApply = () => {
 const MR = {};
 const mediaRel = (el, kind, text, title) => {
   readQuery();
-  const key = searchId(location.href);
+  const key = searchId();
   let R = MR[kind];
   if (!R || R.key !== key) { R?.btn?.closest(".ct-fold")?.remove(); R = MR[kind] = { key, q: [], rel: [], btn: null, out: [] }; }
   let q0 = "";
@@ -2125,7 +2145,7 @@ const mediaFold = (kind) => {
   if (out.length) mediaFoldAdd(kind, out);
 };
 const mediaFoldAdd = (kind, out) => {
-  const key = searchId(location.href);
+  const key = searchId();
   let R = MR[kind];
   if (!R || R.key !== key) R = MR[kind] = { key, q: [], rel: [], btn: null, out: [] };
   R.out.push(...out);
@@ -2234,6 +2254,7 @@ const card = (el, isImage) => {
   const host = raw.toLowerCase().replace(/^www\./, "");
   const text = t && t.textContent || "";
   if (t && !t.dataset.ctTidy) { t.dataset.ctTidy = "1"; const x = CT.tidyTitle(text.replace(/\s+/g, " ").trim()); if (x !== text.trim()) t.textContent = x; }
+  picLoad(el);
   if (!isImage) { mediaRel(el, "video", `https://${host}/ ${text}`, text); visQueue(el, "video"); return; }
   if (aiImg(host)) { el.style.display = "none"; el.dataset.ctAi = "1"; return; }
   mediaRel(el, "image", `https://${host}/ ${text}`, text);
@@ -2301,7 +2322,7 @@ const cardCache = new Map();
 // Search whose results are already on screen (set at the end of each pass). From then on nothing goes in above them:
 // a card that comes after that is kept for next time but not shown on this page
 let drawnFor = "";
-const markDrawn = () => { if (document.querySelector("#results-list .result-item, #results-list .image-card, #results-list .video-card")) drawnFor = searchId(location.href); };
+const markDrawn = () => { if (document.querySelector("#results-list .result-item, #results-list .image-card, #results-list .video-card")) drawnFor = searchId(); };
 const glance = () => {
   const g = document.getElementById("at-a-glance");
   if (!g || !webTab) return;
@@ -2317,7 +2338,7 @@ const glance = () => {
     g.innerHTML = `<div class="command-result ct-card">${html}</div>`;
     g.querySelectorAll("script").forEach((o) => { const n = document.createElement("script"); n.textContent = o.textContent; g.appendChild(n); });
   };
-  const key = searchId(location.href);
+  const key = searchId();
   if (cardCache.has(bang)) { if (drawnFor !== key) put(cardCache.get(bang)); return; }
   cardCache.set(bang, "");
   fetch("/api/command", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: bang }), cache: "no-store" })
@@ -2343,7 +2364,7 @@ const ask = (route, key, params) => {
 const ready = (route, key) => { const e = early.get(route); return e && e.key === key ? e.data : undefined; };
 let earlyFor = "";
 const earlyStart = () => {
-  const key = searchId(location.href);
+  const key = searchId();
   if (earlyFor === key) return;
   earlyFor = key;
   early.clear();
@@ -2433,10 +2454,10 @@ const nearWord = (a, b) => {
 const lower = (s) => String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
 let extrasFor = "";
 const extras = () => {
-  if (extrasFor === searchId(location.href)) return;
+  if (extrasFor === searchId()) return;
   const list = document.getElementById("results-list");
   if (!list || !list.querySelector(".result-item, .image-card, .video-card")) return;
-  const key = (extrasFor = searchId(location.href));
+  const key = (extrasFor = searchId());
   document.querySelectorAll("#ct-fix, #ct-related").forEach((e) => e.remove());
   let q = "", from = "";
   try {
@@ -2669,7 +2690,7 @@ let paaBox = null;
 
 const paa = () => {
   if (!webTab) return;
-  if (paaFor === searchId(location.href)) {
+  if (paaFor === searchId()) {
     // list was redrawn and took the box with it: put it back
     if (paaBox && !paaBox.isConnected) paaAnchor()?.after(paaBox);
     return;
@@ -2678,7 +2699,7 @@ const paa = () => {
   if (!list) return;
   const rows = [...list.querySelectorAll(".result-item")].filter((x) => x.style.display !== "none");
   if (rows.length < 4) return;
-  const key = (paaFor = searchId(location.href));
+  const key = (paaFor = searchId());
   let q = "", page = 1;
   try { const u = new URL(key); q = (u.searchParams.get("q") || "").trim(); page = Number(u.searchParams.get("page") || 1); } catch {}
   const old = document.getElementById("ct-qa");
@@ -3015,12 +3036,12 @@ const topGap = () => {
   const g = document.getElementById("at-a-glance");
   if (g) g.classList.toggle("ct-blank", ![...g.children].some((e) => e.getClientRects().length));
   let top = Infinity;
-  for (const e of lay.querySelectorAll("#ct-fix, #at-a-glance > *, #sidebar-col > *, .result-item .result-url-row, .skeleton-card, .command-result, .image-card, .video-card")) {
+  for (const e of lay.querySelectorAll("#ct-fix, #at-a-glance > *, #sidebar-col > *, .result-item .result-url-row, .skeleton-card, .ct-skc, .ct-skimg, .command-result, .image-card, .video-card")) {
     const r = e.getBoundingClientRect();
     if (!(r.height > 0)) continue;
-    // a line of text starts where its letters start, not where its line spacing starts
-    const cs = getComputedStyle(e), lh = parseFloat(cs.lineHeight), fs = parseFloat(cs.fontSize);
-    const t = r.top + parseFloat(cs.paddingTop || 0) + (lh > fs && e.childElementCount === 0 || e.id === "ct-fix" ? (lh - fs) / 2 : 0);
+    // a line of text starts where its letters start, not where its line spacing starts; a measured placeholder row
+    // where its result's link line will start
+    const t = e.dataset.ut != null ? r.top + +e.dataset.ut : textTop(e, r);
     if (t < top) top = t;
   }
   if (top === Infinity) return;
@@ -3033,15 +3054,149 @@ const topGap = () => {
   if (Math.abs(next - cur) >= 1) lay.style.setProperty("--ct-top", `${next}px`);
 };
 
-// Image loading skeleton: degoog always draws 4 columns; match the real grid's 3/4/5/6 by width
+// ===== Loading skeletons in the shape of what comes =====
+// degoog's placeholders are generic (4 even columns of grey tiles; 4 text lines per result), so the page changed
+// shape when the results came. Here each placeholder is drawn from what that tab really showed last time on this
+// device and width: list tabs replay the measured boxes of the last real results (favicon, each text line at its
+// real width, thumbnail, row heights and gaps); Images uses the real grid's own CSS and columns, with the measured
+// picture shapes and the title/site lines under each. Nothing measured yet = degoog's own placeholder.
+const SKEL = "ct-skel";
+const skelGet = () => { try { return JSON.parse(localStorage.getItem(SKEL) || "{}") || {}; } catch { return {}; } };
+const skelPut = (k, v) => { const all = skelGet(); all[k] = v; try { localStorage.setItem(SKEL, JSON.stringify(all)); } catch {} };
+const skelKey = (w) => `${curType()}|${PHONE.matches ? "p" : "d"}|${Math.round(w / 50)}`;
+// Where a box's text starts, as topGap measures it (letters, not line spacing), so a placeholder sits exactly where
+// the results will
+const textTop = (e, r = e.getBoundingClientRect()) => {
+  const cs = getComputedStyle(e), lh = parseFloat(cs.lineHeight), fs = parseFloat(cs.fontSize);
+  return r.top + parseFloat(cs.paddingTop || 0) + (lh > fs && e.childElementCount === 0 || e.id === "ct-fix" ? (lh - fs) / 2 : 0);
+};
+const skelBlock = (x, y, w, h, r) => { const b = document.createElement("span"); b.className = "ct-skb"; b.style.cssText = `left:${x}px;top:${y}px;width:${w}px;height:${h}px;border-radius:${r}px`; return b; };
+// One result's boxes, relative to the result: pictures/favicons as they are, text as one bar per line at its width
+const skelShape = (el) => {
+  const R = el.getBoundingClientRect(), out = [], pics = [];
+  for (const m of el.querySelectorAll("img, .result-thumbnail-wrap, .result-favicon-missing")) {
+    if (pics.some((p) => p.contains(m))) continue;
+    const r = m.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2 || r.bottom > R.bottom + 1 || r.top < R.top - 1) continue;
+    pics.push(m);
+    out.push([r.left - R.left, r.top - R.top, r.width, r.height, Math.min(r.height / 2, parseFloat(getComputedStyle(m).borderTopLeftRadius) || 4)]);
+  }
+  const lines = new Map();
+  const tw = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  for (let n; (n = tw.nextNode()) && lines.size < 12;) {
+    const p = n.parentElement;
+    if (!n.data.trim() || !p || pics.some((x) => x.contains(p)) || !p.getClientRects().length) continue;
+    const fs = parseFloat(getComputedStyle(p).fontSize) || 14, rg = document.createRange();
+    rg.selectNodeContents(n);
+    for (const r of rg.getClientRects()) {
+      if (r.width < 2 || r.bottom > R.bottom + 1) continue;
+      const k = Math.round((r.top + r.bottom) / 2 - R.top), l = lines.get(k);
+      if (l) { l[0] = Math.min(l[0], r.left - R.left); l[1] = Math.max(l[1], r.right - R.left); l[2] = Math.max(l[2], fs); }
+      else lines.set(k, [r.left - R.left, r.right - R.left, fs, k]);
+    }
+  }
+  for (const [x0, x1, fs, mid] of lines.values()) { const h = Math.round(fs * 0.72); out.push([x0, mid - h / 2, x1 - x0, h, Math.min(4, h / 2)]); }
+  const u = el.querySelector(".result-url-row");
+  return { h: R.height, ut: u ? textTop(u) - R.top : null, b: out.map((a) => a.map((v) => Math.round(v * 10) / 10)) };
+};
+// After the results settle (idle time, once per search): keep the shapes of the first rows
+let skelFor = "";
+const skelLearn = () => {
+  const key = searchId();
+  if (skelFor === key) return;
+  const list = document.getElementById("results-list");
+  if (!list || list.querySelector(".skeleton-results, .skeleton-image-grid")) return;
+  const imgs = [...list.querySelectorAll(".image-card")].filter((e) => e.style.display !== "none");
+  const rows = [...list.children].filter((e) => e.classList.contains("result-item") && e.style.display !== "none" && !e.classList.contains("ct-grouped"));
+  if (imgs.length < 6 && rows.length < 3) return;
+  skelFor = key;
+  const later = window.requestIdleCallback ? (f) => requestIdleCallback(f, { timeout: 2000 }) : (f) => setTimeout(f, 600);
+  later(() => {
+    if (searchId() !== key) return;
+    const w = list.clientWidth;
+    if (!w) return;
+    if (imgs.length >= 6) {
+      // Picture shapes (height per width of the picture box) of the first 24 pictures, in order
+      const ar = imgs.slice(0, 24).map((e) => { const t = e.querySelector(".image-thumb-wrap") || e, r = t.getBoundingClientRect(); return r.width > 0 && r.height > 0 ? Math.round((r.height / r.width) * 100) / 100 : 0; }).filter((x) => x > 0.2 && x < 4);
+      if (ar.length >= 6) skelPut(skelKey(w), { ar });
+      return;
+    }
+    const lt = list.getBoundingClientRect().top, picks = rows.slice(0, 6), shapes = [];
+    for (let i = 0; i < picks.length; i++) {
+      const s = skelShape(picks[i]), nx = picks[i + 1];
+      s.gap = nx ? Math.max(0, Math.round(nx.getBoundingClientRect().top - picks[i].getBoundingClientRect().bottom)) : 0;
+      if (i === 0) s.top = Math.round(picks[0].getBoundingClientRect().top - lt);
+      shapes.push(s);
+    }
+    skelPut(skelKey(w), { rows: shapes });
+  });
+};
+// degoog just drew a placeholder: redraw it in the shape of what comes, before the screen updates
 const skel = (root) => {
-  const g = root.matches?.(".skeleton-image-grid") ? root : root.querySelector?.(".skeleton-image-grid");
-  if (!g) return;
-  const w = g.clientWidth || innerWidth;
-  const want = w <= 800 ? 3 : w <= 1100 ? 4 : w <= 1400 ? 5 : 6;
-  const cols = [...g.children];
-  cols.slice(want).forEach((c) => c.remove());
-  for (let i = cols.length; i < want; i++) g.append(cols[i % cols.length].cloneNode(true));
+  for (const g of root.matches?.(".skeleton-results, .skeleton-image-grid") ? [root] : root.querySelectorAll?.(".skeleton-results, .skeleton-image-grid") || []) {
+    if (g.dataset.ctSkel) continue;
+    g.dataset.ctSkel = "1";
+    const w = g.clientWidth || document.getElementById("results-list")?.clientWidth || innerWidth;
+    const t = skelGet()[skelKey(w)];
+    if (g.classList.contains("skeleton-image-grid")) {
+      // degoog's own column count for this width (render-media.tsx COLUMN_STEPS), the real grid's gaps (custom.css)
+      const cols = w <= 800 ? 3 : w <= 1100 ? 4 : w <= 1400 ? 5 : 6;
+      const ar = (t && t.ar) || [140, 100, 175, 115, 155, 90, 135, 105].map((h) => h / 200); // degoog's tiles at a 200px column
+      const per = Math.max(3, Math.ceil(((innerHeight * 1.2) / (w / cols)) / (ar.reduce((a, b) => a + b, 0) / ar.length)));
+      const line = (cls, pct) => { const s = document.createElement("span"); s.className = cls; const i = document.createElement("i"); i.className = "ct-skt"; i.style.width = `${pct}%`; s.append(i); return s; };
+      const colsEl = [];
+      for (let c = 0; c < cols; c++) {
+        const col = document.createElement("div");
+        col.className = "image-column";
+        for (let r = 0; r < per; r++) {
+          const k = c + r * cols, card = document.createElement("div");
+          card.className = "ct-skimg";
+          const th = document.createElement("div");
+          th.className = "image-thumb-wrap ct-skb-in";
+          th.style.aspectRatio = `1 / ${ar[k % ar.length]}`;
+          const info = document.createElement("div");
+          info.className = "image-info";
+          info.append(line("image-title", 55 + ((k * 37) % 40)), line("image-source", 30 + ((k * 23) % 30)));
+          card.append(th, info);
+          col.append(card);
+        }
+        colsEl.push(col);
+      }
+      g.replaceChildren(...colsEl);
+      continue;
+    }
+    if (!t || !t.rows || !t.rows.length) continue;
+    // List tabs: the measured rows, repeated until the screen is full (the "more results" placeholder keeps its count)
+    const more = g.classList.contains("skeleton-results--more"), n = more ? g.children.length || 3 : 0, cards = [];
+    let y = 0;
+    for (let i = 0; (more ? i < n : y < innerHeight * 1.2) && i < 30; i++) {
+      const s = t.rows[i % t.rows.length], c = document.createElement("div");
+      c.className = "ct-skc";
+      c.style.height = `${s.h}px`;
+      c.style.marginBottom = `${s.gap}px`;
+      if (s.ut != null) c.dataset.ut = s.ut;
+      for (const b of s.b) c.append(skelBlock(...b));
+      cards.push(c);
+      y += s.h + s.gap;
+    }
+    g.classList.add("ct-skel-m");
+    if (!more && t.rows[0].top) g.style.paddingTop = `${t.rows[0].top}px`;
+    g.replaceChildren(...cards);
+  }
+};
+// Pictures shimmer in place (same tile as the placeholder) until they've loaded and the image AI has answered,
+// then fade in; the first screen's pictures load first instead of waiting for the browser's lazy start
+const picLoad = (el) => {
+  const im = el.querySelector("img");
+  if (!im) return;
+  const idx = +el.dataset.idx;
+  if (idx < 18) { im.loading = "eager"; im.fetchPriority = "high"; }
+  im.decoding = "async";
+  if (im.complete && im.naturalWidth) return;
+  im.classList.add("ct-ld");
+  const done = () => im.classList.remove("ct-ld");
+  im.addEventListener("load", done, { once: true });
+  im.addEventListener("error", done, { once: true });
 };
 
 // Weather card with no city ("Usage: !weather <city>") is noise: hide it (no default city on purpose)
@@ -3243,7 +3398,7 @@ const groups = () => {
   if (!webTab || !SHOW) return;
   const list = document.getElementById("results-list");
   if (!list) return;
-  const key = searchId(location.href);
+  const key = searchId();
   if (G.key !== key) {
     list.querySelectorAll(".ct-grp, .ct-sl").forEach((x) => x.remove());
     list.querySelectorAll(".ct-grouped").forEach((x) => x.classList.remove("ct-grouped"));
@@ -3335,7 +3490,7 @@ const groups = () => {
   if (fmt && !G.cut) {
     G.cut = true;
     requestAnimationFrame(() => {
-      if (scrollY > 40 || searchId(location.href) !== key) return;
+      if (scrollY > 40 || searchId() !== key) return;
       const v = [...list.querySelectorAll(".result-item")].filter((el) => shown(el) && el.getBoundingClientRect().top < innerHeight);
       const r = v.length && info(v[v.length - 1]);
       if (r && typeof r.ai === "number") bridge("cut", { w: (fmt.text * r.ai).toFixed(4) }).catch(() => {});
@@ -3514,7 +3669,7 @@ const shapeBody = (a, rs) => {
 // waiting for a result below the screen if none is there yet. =====
 const SD = { key: "", asked: false, d: null, done: false };
 const sidesPass = () => {
-  const key = searchId(location.href), list = document.getElementById("results-list");
+  const key = searchId(), list = document.getElementById("results-list");
   if (SD.key !== key) { Object.assign(SD, { key, asked: false, d: null, done: false }); document.querySelectorAll(".ct-sides").forEach((x) => x.remove()); }
   if (!webTab || SD.done || !list || shaped()) return;
   if (!SD.asked) {
@@ -3621,12 +3776,12 @@ let liveT = 0;
 const livePoll = (key, q) => {
   clearTimeout(liveT);
   liveT = setTimeout(async () => {
-    if (searchId(location.href) !== key) return;
+    if (searchId() !== key) return;
     if (document.visibilityState !== "visible") { document.addEventListener("visibilitychange", () => livePoll(key, q), { once: true }); return; }
     const j = await bridge("sports", { q }).catch(() => null);
     const a = j && j.g && CT.sportsAnswer(j.g);
     const box = document.querySelector("#at-a-glance > .ct-ans[data-kind=sports]");
-    if (!a || !box || searchId(location.href) !== key) return;
+    if (!a || !box || searchId() !== key) return;
     ansVal = a;
     box.querySelectorAll(".ct-sp-score").forEach((el, i) => { el.textContent = a.teams[i].score; });
     box.querySelectorAll(".ct-sp-team").forEach((el, i) => el.classList.toggle("ct-win", !!a.teams[i].winner));
@@ -3656,7 +3811,7 @@ const endOf = (el) => {
   return n;
 };
 const byWorth = (kind, fit) => {
-  const list = document.getElementById("results-list"), key = searchId(location.href);
+  const list = document.getElementById("results-list"), key = searchId();
   const needs = ready("needs", key), fmt = CT.fmtShares(needs?.f), share = CT.blockShare(fmt, needs?.b, kind);
   if (!list || share == null) return null;
   const v = [...list.querySelectorAll(".result-item")].filter((el) => el.style.display !== "none" && !el.classList.contains("ct-grouped") && !el.dataset.ctKp);
@@ -3667,7 +3822,7 @@ const byWorth = (kind, fit) => {
 const ansPass = () => {
   const g = document.getElementById("at-a-glance");
   if (!g) return;
-  const key = searchId(location.href);
+  const key = searchId();
   if (ansFor !== key) {
     ansFor = key;
     let q = "", page = 1;
@@ -3728,7 +3883,7 @@ document.addEventListener("keydown", ansCopy);
 // Drawn above the results in the pass that draws them (never later); runs the site: search only when tapped.
 let onlyKey = "";
 const onlyPass = () => {
-  const key = searchId(location.href), list = document.getElementById("results-list");
+  const key = searchId(), list = document.getElementById("results-list");
   if (!webTab || !list || onlyKey === key || drawnFor === key) return;
   const rows = [...list.querySelectorAll(".result-item")].filter((x) => x.style.display !== "none");
   if (!rows.length) return;
@@ -3822,7 +3977,7 @@ const qvs = (() => { let m = {}; try { const c = JSON.parse(localStorage.getItem
 const starsWanted = (q) => CT.shapeOf(q) === "recipe" || /\b(?:reviews?|rating|ratings|rated)\b/i.test(q);
 let starsKey = "";
 const starsPass = () => {
-  const key = searchId(location.href), list = document.getElementById("results-list");
+  const key = searchId(), list = document.getElementById("results-list");
   if (!webTab || !list || SHOW.stars === false || starsKey === key || drawnFor === key) return;
   const rows = [...list.querySelectorAll(".result-item")].filter((x) => x.style.display !== "none" && !x.classList.contains("ct-grouped")).slice(0, 6);
   if (!rows.length) return;
@@ -3854,7 +4009,7 @@ const starsPass = () => {
 // the results cover one (CT.meaningLine, from the knowledge panel's answer). Results pass only, never later.
 let meanKey = "";
 const meanPass = () => {
-  const key = searchId(location.href), list = document.getElementById("results-list");
+  const key = searchId(), list = document.getElementById("results-list");
   if (!webTab || !list || SHOW.mean === false || meanKey === key || drawnFor === key) return;
   const rows = [...list.querySelectorAll(".result-item")].filter((x) => x.style.display !== "none");
   if (!rows.length) return;
@@ -3930,7 +4085,7 @@ document.addEventListener("click", (e) => {
   more.hidden = !open; b.textContent = open ? "Less ⌃" : "More ⌄"; b.setAttribute("aria-expanded", String(open));
 });
 const kpPass = () => {
-  const key = searchId(location.href), list = document.getElementById("results-list");
+  const key = searchId(), list = document.getElementById("results-list");
   if (kpKey !== key) { kpKey = key; document.querySelectorAll(".ct-kp").forEach((x) => x.remove()); }
   if (!list || !webTab || SHOW.kp === false || [...list.children].find((x) => x.classList.contains("ct-kp"))) return;
   const d = ready("kp", key), kp = d && d.kp;
@@ -3986,7 +4141,7 @@ const prodCard = (p, wide) => {
   return box;
 };
 const productPass = () => {
-  const key = searchId(location.href), list = document.getElementById("results-list");
+  const key = searchId(), list = document.getElementById("results-list");
   if (PD.key !== key) { Object.assign(PD, { key, asked: false, d: null, done: false }); document.querySelectorAll(".ct-prod").forEach((x) => x.remove()); }
   if (!webTab || SHOW.kp === false || PD.done || !list) return;
   if (!PD.asked) {
@@ -4104,8 +4259,8 @@ const init = () => {
     for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { safe("scan", () => scan(n)); safe("skeleton", () => skel(n)); safe("usage", () => noUsage(n)); }
     safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("flag", flagBtn); safe("gap", topGap); safe("tabkeep", tabKeep); safe("card", glance);
     safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass); safe("preview", previewPass); safe("sides", sidesPass); safe("prod", productPass);
-    safe("drawn", markDrawn);
-    safe("ai", () => { const g = document.getElementById("at-a-glance"); if (g) aiPass(g, searchId(location.href)); });
+    safe("drawn", markDrawn); safe("skellearn", skelLearn);
+    safe("ai", () => { const g = document.getElementById("at-a-glance"); if (g) aiPass(g, searchId()); });
   }).observe(document.body, { childList: true, subtree: true });
 };
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
