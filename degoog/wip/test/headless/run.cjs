@@ -5,7 +5,8 @@
 // Without the private rec/ (Claude's sandbox): a stub page with degoog's element ids and 30 made-up results per
 // search, header and tabs drawn (no degoog base CSS, so layout shift there is indicative; pass ms are real).
 // Each row also lists the 5 slowest page passes on that search (ms, all observer runs added up) and the run count;
-// then endless scroll's page 2 goes in: its 3 slowest passes (page2) and what above it went away (lost, must be 0).
+// then endless scroll's page 2 goes in: its 3 slowest passes (page2), what above it went away (lost, must be 0) and
+// how many px before the end of the list the next page starts loading (ahead).
 const fs = require("fs"), zlib = require("zlib"), path = require("path");
 const { chromium } = require(process.env.CT_PW || "playwright");
 const { render, ctx } = require("../render.js");
@@ -145,14 +146,16 @@ const page = (q) => {
         sen.className = "degoog-infinite degoog-infinite--loading";
         sen.innerHTML = '<div class="degoog-infinite__skeleton"><div class="skeleton-results skeleton-results--more">' + '<div class="skeleton-card"><div class="skeleton-line"></div><div class="skeleton-line"></div></div>'.repeat(3) + "</div></div>";
         L.after(sen);
+        // how far before the end of the list degoog starts loading: its watcher fires 320 px before the line's box
+        const ahead = Math.round(sen.firstElementChild.getBoundingClientRect().top - sen.getBoundingClientRect().top + 320);
         await new Promise((r) => setTimeout(r, 300));
         sen.querySelector(".degoog-infinite__skeleton").remove(); sen.classList.remove("degoog-infinite--loading");
         L.insertAdjacentHTML("beforeend", html2);
         await new Promise((r) => setTimeout(r, 300));
         const pm1 = globalThis.__ctPass ? globalThis.__ctPass() : null;
         const ms = pm0 && pm1 ? Object.entries(pm1.ms).map(([k, v]) => [k, v - (pm0.ms[k] || 0)]).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => `${k} ${v.toFixed(1)}`).join(", ") : "";
-        return { lost: before.filter((e) => !e.isConnected || !seen(e)).length, ms };
-      }, html2) : { lost: 0, ms: "" };
+        return { lost: before.filter((e) => !e.isConnected || !seen(e)).length, ms, ahead };
+      }, html2) : { lost: 0, ms: "", ahead: 0 };
       await p.mouse.wheel(0, 2500); await p.waitForTimeout(800);
       await p.evaluate(() => window.scrollTo(0, 0)); await p.waitForTimeout(300);
       const r = await p.evaluate(() => ({ cls: window.__cls, shown: [...document.querySelectorAll("#results-list .result-item")].filter((e) => e.offsetParent).length, folds: document.querySelectorAll(".ct-fold").length, alts: document.querySelectorAll(".ct-alts").length, kp: (() => { const k = document.querySelector(".ct-kp"); if (!k || !k.offsetParent) return `none sw${document.documentElement.scrollWidth}`; const b = k.getBoundingClientRect(), f = document.querySelector("#results-list .result-item:not([style*=none])").getBoundingClientRect(); return `${Math.round(b.left)}-${Math.round(b.right)} top${Math.round(b.top - f.top)} vw${innerWidth} sw${document.documentElement.scrollWidth}`; })(), dates: document.querySelectorAll(".ct-date").length, shifts: window.__shifts }));
@@ -187,7 +190,7 @@ const page = (q) => {
       if (pm) { r.runs = pm.batches; r.slow = Object.entries(pm.ms).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([k, v]) => `${k} ${v.toFixed(1)}`).join(", "); }
       const file = path.join(out, `${width}-${q.replace(/\W+/g, "_")}.png`);
       await p.screenshot({ path: file, fullPage: false });
-      rows.push({ width, q, results: n, ...r, lost: more.lost, page2: more.ms, errors: errors.length ? errors.slice(0, 2) : 0 });
+      rows.push({ width, q, results: n, ...r, lost: more.lost, ahead: more.ahead, page2: more.ms, errors: errors.length ? errors.slice(0, 2) : 0 });
       await ctxB.close();
     }
   }

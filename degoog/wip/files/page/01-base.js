@@ -103,7 +103,9 @@ for (const m of ["pushState", "replaceState"]) {
   if (typeof o !== "function") continue;
   history[m] = function (st, ...rest) {
     const r = o.call(this, st, ...rest), k = sgKey(st);
-    if (k !== null) { if (m === "pushState" || (SGk && k !== SGk)) SG++; SGk = k; }
+    // endless scroll's rewrite (it carries loaded: N) is the same search even if it names it differently: a new search
+    // there cleared every box, card and fold the page had drawn above the new page (v90)
+    if (k !== null) { if (m === "pushState" || (SGk && k !== SGk && !(st.loaded > 0))) SG++; SGk = k; }
     return r;
   };
 }

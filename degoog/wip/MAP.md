@@ -271,7 +271,7 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
   - route `/yt` :339
   - route `/hd` :349
 
-## page/01-base.js (205 lines)
+## page/01-base.js (207 lines)
   - `bridge` :3
   - `aiKey` :22
   - `fadeIn` :73
@@ -279,15 +279,15 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
   - `lineUp` :77
   - `urlId` :91
   - `sgKey` :100
-  - `searchId` :111
-  - `sameSearch` :112
-  - `curQ` :115
-  - `shaped` :116
-  - `nameLike` :125
-  - `stripTail` :126
-  - `cleanTitle` :137
-  - `readQuery` :185
-  - `junk` :197
+  - `searchId` :113
+  - `sameSearch` :114
+  - `curQ` :117
+  - `shaped` :118
+  - `nameLike` :127
+  - `stripTail` :128
+  - `cleanTitle` :139
+  - `readQuery` :187
+  - `junk` :199
 
 ## page/02-list.js (364 lines)
 - **List pass (Web tab): dedupe -> site prefs -> 2 per site with folds, planned by core.js before paint** :2
@@ -377,7 +377,7 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
   - `picLoad` :190
   - `noUsage` :204
 
-## page/08-blocks.js (354 lines)
+## page/08-blocks.js (366 lines)
 - **Sitelinks, Discussions and forums, Videos, Top stories** :3
   - `ytId` :8
   - `VIDEO_URL` :15
@@ -622,7 +622,7 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
 
 ## setcss.js (12 lines)
 
-## custom.css (913 lines)
+## custom.css (918 lines)
 - Catppuccin Mocha colors :1
 - DESCRIPTION SIZE :22
 - v50 :24
