@@ -59,7 +59,7 @@ const upgrade = (raw, W) => {
 // learned from your own results (names like "Asura Scans" or "RTINGS"), so it keeps getting better the more you
 // search. Bing's suggestions (Bing already gets your searches as an engine) add a second opinion and the related
 // searches. Words you keep with "Search instead" are never changed again.
-// Same as core.js sitesFromLists (the server file can't import the page's core; a test checks they agree)
+// The lists' text -> {domain: "hide" | "prefer" | "lower"} (regex and uBlock lines are degoog's business; Hide wins)
 const plainHost = (l) => /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(l);
 export const sitesFromLists = (block = "", score = "") => {
   const out = {};
@@ -1587,7 +1587,7 @@ const doiNames = async (rs) => {
 // ===== ⚑ Flags: "what's wrong with these results?" from the ⚑ in the tab row =====
 // Save in the ⚑ box keeps each flag (the search, the tab, your note, its top 10 results) in flags.json on this
 // server only. The local model (flagJudge) decides when what's waiting is worth a Claude session; the PC's hourly job
-// then sends it all in one (core flagPrompt), plus the updater's last problem (update-issue.txt, sent at once).
+// then sends it all in one (flagPrompt), plus the updater's last problem (update-issue.txt, sent at once).
 const flagsFile = () => `${DIR}/flags.json`, issueFile = () => `${DIR}/update-issue.txt`;
 // The installer's last "install timing (s)" line (written by ../install.ps1 after its self-check), shown in status and reports
 const installTiming = () => { try { return fs.readFileSync(`${DIR}/install-timing.txt`, "utf8").trim().slice(0, 300); } catch { return ""; } };
@@ -1596,7 +1596,7 @@ const readFlags = () => { if (FLAGS) return FLAGS; try { const j = JSON.parse(fs
 const saveFlags = () => { try { fs.writeFileSync(`${flagsFile()}.tmp`, JSON.stringify(FLAGS)); fs.renameSync(`${flagsFile()}.tmp`, flagsFile()); } catch {} };
 const flagIssue = () => { try { const st = fs.statSync(issueFile()); const t = st.mtimeMs; const text = fs.readFileSync(issueFile(), "utf8").trim(); return text && t > (readFlags().issueAt || 0) ? { t, text: text.slice(-3000) } : null; } catch { return null; } };
 const flagOpen = () => readFlags().list.filter((f) => !f.handed);
-// Same as core.js FLAG_CATS / flagCats / flagCtxClean (test/flag.test.js checks they agree)
+// The ⚑ chips' ids (same list as core.js FLAG_CATS, which draws them: test/flag.test.js checks they agree)
 export const FLAG_CATS = [["offtopic", "Off-topic"], ["spam", "Spam / junk"], ["missing", "Missing what I wanted"], ["outdated", "Outdated"],
   ["order", "Wrong order"], ["layout", "Layout looks off"], ["broken", "Something's broken or slow"]];
 export const flagCats = (a) => { const ok = new Set(FLAG_CATS.map((c) => c[0])); return [...new Set((Array.isArray(a) ? a : []).map(String))].filter((c) => ok.has(c)); };
@@ -1610,10 +1610,11 @@ export const flagCtxClean = (c) => {
   return { ver: String(c.ver || "").slice(0, 20), vw: num(c.vw, 10000), vh: num(c.vh, 10000), dpr: Number.isFinite(+c.dpr) ? Math.round(+c.dpr * 100) / 100 : null, phone: !!c.phone, load, boxes };
 };
 
-// Same as core.js flagPrompt (test/flag.test.js checks they agree): the text a Claude Code session opens with
-export const flagPromptS = (flags, issue, max = 12000) => {
+// The prompt the PC job sends into the reports session (its link fits about 14,000 characters: snippets are dropped
+// first, then the oldest waiting flags; the newest flag always stays)
+export const flagPrompt = (flags, issue, max = 12000) => {
   const head = "degoog clean-titles: fix what my degoog reported. Read degoog/wip/QUICKSTART.md in acqcath/scripts first and follow its \"Flags\" steps: " +
-    "commit the flags below to the private repo acqcath/degoog-flags, then fix the code so these searches come out right, release and merge. " +
+    "fix the code so the searches below come out right, add tests, release and merge. " +
     "Keep my searches out of the public repo.\n";
   const body = (fl, snip) => JSON.stringify({ flags: fl.map((f) => ({ at: new Date(f.t).toISOString(), q: f.q, tab: f.type, cats: f.cats || [], note: f.note, ctx: f.ctx || null, top: (f.top || []).map((r) => (snip ? { ai: r.ai ?? null, title: r.title, url: r.url, snippet: r.snippet } : { ai: r.ai ?? null, title: r.title, url: r.url })) })), updateIssue: issue || null });
   let fl = (flags || []).slice(-20);
@@ -1953,7 +1954,7 @@ export const routes = [
       // The PC's hourly job (../autoupdate-job.ps1 SendReports): the prompt itself, with no " or \ in it, because
       // Windows PowerShell mangles those in arguments to programs
       const jd = open.length ? await flagJudge().catch(() => null) : null;
-      if (new URL(req.url).searchParams.get("prompt") === "1") return jsonOut({ n: open.length + (i ? 1 : 0), issue: !!i, send: !!i || !!(jd && jd.send), why: jd ? jd.why : "", prompt: (flagPromptS(open, i ? i.text : "") + (installTiming() ? "\nLast install " + installTiming() : "")).replace(/["\\]/g, "'") });
+      if (new URL(req.url).searchParams.get("prompt") === "1") return jsonOut({ n: open.length + (i ? 1 : 0), issue: !!i, send: !!i || !!(jd && jd.send), why: jd ? jd.why : "", prompt: (flagPrompt(open, i ? i.text : "") + (installTiming() ? "\nLast install " + installTiming() : "")).replace(/["\\]/g, "'") });
       return jsonOut({ flags: open, issue: i ? i.text : "", send: !!(jd && jd.send), why: jd ? jd.why : "" });
     },
   },

@@ -1,7 +1,6 @@
-## FIRST, EVERY RUN: read the user's memory before anything else
+# HISTORY ONLY (v50-v84 build log)
 
-**Start with QUICKSTART.md (short). This file is the long log.**
-Call mcp__memory__memory_read on /preferences.md and /topics/priorities.md (and /areas/degoog.md). They hold the user's principles and how they want replies and work done; they apply to every run and every message. This file only adds project facts. (2026-11-23: a whole live session skipped this and broke several of those rules.)
+Not kept up to date: QUICKSTART.md and MAP.md are the source of truth; anything here that disagrees with them or the code is stale. Grep it for the reasoning behind old decisions.
 
 # clean-titles v50: build notes (branch v50-wip)
 

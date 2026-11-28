@@ -1,3 +1,5 @@
+# HISTORY ONLY: the original v50 brief (2026-11-23). Not kept up to date; QUICKSTART.md, PLAN.md and MAP.md are the source of truth.
+
 Build clean-titles v50 for my degoog now. Everything below is decided and tested; don't re-plan or ask me to re-approve. Ask only if something is impossible or contradicts itself, and say exactly what.
 
 === SETUP ===

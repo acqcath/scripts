@@ -1,5 +1,5 @@
-// clean-titles v84
-const CT_VER = "v84";
+// clean-titles v85
+const CT_VER = "v85";
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -338,18 +338,6 @@ const VARIETY_MARGIN = null;
 // Hide = a line in domainBlockList; Prefer / Lower = "domain|N" in domainScoreList (N added to each result's score
 // on the server, where a top result scores about 60). So degoog applies them itself on every tab, before render.
 const SITE_SCORE = { prefer: 40, lower: -40, normal: 0 };
-const plainHost = (l) => /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(l);
-// The lists' text -> {domain: "hide" | "prefer" | "lower"} (regex and uBlock lines are degoog's business; Hide wins)
-const sitesFromLists = (block = "", score = "") => {
-  const out = {};
-  for (const raw of String(score).split("\n")) {
-    const [d, n] = raw.split("|").map((x) => (x || "").trim());
-    const v = Number(n);
-    if (d && plainHost(d) && n && Number.isFinite(v) && v !== 0) out[d.toLowerCase()] = v > 0 ? "prefer" : "lower";
-  }
-  for (const raw of String(block).split("\n")) { const d = raw.trim().toLowerCase(); if (plainHost(d)) out[d] = "hide"; }
-  return out;
-};
 // Block list without this site's own line (other lines, comments and patterns untouched)
 const unblockText = (block, domain) => {
   const d = String(domain).toLowerCase();
@@ -588,35 +576,10 @@ const topicOf = (rel, words) => {
 const tidyTitle = (t) => tidyText(t).replace(/^[\s|·•:,;–—-]+|[\s|·•:,;–—-]+$/g, "");
 
 
-// ===== ⚑ Report: what can be wrong (multi-select chips in the ⚑ box; the note stays optional). Shared by the page
-// (chips), the server (only these ids are kept) and the prompt. =====
+// ===== ⚑ Report: what can be wrong (multi-select chips in the ⚑ box; the note stays optional). The page draws the
+// chips from this list; the server keeps only these ids (index.js FLAG_CATS, same list: test/flag.test.js) =====
 const FLAG_CATS = [["offtopic", "Off-topic"], ["spam", "Spam / junk"], ["missing", "Missing what I wanted"], ["outdated", "Outdated"],
   ["order", "Wrong order"], ["layout", "Layout looks off"], ["broken", "Something's broken or slow"]];
-const flagCats = (a) => { const ok = new Set(FLAG_CATS.map((c) => c[0])); return [...new Set((Array.isArray(a) ? a : []).map(String))].filter((c) => ok.has(c)); };
-// Context sent with each flag, clipped to sane sizes: {vw, vh, dpr, phone, load: {name: ms}, boxes: [{box, n}]}
-const flagCtxClean = (c) => {
-  if (!c || typeof c !== "object") return null;
-  const num = (v, max = 1e6) => (Number.isFinite(+v) ? Math.max(0, Math.min(max, Math.round(+v))) : null);
-  const load = {};
-  for (const [k, v] of Object.entries(c.load && typeof c.load === "object" ? c.load : {}).slice(0, 12)) { const n = num(v, 600000); if (n !== null) load[String(k).slice(0, 40)] = n; }
-  const boxes = (Array.isArray(c.boxes) ? c.boxes : []).slice(0, 30).map((b) => ({ box: String((b && b.box) || "").slice(0, 60), n: num(b && b.n, 999) || 1 })).filter((b) => b.box);
-  return { ver: String(c.ver || "").slice(0, 20), vw: num(c.vw, 10000), vh: num(c.vh, 10000), dpr: Number.isFinite(+c.dpr) ? Math.round(+c.dpr * 100) / 100 : null, phone: !!c.phone, load, boxes };
-};
-
-// ===== ⚑ Report: the text the Claude Code session opens with (Claude's link takes about 14,000 characters: snippets
-// are dropped first, then the oldest waiting flags; the flag being reported always stays) =====
-const flagPrompt = (flags, issue, max = 12000) => {
-  const head = "degoog clean-titles: fix what my degoog reported. Read degoog/wip/QUICKSTART.md in acqcath/scripts first and follow its \"Flags\" steps: " +
-    "commit the flags below to the private repo acqcath/degoog-flags, then fix the code so these searches come out right, release and merge. " +
-    "Keep my searches out of the public repo.\n";
-  const body = (fl, snip) => JSON.stringify({ flags: fl.map((f) => ({ at: new Date(f.t).toISOString(), q: f.q, tab: f.type, cats: f.cats || [], note: f.note, ctx: f.ctx || null, top: (f.top || []).map((r) => (snip ? { ai: r.ai ?? null, title: r.title, url: r.url, snippet: r.snippet } : { ai: r.ai ?? null, title: r.title, url: r.url })) })), updateIssue: issue || null });
-  let fl = (flags || []).slice(-20);
-  for (;;) {
-    for (const snip of [true, false]) { const s = head + body(fl, snip); if (s.length <= max || fl.length <= 1) { if (s.length <= max || !snip) return s.slice(0, max); } }
-    if (fl.length <= 1) return (head + body(fl, false)).slice(0, max);
-    fl = fl.slice(1);
-  }
-};
 
 // ===== One scale for blocks and results (user, 2026-11-26). The needs call (server /needs) gives format shares f
 // (video / image / text, sum 1). An item's worth = its format's share x its fit (AI score 0..1). A box is worth its
@@ -1478,7 +1441,7 @@ const qaAbout = (question, text) => {
   return n >= (ws.length >= 3 ? 2 : 1);
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, navName, navDist, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, copyKey, sameCopy, jaccard, varietyOrder, VARIETY_MARGIN, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, relCore, related, topicOf, tidyTitle, FLAG_CATS, flagCats, flagCtxClean, flagPrompt, fmtShares, boxWorth, boxAt, cutMedian, blockGo, blockShare, shapePick, questionStyle, prodShow, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippetAI, featuredSnippet, QA_LEAD, qaAbout };
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, navName, navDist, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, copyKey, sameCopy, jaccard, varietyOrder, VARIETY_MARGIN, SITE_SCORE, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, relCore, related, topicOf, tidyTitle, FLAG_CATS, fmtShares, boxWorth, boxAt, cutMedian, blockGo, blockShare, shapePick, questionStyle, prodShow, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippetAI, featuredSnippet, QA_LEAD, qaAbout };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -1552,22 +1515,10 @@ try {
   };
 } catch {}
 const fadeIn = (e) => { e.classList.add("ct-in"); e.addEventListener("animationend", () => e.classList.remove("ct-in"), { once: true }); return e; };
-// The tab row ends where the search bar ends (Tools sits under the bar's → button, in the same column as results)
 // One icon per site across the page: the first favicon seen for a host is used for every later result from it
 const FAVS = new Map();
 const favOf = (h, f) => { if (!f) return FAVS.get(h) || ""; if (!FAVS.has(h)) FAVS.set(h, f); return FAVS.get(h); };
-const tabsEdge = () => {
-  const bar = document.getElementById("results-search-bar"), tabs = document.getElementById("results-tabs");
-  if (!bar || !tabs) return;
-  // as right padding, not a max-width: centered mode pins the row's width (max-width !important), and the divider
-  // stays edge to edge either way
-  const pr = Math.round(tabs.getBoundingClientRect().right - bar.getBoundingClientRect().right);
-  if (pr >= 0 && bar.getBoundingClientRect().width > 200) tabs.style.setProperty("--ct-tabs-pr", `${pr}px`);
-  else tabs.style.removeProperty("--ct-tabs-pr");
-  if (!tabsEdge.ro && window.ResizeObserver) { tabsEdge.ro = new ResizeObserver(() => requestAnimationFrame(tabsEdge)); tabsEdge.ro.observe(bar); tabsEdge.ro.observe(tabs); }
-};
 const lineUp = () => {
-  tabsEdge();
   // Lined up with the content under it on every tab and screen size: a result's text, or the edge of the picture grid
   const main = document.getElementById("results-main");
   const c = main && [...main.querySelectorAll("#results-list .result-item .result-title, #results-list .image-card, #results-list .video-card")].find((e) => e.offsetParent);
@@ -2837,7 +2788,6 @@ const tools = () => {
   t.textContent = "Tools";
   t.setAttribute("aria-expanded", "false");
   tabs.append(t);
-  tabsEdge();
   t.addEventListener("click", () => {
     let f = document.getElementById("ct-adv");
     if (f) { f.remove(); t.setAttribute("aria-expanded", "false"); topGap(); return; }

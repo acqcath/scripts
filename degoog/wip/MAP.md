@@ -2,7 +2,7 @@
 
 Every section, function and route in degoog/wip/files with its line. Read the lines you need (`sed -n A,Bp file`), not whole files.
 
-## index.js (2359 lines)
+## index.js (2360 lines)
   - `braveOriginal` :13
   - `upgrade` :33
 - **Typo fixing and related searches, without Google** :57
@@ -168,239 +168,238 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - `flagOpen` :1598
   - `flagCats` :1602
   - `flagCtxClean` :1604
-  - `flagPromptS` :1614
-  - `aiAsk` :1628
-  - `judgeParse` :1663
-  - `flagHost` :1668
-  - `flagJudge` :1670
-  - `judgeNow` :1681
-  - `flagCount` :1682
-  - `needsParse` :1704
-  - `cutFile` :1716
-  - `readCuts` :1718
-  - `cutAdd` :1719
-  - `cutNow` :1720
-  - `_cutReset` :1721
-- **Unsolved-search learning (M5): layout only, keyed by the needs profile, never sites or viewpoints** :1724
-  - `topOf` :1726
-  - `needsKey` :1727
-  - `learnFactors` :1732
-  - `nudgeNeeds` :1737
-  - `learnFile` :1754
-  - `learnLoad` :1756
-  - `learnSave` :1758
-  - `learnWindow` :1760
-  - `sameParse` :1764
-  - `credit` :1765
-  - `learnSearch` :1767
-  - `learnOpen` :1785
-  - `SHOW_LEARN` :1791
-  - `learnNudge` :1792
-  - `_learnReset` :1793
-  - `needsFor` :1794
-- **M4: the answer card's shape and the contested check, both written by ai-summary's model (aiAsk)** :1812
-  - `cell` :1822
-  - `shapeParse` :1823
-  - `sidesParse` :1842
-  - `resText` :1851
-  - `resIn` :1852
-  - `cached` :1854
-  - `shapeFor` :1855
-  - `sidesFor` :1859
-  - `speedAdd` :1873
-  - `median` :1874
-  - `rankWait` :1875
-  - `globalThis.__ctResults` :1876
-  - `ctResults` :1880
-  - `rankPart` :1890
-  - route `/flag` :1925
-  - route `/flags` :1943
-  - route `/vis` :1963
-  - route `/status` :1976
-  - route `/needs` :1990
-  - route `/seen` :2000
-  - route `/shape` :2006
-  - route `/sides` :2012
-  - route `/speed` :2018
-  - route `/cut` :2024
-  - route `/rank` :2030
-  - route `/near` :2041
-  - route `/fix` :2051
-  - route `/qs` :2071
-  - route `/relay` :2082
-  - route `/sites` :2102
-  - route `/why` :2120
-  - route `/wd` :2125
-  - route `/product` :2134
-  - route `/qv` :2144
-  - route `/qvs` :2152
-  - route `/arch` :2161
-  - route `/kp` :2169
-  - route `/sports` :2177
-  - route `/cmu` :2185
-  - route `/eol` :2193
-  - route `/aiimg` :2203
-  - route `/seo` :2213
-  - route `/prefs` :2223
-  - route `/perf` :2229
-  - route `/learn` :2245
-  - route `/yt` :2258
-  - route `/hd` :2268
+  - `flagPrompt` :1615
+  - `aiAsk` :1629
+  - `judgeParse` :1664
+  - `flagHost` :1669
+  - `flagJudge` :1671
+  - `judgeNow` :1682
+  - `flagCount` :1683
+  - `needsParse` :1705
+  - `cutFile` :1717
+  - `readCuts` :1719
+  - `cutAdd` :1720
+  - `cutNow` :1721
+  - `_cutReset` :1722
+- **Unsolved-search learning (M5): layout only, keyed by the needs profile, never sites or viewpoints** :1725
+  - `topOf` :1727
+  - `needsKey` :1728
+  - `learnFactors` :1733
+  - `nudgeNeeds` :1738
+  - `learnFile` :1755
+  - `learnLoad` :1757
+  - `learnSave` :1759
+  - `learnWindow` :1761
+  - `sameParse` :1765
+  - `credit` :1766
+  - `learnSearch` :1768
+  - `learnOpen` :1786
+  - `SHOW_LEARN` :1792
+  - `learnNudge` :1793
+  - `_learnReset` :1794
+  - `needsFor` :1795
+- **M4: the answer card's shape and the contested check, both written by ai-summary's model (aiAsk)** :1813
+  - `cell` :1823
+  - `shapeParse` :1824
+  - `sidesParse` :1843
+  - `resText` :1852
+  - `resIn` :1853
+  - `cached` :1855
+  - `shapeFor` :1856
+  - `sidesFor` :1860
+  - `speedAdd` :1874
+  - `median` :1875
+  - `rankWait` :1876
+  - `globalThis.__ctResults` :1877
+  - `ctResults` :1881
+  - `rankPart` :1891
+  - route `/flag` :1926
+  - route `/flags` :1944
+  - route `/vis` :1964
+  - route `/status` :1977
+  - route `/needs` :1991
+  - route `/seen` :2001
+  - route `/shape` :2007
+  - route `/sides` :2013
+  - route `/speed` :2019
+  - route `/cut` :2025
+  - route `/rank` :2031
+  - route `/near` :2042
+  - route `/fix` :2052
+  - route `/qs` :2072
+  - route `/relay` :2083
+  - route `/sites` :2103
+  - route `/why` :2121
+  - route `/wd` :2126
+  - route `/product` :2135
+  - route `/qv` :2145
+  - route `/qvs` :2153
+  - route `/arch` :2162
+  - route `/kp` :2170
+  - route `/sports` :2178
+  - route `/cmu` :2186
+  - route `/eol` :2194
+  - route `/aiimg` :2204
+  - route `/seo` :2214
+  - route `/prefs` :2224
+  - route `/perf` :2230
+  - route `/learn` :2246
+  - route `/yt` :2259
+  - route `/hd` :2269
 
-## script.js (2830 lines)
+## script.js (2817 lines)
   - `bridge` :2
   - `aiKey` :21
   - `fadeIn` :72
-  - `favOf` :76
-  - `tabsEdge` :77
-  - `lineUp` :87
-  - `urlId` :102
-  - `sgKey` :111
-  - `searchId` :122
-  - `sameSearch` :123
-  - `curQ` :126
-  - `shaped` :127
-  - `nameLike` :136
-  - `stripTail` :137
-  - `cleanTitle` :148
-  - `readQuery` :196
-  - `junk` :208
-- **List pass (Web tab): dedupe -> site prefs -> 2 per site with folds, planned by core.js before paint** :216
-  - `PSL` :220
-  - `saveSites` :227
-  - `takeSites` :233
-  - `sitePrefs` :243
-  - `tabPass` :250
-  - `relPass` :284
-  - `listPass` :336
-  - `foldPass` :389
-  - `canHD` :414
-  - `sizeHint` :426
-  - `lowres` :434
-  - `hdImg` :435
-  - `picKey` :484
-  - `hang` :496
-  - `row` :507
-  - `aiImg` :575
-- **Image AI (ct-vision on the PC's GPU, through this plugin's server)** :579
-  - `origOf` :583
-  - `VISON` :585
-  - `visThr` :587
-  - `visAsk` :593
-  - `visQueue` :598
-  - `visFlush` :608
-  - `visKey` :617
-  - `visRow` :619
-  - `visApply` :624
-  - `mediaRel` :643
-  - `mediaFold` :658
-  - `mediaFoldAdd` :665
-  - `previewPass` :706
-  - `relatedStrip` :720
-  - `relOk` :767
-  - `card` :768
-  - `handle` :789
-  - `scan` :798
-  - `bangFor` :822
-  - `markDrawn` :843
-  - `glance` :844
-  - `ask` :877
-  - `ready` :882
-  - `earlyStart` :884
-  - `nearWord` :961
-  - `lower` :972
-  - `extras` :974
-- **Site choices, People also ask, and search Tools** :1081
-  - `goTo` :1082
-  - `rowHost` :1088
-- **Sites: Prefer / Normal / Lower / Hide, one rounded group in each result's menu (replaces Rank / Block)** :1089
-  - `siteOf` :1094
-  - `siteItems` :1095
-  - `settingsFetch` :1147
-  - `saveSite` :1155
-  - `paaAnchor` :1206
-  - `paa` :1209
-  - `advParse` :1337
-  - `tools` :1349
-  - `flagTop` :1407
-  - `flagCtx` :1422
-  - `curType` :1447
-  - `flagBox` :1448
-  - `flagPlace` :1525
-  - `flagBtn` :1532
-  - `topGap` :1549
-- **Loading skeletons in the shape of what comes** :1575
-  - `skelGet` :1582
-  - `skelPut` :1583
-  - `skelKey` :1584
-  - `textTop` :1587
-  - `skelBlock` :1591
-  - `skelShape` :1593
-  - `skelLearn` :1622
-  - `skel` :1653
-  - `picLoad` :1707
-  - `noUsage` :1721
-- **Sitelinks, Discussions and forums, Videos, Top stories** :1730
-  - `ytId` :1735
-  - `VIDEO_URL` :1742
-  - `forumName` :1746
-  - `when` :1759
-  - `ago` :1767
-  - `fresh` :1778
-  - `hot` :1782
-  - `qHash` :1786
-  - `hashStore` :1787
-  - `info` :1805
-  - `mk` :1828
-  - `favImg` :1829
-  - `moreBtn` :1836
-  - `scroller` :1845
-  - `section` :1857
-  - `forumRow` :1860
-  - `siteName` :1873
-  - `videoCard` :1874
-  - `storyCard` :1896
-  - `used` :1913
-  - `shown` :1914
-  - `groups` :1915
-- **Answer card, local answers (core answers.js: math, units, cooking, tip/percent, dates, patterns)** :2081
-  - `cmuQ` :2087
-  - `aiWanted` :2092
-  - `aiBox` :2108
-  - `aiPass` :2121
-  - `topRes` :2148
-  - `shapeAsk` :2151
-  - `shapeBody` :2165
-  - `sidesPass` :2189
-  - `ansCard` :2231
-  - `livePoll` :2294
-  - `fitLine` :2313
-  - `endOf` :2326
-  - `byWorth` :2331
-  - `ansPass` :2340
-  - `ansCopy` :2389
-  - `onlyPass` :2403
-- **Quick view (spec 11): your tap opens it under the result (it grows: your action), tap again to close** :2426
-  - `qvBox` :2428
-  - `qvs` :2494
-  - `starsWanted` :2495
-  - `starsPass` :2497
-  - `meanPass` :2529
-- **Knowledge panel (spec 3)** :2548
-  - `kpWanted` :2556
-  - `kpCard` :2562
-  - `kpPass` :2605
-  - `money` :2636
-  - `prodCard` :2637
-  - `productPass` :2661
-  - `tabKind` :2703
-  - `tabKeep` :2704
-  - `safe` :2728
-  - `tabRescue` :2733
-  - `init` :2748
-- **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :2786
+  - `favOf` :75
+  - `lineUp` :76
+  - `urlId` :90
+  - `sgKey` :99
+  - `searchId` :110
+  - `sameSearch` :111
+  - `curQ` :114
+  - `shaped` :115
+  - `nameLike` :124
+  - `stripTail` :125
+  - `cleanTitle` :136
+  - `readQuery` :184
+  - `junk` :196
+- **List pass (Web tab): dedupe -> site prefs -> 2 per site with folds, planned by core.js before paint** :204
+  - `PSL` :208
+  - `saveSites` :215
+  - `takeSites` :221
+  - `sitePrefs` :231
+  - `tabPass` :238
+  - `relPass` :272
+  - `listPass` :324
+  - `foldPass` :377
+  - `canHD` :402
+  - `sizeHint` :414
+  - `lowres` :422
+  - `hdImg` :423
+  - `picKey` :472
+  - `hang` :484
+  - `row` :495
+  - `aiImg` :563
+- **Image AI (ct-vision on the PC's GPU, through this plugin's server)** :567
+  - `origOf` :571
+  - `VISON` :573
+  - `visThr` :575
+  - `visAsk` :581
+  - `visQueue` :586
+  - `visFlush` :596
+  - `visKey` :605
+  - `visRow` :607
+  - `visApply` :612
+  - `mediaRel` :631
+  - `mediaFold` :646
+  - `mediaFoldAdd` :653
+  - `previewPass` :694
+  - `relatedStrip` :708
+  - `relOk` :755
+  - `card` :756
+  - `handle` :777
+  - `scan` :786
+  - `bangFor` :810
+  - `markDrawn` :831
+  - `glance` :832
+  - `ask` :865
+  - `ready` :870
+  - `earlyStart` :872
+  - `nearWord` :949
+  - `lower` :960
+  - `extras` :962
+- **Site choices, People also ask, and search Tools** :1069
+  - `goTo` :1070
+  - `rowHost` :1076
+- **Sites: Prefer / Normal / Lower / Hide, one rounded group in each result's menu (replaces Rank / Block)** :1077
+  - `siteOf` :1082
+  - `siteItems` :1083
+  - `settingsFetch` :1135
+  - `saveSite` :1143
+  - `paaAnchor` :1194
+  - `paa` :1197
+  - `advParse` :1325
+  - `tools` :1337
+  - `flagTop` :1394
+  - `flagCtx` :1409
+  - `curType` :1434
+  - `flagBox` :1435
+  - `flagPlace` :1512
+  - `flagBtn` :1519
+  - `topGap` :1536
+- **Loading skeletons in the shape of what comes** :1562
+  - `skelGet` :1569
+  - `skelPut` :1570
+  - `skelKey` :1571
+  - `textTop` :1574
+  - `skelBlock` :1578
+  - `skelShape` :1580
+  - `skelLearn` :1609
+  - `skel` :1640
+  - `picLoad` :1694
+  - `noUsage` :1708
+- **Sitelinks, Discussions and forums, Videos, Top stories** :1717
+  - `ytId` :1722
+  - `VIDEO_URL` :1729
+  - `forumName` :1733
+  - `when` :1746
+  - `ago` :1754
+  - `fresh` :1765
+  - `hot` :1769
+  - `qHash` :1773
+  - `hashStore` :1774
+  - `info` :1792
+  - `mk` :1815
+  - `favImg` :1816
+  - `moreBtn` :1823
+  - `scroller` :1832
+  - `section` :1844
+  - `forumRow` :1847
+  - `siteName` :1860
+  - `videoCard` :1861
+  - `storyCard` :1883
+  - `used` :1900
+  - `shown` :1901
+  - `groups` :1902
+- **Answer card, local answers (core answers.js: math, units, cooking, tip/percent, dates, patterns)** :2068
+  - `cmuQ` :2074
+  - `aiWanted` :2079
+  - `aiBox` :2095
+  - `aiPass` :2108
+  - `topRes` :2135
+  - `shapeAsk` :2138
+  - `shapeBody` :2152
+  - `sidesPass` :2176
+  - `ansCard` :2218
+  - `livePoll` :2281
+  - `fitLine` :2300
+  - `endOf` :2313
+  - `byWorth` :2318
+  - `ansPass` :2327
+  - `ansCopy` :2376
+  - `onlyPass` :2390
+- **Quick view (spec 11): your tap opens it under the result (it grows: your action), tap again to close** :2413
+  - `qvBox` :2415
+  - `qvs` :2481
+  - `starsWanted` :2482
+  - `starsPass` :2484
+  - `meanPass` :2516
+- **Knowledge panel (spec 3)** :2535
+  - `kpWanted` :2543
+  - `kpCard` :2549
+  - `kpPass` :2592
+  - `money` :2623
+  - `prodCard` :2624
+  - `productPass` :2648
+  - `tabKind` :2690
+  - `tabKeep` :2691
+  - `safe` :2715
+  - `tabRescue` :2720
+  - `init` :2735
+- **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :2773
 
-## core.js (649 lines)
+## core.js (612 lines)
 - **Sites: registrable domain via the public suffix list** :4
   - `pslParse` :6
   - `regDomain` :27
@@ -440,55 +439,50 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - `jaccard` :319
   - `varietyOrder` :320
 - **Sites: Prefer / Normal / Lower / Hide, stored in degoog's own lists** :334
-  - `plainHost` :338
-  - `sitesFromLists` :340
-  - `unblockText` :351
-- **Anti-SEO: signs on one search's web results (the server adds them up per site)** :356
-  - `aiTell` :363
-  - `staleBest` :365
-  - `snipWords` :373
-  - `overlap` :380
-  - `seoSigns` :384
-  - `seoVerdict` :409
-- **Paywall tag** :411
-  - `paywalled` :416
-- **Snippet cleanup** :418
-  - `cleanSnippet` :422
-  - `doiPublisher` :432
-  - `tidyText` :440
-  - `dateLabel` :467
-  - `relDate` :474
-- **Patterns ("paste anything")** :485
-  - `upsValid` :487
-  - `isbnValid` :494
-  - `cmuCourse` :501
-- **News / Science / Forums tabs: each favours its own kind (user, 2026-11-23), from 64 recorded tab searches** :513
-  - `tabLow` :523
-- **Relevance (one rule for every topic; no lists, nothing to train or maintain)** :534
-  - `relToks` :540
-  - `relWords` :542
-  - `relIdent` :547
-  - `relHit` :548
-  - `matchShare` :549
-  - `relJudgeable` :555
-  - `relCore` :559
-  - `related` :566
-  - `topicToks` :572
-  - `topicOf` :573
-  - `tidyTitle` :585
-  - `flagCats` :592
-  - `flagCtxClean` :594
-  - `flagPrompt` :605
-  - `fmtShares` :621
-  - `boxWorth` :622
-  - `boxAt` :624
-  - `cutMedian` :630
-  - `blockGo` :631
-  - `blockShare` :634
-- **M4: answer shape and contested check, from the needs call** :635
-  - `shapePick` :637
-  - `questionStyle` :644
-  - `prodShow` :648
+  - `unblockText` :339
+- **Anti-SEO: signs on one search's web results (the server adds them up per site)** :344
+  - `aiTell` :351
+  - `staleBest` :353
+  - `snipWords` :361
+  - `overlap` :368
+  - `seoSigns` :372
+  - `seoVerdict` :397
+- **Paywall tag** :399
+  - `paywalled` :404
+- **Snippet cleanup** :406
+  - `cleanSnippet` :410
+  - `doiPublisher` :420
+  - `tidyText` :428
+  - `dateLabel` :455
+  - `relDate` :462
+- **Patterns ("paste anything")** :473
+  - `upsValid` :475
+  - `isbnValid` :482
+  - `cmuCourse` :489
+- **News / Science / Forums tabs: each favours its own kind (user, 2026-11-23), from 64 recorded tab searches** :501
+  - `tabLow` :511
+- **Relevance (one rule for every topic; no lists, nothing to train or maintain)** :522
+  - `relToks` :528
+  - `relWords` :530
+  - `relIdent` :535
+  - `relHit` :536
+  - `matchShare` :537
+  - `relJudgeable` :543
+  - `relCore` :547
+  - `related` :554
+  - `topicToks` :560
+  - `topicOf` :561
+  - `tidyTitle` :573
+  - `fmtShares` :584
+  - `boxWorth` :585
+  - `boxAt` :587
+  - `cutMedian` :593
+  - `blockGo` :594
+  - `blockShare` :597
+- **M4: answer shape and contested check, from the needs call** :598
+  - `shapePick` :600
+  - `questionStyle` :607
+  - `prodShow` :611
 
 ## answers.js (828 lines)
 - **Answer card, local part (no network): math, units incl. cooking, tip / percent, date math, patterns** :1
@@ -671,6 +665,6 @@ Every section, function and route in degoog/wip/files with its line. Read the li
 - Loading placeholders in the shape of what comes (script :899
 
 ## other
-- ../autoupdate-job.ps1: the PC's hourly update job (Issue() puts update problems on the server for ⚑ Report)
+- ../autoupdate-job.ps1: the PC's update job: every minute, installs a new main within ~1 min, sends reports (Issue() puts update problems on the server for ⚑ Report)
 - ../install.ps1: generated by patch_installer.py; never read whole, grep it
 - test/*.test.js: bun tests

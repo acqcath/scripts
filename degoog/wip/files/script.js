@@ -70,22 +70,10 @@ try {
   };
 } catch {}
 const fadeIn = (e) => { e.classList.add("ct-in"); e.addEventListener("animationend", () => e.classList.remove("ct-in"), { once: true }); return e; };
-// The tab row ends where the search bar ends (Tools sits under the bar's → button, in the same column as results)
 // One icon per site across the page: the first favicon seen for a host is used for every later result from it
 const FAVS = new Map();
 const favOf = (h, f) => { if (!f) return FAVS.get(h) || ""; if (!FAVS.has(h)) FAVS.set(h, f); return FAVS.get(h); };
-const tabsEdge = () => {
-  const bar = document.getElementById("results-search-bar"), tabs = document.getElementById("results-tabs");
-  if (!bar || !tabs) return;
-  // as right padding, not a max-width: centered mode pins the row's width (max-width !important), and the divider
-  // stays edge to edge either way
-  const pr = Math.round(tabs.getBoundingClientRect().right - bar.getBoundingClientRect().right);
-  if (pr >= 0 && bar.getBoundingClientRect().width > 200) tabs.style.setProperty("--ct-tabs-pr", `${pr}px`);
-  else tabs.style.removeProperty("--ct-tabs-pr");
-  if (!tabsEdge.ro && window.ResizeObserver) { tabsEdge.ro = new ResizeObserver(() => requestAnimationFrame(tabsEdge)); tabsEdge.ro.observe(bar); tabsEdge.ro.observe(tabs); }
-};
 const lineUp = () => {
-  tabsEdge();
   // Lined up with the content under it on every tab and screen size: a result's text, or the edge of the picture grid
   const main = document.getElementById("results-main");
   const c = main && [...main.querySelectorAll("#results-list .result-item .result-title, #results-list .image-card, #results-list .video-card")].find((e) => e.offsetParent);
@@ -1355,7 +1343,6 @@ const tools = () => {
   t.textContent = "Tools";
   t.setAttribute("aria-expanded", "false");
   tabs.append(t);
-  tabsEdge();
   t.addEventListener("click", () => {
     let f = document.getElementById("ct-adv");
     if (f) { f.remove(); t.setAttribute("aria-expanded", "false"); topGap(); return; }
