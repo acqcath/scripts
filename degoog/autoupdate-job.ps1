@@ -199,15 +199,27 @@ $d = Join-Path $env:LOCALAPPDATA 'clean-titles'; $j = Join-Path $d 'job.ps1'
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072
 $git = (Get-Command git -ErrorAction SilentlyContinue).Source
 if (-not $git -and (Test-Path "$env:ProgramFiles\Git\cmd\git.exe")) { $git = "$env:ProgramFiles\Git\cmd\git.exe" }
-$env:CT_MAIN = ''
-if ($git) { try { $env:GIT_TERMINAL_PROMPT = '0'; $l = & $git -c credential.helper= ls-remote https://github.com/acqcath/scripts refs/heads/main 2>$null | Out-String; if ($l -match '^([0-9a-f]{40})') { $env:CT_MAIN = $Matches[1] } } catch {} }
-# Runs every minute, but the full job only when main moved (a new release: installed within a minute), hourly for
-# reports, or while a fix is on its way; otherwise it stops right here (one git ls-remote, no other work)
-$seenF = Join-Path $d 'main-seen.txt'; $fullF = Join-Path $d 'last-full.txt'
-$seen = if (Test-Path $seenF) { (Get-Content $seenF -Raw).Trim() } else { '' }
-$recent = (Test-Path $fullF) -and (Get-Item $fullF).LastWriteTime -gt (Get-Date).AddMinutes(-55)
-$watch = (Test-Path (Join-Path $d 'tried.txt')) -or (Test-Path (Join-Path $d 'watch-until.txt'))
-if ($recent -and -not $watch -and (-not $env:CT_MAIN -or $seen -eq $env:CT_MAIN)) { exit } # no git yet: hourly, as before
+# Runs every minute, but the full job only when main moved (a new release), hourly for reports, or while a fix is on
+# its way; otherwise it stops after one git ls-remote. Any push to the repo (a version branch goes up about a minute
+# before its merge) switches to a check every 10 s for 15 min, so a merge installs within ~10 s; idle stays once a minute.
+$seenF = Join-Path $d 'main-seen.txt'; $fullF = Join-Path $d 'last-full.txt'; $refsF = Join-Path $d 'refs-seen.txt'; $fastF = Join-Path $d 'fast-until.txt'
+$stop = (Get-Date).AddSeconds(50)
+while ($true) {
+  $env:CT_MAIN = ''; $refs = ''
+  if ($git) { try { $env:GIT_TERMINAL_PROMPT = '0'; $l = & $git -c credential.helper= ls-remote --heads https://github.com/acqcath/scripts 2>$null | Out-String; if ($l -match '(?m)^([0-9a-f]{40})\s+refs/heads/main\s*$') { $env:CT_MAIN = $Matches[1]; $refs = ($l -split "`n" | Sort-Object) -join '' } } catch {} }
+  if ($refs) {
+    $h = -join ([Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($refs)) | Select-Object -First 8 | ForEach-Object { $_.ToString('x2') })
+    $old = if (Test-Path $refsF) { (Get-Content $refsF -Raw).Trim() } else { '' }
+    if ($h -ne $old) { Set-Content -Path $refsF -Value $h; if ($old) { Set-Content -Path $fastF -Value (Get-Date).AddMinutes(15).ToString('o') } }
+  }
+  $seen = if (Test-Path $seenF) { (Get-Content $seenF -Raw).Trim() } else { '' }
+  $recent = (Test-Path $fullF) -and (Get-Item $fullF).LastWriteTime -gt (Get-Date).AddMinutes(-55)
+  $watch = (Test-Path (Join-Path $d 'tried.txt')) -or (Test-Path (Join-Path $d 'watch-until.txt'))
+  if (-not ($recent -and -not $watch -and (-not $env:CT_MAIN -or $seen -eq $env:CT_MAIN))) { break } # no git yet: hourly, as before
+  $fast = (Test-Path $fastF) -and ([datetime](Get-Content $fastF -Raw).Trim()) -gt (Get-Date)
+  if (-not $fast -or (Get-Date).AddSeconds(10) -gt $stop) { exit }
+  Start-Sleep -Seconds 10
+}
 $have = if (Test-Path "$j.sha") { (Get-Content "$j.sha" -Raw).Trim() } else { '' }
 if (-not $env:CT_MAIN -or $have -ne $env:CT_MAIN -or -not (Test-Path $j)) {
   try {
