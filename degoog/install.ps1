@@ -2361,8 +2361,8 @@ export default {
 };
 '@)
 [IO.File]::WriteAllText("$t\script.js", @'
-// clean-titles v75
-const CT_VER = "v75";
+// clean-titles v76
+const CT_VER = "v76";
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -5269,13 +5269,13 @@ const flagBox = (btn) => {
   let box = document.getElementById("ct-flagbox");
   // A floating card (popover under the ⚑ on PC, bottom sheet on phone): never pushes the results down
   const close = () => {
-    document.getElementById("ct-flagbox")?.remove(); document.getElementById("ct-flagscrim")?.remove();
+    document.getElementById("ct-flagbox")?.remove(); document.removeEventListener("click", outside, true);
     btn.setAttribute("aria-expanded", "false"); removeEventListener("keydown", esc); removeEventListener("resize", place);
     if (vv) { vv.removeEventListener("resize", place); vv.removeEventListener("scroll", place); }
-    document.documentElement.classList.remove("ct-sheet-open");
   };
   const esc = (e) => { if (e.key === "Escape") { close(); btn.focus(); } };
   const vv = window.visualViewport;
+  const outside = (e) => { const b = document.getElementById("ct-flagbox"); if (!b || b.contains(e.target) || btn.contains(e.target)) return; e.preventDefault(); e.stopPropagation(); close(); };
   const place = () => {
     const b = document.getElementById("ct-flagbox");
     if (!b) return;
@@ -5332,15 +5332,13 @@ const flagBox = (btn) => {
       setTimeout(() => { if (box.isConnected) close(); }, 1200);
     }).catch(() => { save.disabled = false; st.textContent = "Couldn't save. Try again."; });
   });
-  const scrim = mk("div", "", "");
-  scrim.id = "ct-flagscrim";
-  scrim.addEventListener("click", close);
-  document.body.append(scrim, box);
+  // No overlay: the results stay scrollable behind the box (a report is about them). A tap outside only closes the
+  // box; it doesn't also follow a link, so a half-typed note isn't lost by accident.
+  document.body.append(box);
+  setTimeout(() => document.addEventListener("click", outside, true));
   place();
   addEventListener("keydown", esc); addEventListener("resize", place);
   if (vv) { vv.addEventListener("resize", place); vv.addEventListener("scroll", place); }
-  // the page behind stays still while the sheet is open (no scrolling the results under it)
-  if (TOUCH.matches) document.documentElement.classList.add("ct-sheet-open");
   if (!TOUCH.matches) t.focus();
 };
 // ⚑ sits in the header right after the settings gear (same round button); its box still opens over the results
@@ -7239,8 +7237,6 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 @media (max-width: 767px) {
   #ct-flag { position: absolute; width: 2.5rem; height: 2.5rem; }
 }
-#ct-flagscrim { position: fixed; inset: 0; z-index: 400; background: transparent; touch-action: none; }
-html.ct-sheet-open, html.ct-sheet-open body { overflow: hidden; overscroll-behavior: none; }
 #ct-flagbox { overscroll-behavior: contain; }
 #ct-flagbox { position: absolute; z-index: 401; box-sizing: border-box; width: 440px; max-width: calc(100vw - 24px); display: grid; gap: 12px; padding: 14px 16px 16px; background: var(--bg); border: 1px solid var(--border-light); border-radius: 14px; box-shadow: 0 12px 32px rgba(0, 0, 0, .45); font-size: 13.5px; color: var(--text-secondary); }
 .ct-flag-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: -4px; }
@@ -7263,7 +7259,6 @@ html.ct-sheet-open, html.ct-sheet-open body { overflow: hidden; overscroll-behav
 #ct-flagbox .ct-flag-acts button:disabled { opacity: .6; cursor: default; }
 /* Phone (touch): bottom sheet; a narrow window with a mouse keeps the popover */
 @media (max-width: 767px) and (pointer: coarse) {
-  #ct-flagscrim { background: rgba(0, 0, 0, .5); }
   #ct-flagbox { position: fixed; left: 0; right: 0; bottom: var(--ct-vis-b, 0px); top: auto; width: auto; max-width: none; max-height: calc(var(--ct-vis-h, 100dvh) * .85); overflow-y: auto; border-radius: 18px 18px 0 0; border-width: 1px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); gap: 14px; }
   .ct-flag-cat { min-height: 36px; padding: 8px 14px; }
 }
@@ -7913,7 +7908,7 @@ $null = docker exec $c sh -c 'for i in $(seq 1 40); do curl -fs -o /dev/null htt
 $ctT['ready'] = $ctSw.Elapsed.TotalSeconds
 
 $ss = docker exec $c cat /app/data/server-settings.json | Out-String | ConvertFrom-Json
-"plugin code inside the page (should be v75): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
+"plugin code inside the page (should be v76): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
 "page files (should be a ct and a psl file): " + (docker exec $c sh -c 'ls /app/src/public/ct/')
 "progressive results off (should be False): $($ss.settings.streamingEnabled -eq $true)"
 "typo fixer word list (should be about 82800): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/words.txt')

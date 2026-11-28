@@ -246,7 +246,7 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - route `/yt` :2256
   - route `/hd` :2266
 
-## script.js (2655 lines)
+## script.js (2653 lines)
   - `bridge` :2
   - `aiKey` :21
   - `fadeIn` :72
@@ -322,69 +322,69 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - `flagCtx` :1397
   - `curType` :1422
   - `flagBox` :1423
-  - `flagPlace` :1502
-  - `flagBtn` :1509
-  - `topGap` :1526
-  - `skel` :1542
-  - `noUsage` :1553
-- **Sitelinks, Discussions and forums, Videos, Top stories** :1562
-  - `ytId` :1567
-  - `VIDEO_URL` :1574
-  - `forumName` :1578
-  - `when` :1591
-  - `ago` :1599
-  - `fresh` :1610
-  - `hot` :1614
-  - `qHash` :1618
-  - `hashStore` :1619
-  - `info` :1637
-  - `mk` :1660
-  - `favImg` :1661
-  - `moreBtn` :1668
-  - `scroller` :1677
-  - `section` :1689
-  - `forumRow` :1692
-  - `siteName` :1705
-  - `videoCard` :1706
-  - `storyCard` :1728
-  - `used` :1745
-  - `shown` :1746
-  - `groups` :1747
-- **Answer card, local answers (core answers.js: math, units, cooking, tip/percent, dates, patterns)** :1913
-  - `cmuQ` :1919
-  - `aiWanted` :1924
-  - `aiBox` :1940
-  - `aiPass` :1953
-  - `topRes` :1980
-  - `shapeAsk` :1983
-  - `shapeBody` :1997
-  - `sidesPass` :2021
-  - `ansCard` :2063
-  - `livePoll` :2126
-  - `fitLine` :2145
-  - `byWorth` :2156
-  - `ansPass` :2165
-  - `ansCopy` :2214
-  - `onlyPass` :2228
-- **Quick view (spec 11): your tap opens it under the result (it grows: your action), tap again to close** :2251
-  - `qvBox` :2253
-  - `qvs` :2319
-  - `starsWanted` :2320
-  - `starsPass` :2322
-  - `meanPass` :2354
-- **Knowledge panel (spec 3)** :2373
-  - `kpWanted` :2381
-  - `kpCard` :2387
-  - `kpPass` :2430
-  - `money` :2461
-  - `prodCard` :2462
-  - `productPass` :2486
-  - `tabKind` :2528
-  - `tabKeep` :2529
-  - `safe` :2553
-  - `tabRescue` :2558
-  - `init` :2573
-- **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :2611
+  - `flagPlace` :1500
+  - `flagBtn` :1507
+  - `topGap` :1524
+  - `skel` :1540
+  - `noUsage` :1551
+- **Sitelinks, Discussions and forums, Videos, Top stories** :1560
+  - `ytId` :1565
+  - `VIDEO_URL` :1572
+  - `forumName` :1576
+  - `when` :1589
+  - `ago` :1597
+  - `fresh` :1608
+  - `hot` :1612
+  - `qHash` :1616
+  - `hashStore` :1617
+  - `info` :1635
+  - `mk` :1658
+  - `favImg` :1659
+  - `moreBtn` :1666
+  - `scroller` :1675
+  - `section` :1687
+  - `forumRow` :1690
+  - `siteName` :1703
+  - `videoCard` :1704
+  - `storyCard` :1726
+  - `used` :1743
+  - `shown` :1744
+  - `groups` :1745
+- **Answer card, local answers (core answers.js: math, units, cooking, tip/percent, dates, patterns)** :1911
+  - `cmuQ` :1917
+  - `aiWanted` :1922
+  - `aiBox` :1938
+  - `aiPass` :1951
+  - `topRes` :1978
+  - `shapeAsk` :1981
+  - `shapeBody` :1995
+  - `sidesPass` :2019
+  - `ansCard` :2061
+  - `livePoll` :2124
+  - `fitLine` :2143
+  - `byWorth` :2154
+  - `ansPass` :2163
+  - `ansCopy` :2212
+  - `onlyPass` :2226
+- **Quick view (spec 11): your tap opens it under the result (it grows: your action), tap again to close** :2249
+  - `qvBox` :2251
+  - `qvs` :2317
+  - `starsWanted` :2318
+  - `starsPass` :2320
+  - `meanPass` :2352
+- **Knowledge panel (spec 3)** :2371
+  - `kpWanted` :2379
+  - `kpCard` :2385
+  - `kpPass` :2428
+  - `money` :2459
+  - `prodCard` :2460
+  - `productPass` :2484
+  - `tabKind` :2526
+  - `tabKeep` :2527
+  - `safe` :2551
+  - `tabRescue` :2556
+  - `init` :2571
+- **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :2609
 
 ## core.js (649 lines)
 - **Sites: registrable domain via the public suffix list** :4
@@ -567,7 +567,7 @@ Every section, function and route in degoog/wip/files with its line. Read the li
 
 ## setcss.js (12 lines)
 
-## custom.css (906 lines)
+## custom.css (903 lines)
 - Catppuccin Mocha colors :1
 - DESCRIPTION SIZE :22
 - v50 :24
@@ -629,32 +629,32 @@ Every section, function and route in degoog/wip/files with its line. Read the li
 - Tools :615
 - Tools lives with the search it changes :616
 - ⚑ Flag :628
-- Phone (touch) :660
-- ===== Answer card (local answers) :677
-- Featured snippet :691
-- ===== AI summary spot :702
-- The panel over the 3 lines :715
-- Opened with ⌄ (your tap) :723
-- CMU card details :731
-- Sports card :738
-- Knowledge panel (spec 3) :755
-- Wide screens :775
-- Same-shape results (spec 8) :789
-- "Only reddit :791
-- "Open archived copy" :794
-- Images row (spec 12) :798
-- Quick view :806
-- Meaning line :819
-- Site icons are back (user, 2026-11-23) :826
-- Menu lines are tap targets :829
-- ===== Vertical rhythm (one scale, by how things belong together) ===== :832
-- Line breaks that read well, for every piece of text :845
-- Phones :853
-- Image/video preview :859
-- Image AI :863
-- ===== M4 :867
-- CJK opening bracket first in a title or snippet :894
-- Product panel (M6) :897
+- Phone (touch) :658
+- ===== Answer card (local answers) :674
+- Featured snippet :688
+- ===== AI summary spot :699
+- The panel over the 3 lines :712
+- Opened with ⌄ (your tap) :720
+- CMU card details :728
+- Sports card :735
+- Knowledge panel (spec 3) :752
+- Wide screens :772
+- Same-shape results (spec 8) :786
+- "Only reddit :788
+- "Open archived copy" :791
+- Images row (spec 12) :795
+- Quick view :803
+- Meaning line :816
+- Site icons are back (user, 2026-11-23) :823
+- Menu lines are tap targets :826
+- ===== Vertical rhythm (one scale, by how things belong together) ===== :829
+- Line breaks that read well, for every piece of text :842
+- Phones :850
+- Image/video preview :856
+- Image AI :860
+- ===== M4 :864
+- CJK opening bracket first in a title or snippet :891
+- Product panel (M6) :894
 
 ## other
 - ../autoupdate-job.ps1: the PC's hourly update job (Issue() puts update problems on the server for ⚑ Report)
