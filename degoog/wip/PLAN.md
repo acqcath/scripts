@@ -78,6 +78,11 @@ earliest releaseDate). Wide: right column (inside the info panel if shown). Phon
 the first result below the screen (zero shift). Release date only from releaseDate (no "earliest dated result"
 guess: a page date isn't a release date). Switch: the Knowledge panel setting. Self-check row "Product panel".
 
+### Reports and updates feel responsive (user, 2026-11-28) [v93]
+- ⚑ goes to the Report session as soon as it's saved (no local-model gate, no hourly batch).
+- "Fixed in vNN" note once, on whichever device opens degoog first (fixed.json -> CT_FIXED -> /fixednews).
+- One silent PC watcher for everything (no every-minute task, no fallback poll): see QUICKSTART "PC watcher".
+
 ### Endless scroll (user, 2026-11-28: "the loading for when i scroll down is terrible ... keep [what's] at the top") [v90]
 - The next page starts loading two screens before the end of the list (custom.css `.degoog-infinite`; was 320 px).
 - What's already on screen never changes when a page goes in (page/08 `painted`): the top result's sitelinks and the

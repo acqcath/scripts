@@ -426,7 +426,7 @@ export default {
       // First search after a restart: read the typo fixer's word lists now (off the request path) instead of on it
       const p = setTimeout(() => { try { load(); } catch {} }, 500); if (p.unref) p.unref();
       // pc.json at start, so reports waiting from before a restart are sent
-      const w = setTimeout(() => { try { pcWrite(); } catch {} }, 1000); if (w.unref) w.unref(); }
+      const w = setTimeout(() => { try { pcListen(); pcWrite(); } catch {} }, 1000); if (w.unref) w.unref(); }
   },
 
   // Bridge: the page reaches the routes above through degoog's command address (/api/command),

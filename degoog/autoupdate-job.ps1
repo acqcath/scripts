@@ -1,6 +1,7 @@
-# Job behind "degoog clean-titles update" (fetched fresh from GitHub each run, so fixes to it apply by
-# themselves). Installs only when degoog/install.ps1 on main changed. Silent when everything passes; a Windows
-# notification only when something needs you. Log: %LOCALAPPDATA%\clean-titles\last-run.txt
+# The update job, run by the watcher ($watcher below; one hidden process started at logon) whenever something happens:
+# a new release, a ⚑ report, or a retry this job asked for (next-run.txt). Fetched at main's exact commit each time, so
+# fixes to it apply by themselves. Installs only when degoog/install.ps1 on main changed. Silent when everything
+# passes; a Windows notification only when something needs you. Log: %LOCALAPPDATA%\clean-titles\last-run.txt
 $dir = Join-Path $env:LOCALAPPDATA 'clean-titles'
 $mark = Join-Path $dir 'installed.txt'
 $log = Join-Path $dir 'last-run.txt'
@@ -26,8 +27,7 @@ function Issue($text) {
 }
 function Tail($t) { if ($t.Length -gt 2800) { $t.Substring($t.Length - 2800) } else { $t } }
 # Reports from the flag in degoog go to Claude by themselves, all into ONE standing Claude Code cloud session on
-# acqcath/scripts (its id in reports-session.txt): an update problem right away; the rest once the local model on the
-# degoog server judges them worth a session (each turn uses weekly Claude usage). Sending is non-interactive
+# acqcath/scripts (its id in reports-session.txt), as soon as a ⚑ is saved or the updater hit a problem. Sending is non-interactive
 # (`claude -p --cloud <id>`, prompt on stdin, JSON result); only CREATING a cloud session needs a terminal, so that
 # happens once, inside a headless console (no window), and the id is read off that console. If that fails (sign-in
 # or a question on screen), the same thing opens in a visible window at most once a day, with a notification.
@@ -139,8 +139,6 @@ process.stdout.write(String(j.html || "").replace(/&lt;/g, "<").replace(/&gt;/g,
     if ($r.ok) {
       docker exec $c bun /tmp/ct-flags.js sent | Out-Null
       "$(Get-Date -Format s) sent $($w.n) report(s) to $id" | Set-Content -Path $stamp
-      # a fix is on its way: the full job runs every minute until it's installed (or 6 h pass)
-      Set-Content -Path (Join-Path $dir 'watch-until.txt') -Value (Get-Date).AddHours(6).ToString('o')
       Remove-Item (Join-Path $dir 'send-fail.txt') -ErrorAction SilentlyContinue
     } elseif ($id) {
       Log "$(Get-Date -Format s) reports not sent to ${id}: $(Tail $r.text)"
@@ -158,7 +156,7 @@ process.stdout.write(String(j.html || "").replace(/&lt;/g, "<").replace(/&gt;/g,
     if ($c) { docker exec $c rm -f /tmp/ct-flags.js 2>&1 | Out-Null }
   }
 }
-# Log that never grows without end (a failed check can repeat every minute while a fix is on its way)
+# Log that never grows without end
 function Log($line) {
   try {
     Add-Content -Path $log -Value $line
@@ -189,102 +187,197 @@ function Get-Cond($url, $cache, $accept) {
     throw
   }
 }
-# The launcher the scheduled task runs: fetches this job only when it changed (conditional request), and runs the
-# last good copy when GitHub can't be reached, so one failed download never skips a run
-$launch = Join-Path $dir 'update.ps1'
-$launcher = @'
-# Asks GitHub which commit main is on (git ls-remote: instant, not cached, not the API's 60-an-hour limit), so a
-# release is seen within a minute; files are then fetched at that exact commit, which no cache can serve stale.
-$d = Join-Path $env:LOCALAPPDATA 'clean-titles'; $j = Join-Path $d 'job.ps1'
-# Below normal priority, for this run and everything it starts (git, docker), so a game keeps the CPU first
+# The watcher (degoog's only background process on this PC): written from here, so a new version of this job brings
+# its new copy, which it then restarts into. Started hidden at logon from the Startup folder (Setup-Watcher).
+$watcher = @'
+# degoog clean-titles watcher: written by autoupdate-job.ps1 (this is its $watcher), started hidden at logon from the
+# Startup folder. Checks nothing on a timer: it sleeps inside one docker exec (ct-wait.js in the degoog container),
+# which returns only when something happens: a release was pushed (ntfy ping from the repo's GitHub Action, then
+# confirmed with git), a ⚑ was saved, or the job asked to run again at a set time. Installs wait until degoog has had
+# 2 minutes without a search and no game or other full-screen app is running. Log: watcher.txt next to this file.
+$d = Join-Path $env:LOCALAPPDATA 'clean-titles'; $j = Join-Path $d 'job.ps1'; $wjs = Join-Path $d 'ct-wait.js'
 try { (Get-Process -Id $PID).PriorityClass = 'BelowNormal' } catch {}
+$mx = New-Object Threading.Mutex($false, 'Local\degoog-clean-titles-watcher')
+try { if (-not $mx.WaitOne(20000)) { exit } } catch [Threading.AbandonedMutexException] {}
+$self = $PSCommandPath; $selfHash = (Get-FileHash -LiteralPath $self).Hash
+$TOPIC = 'degoog-ct-acqcath-9f4k2x7q'
+$DIRC = '/app/data/plugins/clean-titles'
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072
-$git = (Get-Command git -ErrorAction SilentlyContinue).Source
-if (-not $git -and (Test-Path "$env:ProgramFiles\Git\cmd\git.exe")) { $git = "$env:ProgramFiles\Git\cmd\git.exe" }
-# Runs every minute, but the full job only when main moved (a new release), hourly for reports, or while a fix is on
-# its way; otherwise it stops after one git ls-remote. Any push to the repo (a version branch goes up about a minute
-# before its merge) switches to a check every 10 s for 15 min, so a merge installs within ~10 s; idle stays once a minute.
-$seenF = Join-Path $d 'main-seen.txt'; $fullF = Join-Path $d 'last-full.txt'; $refsF = Join-Path $d 'refs-seen.txt'; $fastF = Join-Path $d 'fast-until.txt'
-$stop = (Get-Date).AddSeconds(50)
-while ($true) {
-  $env:CT_MAIN = ''; $refs = ''
-  if ($git) { try { $env:GIT_TERMINAL_PROMPT = '0'; $l = & $git -c credential.helper= ls-remote --heads https://github.com/acqcath/scripts 2>$null | Out-String; if ($l -match '(?m)^([0-9a-f]{40})\s+refs/heads/main\s*$') { $env:CT_MAIN = $Matches[1]; $refs = ($l -split "`n" | Sort-Object) -join '' } } catch {} }
-  if ($refs) {
-    $h = -join ([Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($refs)) | Select-Object -First 8 | ForEach-Object { $_.ToString('x2') })
-    $old = if (Test-Path $refsF) { (Get-Content $refsF -Raw).Trim() } else { '' }
-    if ($h -ne $old) { Set-Content -Path $refsF -Value $h; if ($old) { Set-Content -Path $fastF -Value (Get-Date).AddMinutes(15).ToString('o') } }
-  }
-  $seen = if (Test-Path $seenF) { (Get-Content $seenF -Raw).Trim() } else { '' }
-  $recent = (Test-Path $fullF) -and (Get-Item $fullF).LastWriteTime -gt (Get-Date).AddMinutes(-55)
-  $watch = (Test-Path (Join-Path $d 'tried.txt')) -or (Test-Path (Join-Path $d 'watch-until.txt'))
-  if (-not ($recent -and -not $watch -and (-not $env:CT_MAIN -or $seen -eq $env:CT_MAIN))) { break } # no git yet: hourly, as before
-  $fast = (Test-Path $fastF) -and ([datetime](Get-Content $fastF -Raw).Trim()) -gt (Get-Date)
-  if (-not $fast -or (Get-Date).AddSeconds(10) -gt $stop) { exit }
-  Start-Sleep -Seconds 10
-}
-# The heavy part (an install with its degoog restart, the self-check's GPU and live-source tests, the local model
-# judging reports) waits while a full-screen app runs (a game, also borderless; a full-screen video or presentation):
-# it landed in the middle of games as ~20 s lag spikes. Windows itself says when (the same signal that holds back
-# notifications); the check runs only here, about once an hour or after a release, and the next minute retries.
-try {
-  Add-Type -Namespace Ct -Name Quns -MemberDefinition '[DllImport("shell32.dll")] public static extern int SHQueryUserNotificationState(out int s);' -ErrorAction Stop
-  $qs = 0; if ([Ct.Quns]::SHQueryUserNotificationState([ref]$qs) -eq 0 -and $qs -in 2, 3, 4) { exit }
-} catch {}
-$have = if (Test-Path "$j.sha") { (Get-Content "$j.sha" -Raw).Trim() } else { '' }
-if (-not $env:CT_MAIN -or $have -ne $env:CT_MAIN -or -not (Test-Path $j)) {
+function WLog($t) {
   try {
-    $ref = if ($env:CT_MAIN) { $env:CT_MAIN } else { 'main' }
-    $req = [Net.HttpWebRequest]::Create("https://raw.githubusercontent.com/acqcath/scripts/$ref/degoog/autoupdate-job.ps1")
-    $req.UserAgent = 'degoog-clean-titles-updater'; $req.Timeout = 30000
-    $res = $req.GetResponse(); $sr = New-Object IO.StreamReader($res.GetResponseStream(), [Text.Encoding]::UTF8)
-    $b = $sr.ReadToEnd(); $sr.Close(); $res.Close()
-    if ($b -match 'degoog') { [IO.File]::WriteAllText($j, $b, (New-Object Text.UTF8Encoding $true)); Set-Content -Path "$j.sha" -Value $env:CT_MAIN }
+    $f = Join-Path $d 'watcher.txt'; Add-Content -Path $f -Value "$(Get-Date -Format s) $t"
+    if ((Get-Item $f).Length -gt 100KB) { $k = Get-Content $f -Tail 100; Set-Content -Path $f -Value $k -Encoding UTF8 }
   } catch {}
 }
-if (Test-Path $j) { & $j; if ($env:CT_MAIN) { Set-Content -Path $seenF -Value $env:CT_MAIN }; Set-Content -Path $fullF -Value (Get-Date -Format s) } else { "job download failed $(Get-Date -Format s)" | Add-Content -Path (Join-Path $d 'last-run.txt') }
+function Git-Exe {
+  $g = (Get-Command git -ErrorAction SilentlyContinue).Source
+  foreach ($p in @("$env:ProgramFiles\Git\cmd\git.exe", (Join-Path $d 'mingit\cmd\git.exe'))) { if (-not $g -and (Test-Path $p)) { $g = $p } }
+  $g
+}
+# main's commit, straight from GitHub (git ls-remote: not cached)
+function Main-Sha {
+  $g = Git-Exe; if (-not $g) { return '' }
+  try { $env:GIT_TERMINAL_PROMPT = '0'; $l = & $g -c credential.helper= ls-remote https://github.com/acqcath/scripts refs/heads/main 2>$null | Out-String; if ($l -match '([0-9a-f]{40})') { return $Matches[1] } } catch {}
+  ''
+}
+function Fetch($url, $file) {
+  try {
+    $req = [Net.HttpWebRequest]::Create($url); $req.UserAgent = 'degoog-clean-titles-watcher'; $req.Timeout = 30000
+    $res = $req.GetResponse(); $sr = New-Object IO.StreamReader($res.GetResponseStream(), [Text.Encoding]::UTF8)
+    $b = $sr.ReadToEnd(); $sr.Close(); $res.Close()
+    if ($b.Length -gt 100) { [IO.File]::WriteAllText($file, $b, (New-Object Text.UTF8Encoding $true)); return $true }
+  } catch { WLog "download failed ${url}: $($_.Exception.Message)" }
+  $false
+}
+# The job at that exact commit (no cache can serve it stale), run as its own process, so nothing it does can stop
+# the watcher; ct-wait.js from the same commit
+function Get-Files($sha) {
+  # no git yet (the job installs it): main itself
+  $ref = if ($sha) { $sha } else { 'main' }
+  $have = if (Test-Path "$j.sha") { (Get-Content "$j.sha" -Raw).Trim() } else { '' }
+  if (-not $sha -or $have -ne $sha -or -not (Test-Path $j) -or -not (Test-Path $wjs)) {
+    $a = Fetch "https://raw.githubusercontent.com/acqcath/scripts/$ref/degoog/autoupdate-job.ps1" $j
+    $b = Fetch "https://raw.githubusercontent.com/acqcath/scripts/$ref/degoog/wip/files/ct-wait.js" $wjs
+    if ($a -and $b) { Set-Content -Path "$j.sha" -Value $ref }
+  }
+}
+function Run-Job($sha) {
+  Get-Files $sha
+  if (-not (Test-Path $j)) { WLog 'no job to run yet'; return }
+  $env:CT_MAIN = $sha; $env:CT_WATCHER = '1'
+  $p = Start-Process powershell.exe -ArgumentList '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', "`"$j`"" -WindowStyle Hidden -PassThru
+  # a run that hangs (a stuck download or docker call) is stopped after 30 min, so the watcher always goes back to sleep
+  if (-not $p.WaitForExit(1800000)) { try { $p.Kill() } catch {}; WLog "job for $sha ran over 30 min: stopped" } else { WLog "job ran for $sha (exit $($p.ExitCode))" }
+}
+# A game or other full-screen app (Windows' own signal, the one that holds back notifications): heavy work waits
+try { Add-Type -Namespace Ct -Name Quns -MemberDefinition '[DllImport("shell32.dll")] public static extern int SHQueryUserNotificationState(out int s);' -ErrorAction Stop } catch {}
+function Busy { try { $qs = 0; return ([Ct.Quns]::SHQueryUserNotificationState([ref]$qs) -eq 0 -and $qs -in 2, 3, 4) } catch { return $false } }
+function Wait-NotBusy { $n = 0; while (Busy) { if ($n++ -eq 0) { WLog 'a full-screen app is running: the install waits for it to close' }; Start-Sleep -Seconds 60 } }
+function Container {
+  try { docker ps -q 2>$null | Where-Object { (docker inspect $_ --format '{{range .Mounts}}{{.Destination}} {{end}}' 2>$null) -match '/app/data' } | Select-Object -First 1 } catch { $null }
+}
+# Runs a program and returns its first line of output (blocks until it prints one or ends)
+function First-Line($exe, $argline) {
+  $psi = New-Object Diagnostics.ProcessStartInfo $exe, $argline
+  $psi.UseShellExecute = $false; $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true; $psi.CreateNoWindow = $true
+  $p = [Diagnostics.Process]::Start($psi)
+  $line = $p.StandardOutput.ReadLine()
+  try { if (-not $p.HasExited) { $p.Kill() } } catch {}
+  $line
+}
+# degoog isn't running: sleep until docker reports a container start (if docker itself isn't up yet, it comes up
+# with Windows: look again in 30 s)
+function Wait-Container { if ($null -eq (First-Line 'docker' 'events --filter type=container --filter event=start')) { Start-Sleep -Seconds 30 } }
+function Rev($c) { try { $t = docker exec $c cat "$DIRC/pc.json" 2>$null | Out-String; if ($t) { return [string](($t | ConvertFrom-Json).rev) } } catch {}; '' }
+function Ms-Until-Timer {
+  $f = Join-Path $d 'next-run.txt'
+  if (-not (Test-Path $f)) { return 0 }
+  try { $ms = [int64](([datetime](Get-Content $f -Raw).Trim()) - (Get-Date)).TotalMilliseconds; return [math]::Max(1, $ms) } catch { return 0 }
+}
+$sinceF = Join-Path $d 'ntfy-since.txt'
+$since = if (Test-Path $sinceF) { (Get-Content $sinceF -Raw).Trim() } else { '' }
+$handled = $null
+$sha = Main-Sha
+$mode = 'idle'   # first: catch up on anything released while the PC was off, once degoog is idle
+WLog "watcher started (main $sha)"
+while ($true) {
+  try {
+    $c = Container
+    if (-not $c) { Wait-Container; continue }
+    if (-not (Test-Path $wjs)) { Get-Files $sha; if (-not (Test-Path $wjs)) { Start-Sleep -Seconds 60; continue } }
+    docker cp $wjs "${c}:/tmp/ct-wait.js" 2>$null | Out-Null
+    if ($null -eq $handled) { $handled = Rev $c }
+    $h = if ($handled) { $handled } else { '-' }; $s = if ($since) { $since } else { '-' }
+    $t0 = Get-Date
+    $line = First-Line 'docker' "exec $c bun /tmp/ct-wait.js $DIRC $TOPIC $s $h $(Ms-Until-Timer) $mode"
+    $ev = $null; try { $ev = $line | ConvertFrom-Json } catch {}
+    if (-not $ev) {
+      # degoog restarted (an install) or the exec failed: look again; a quick failure waits a little first
+      if (((Get-Date) - $t0).TotalSeconds -lt 10) { Start-Sleep -Seconds 10 }
+      continue
+    }
+    WLog "woke: $($ev.kind)"
+    if ($ev.kind -eq 'update') { $since = [string]$ev.id; Set-Content -Path $sinceF -Value $since }
+    if ($ev.kind -ne 'reports') { $sha2 = Main-Sha; if ($sha2) { $sha = $sha2 }; Wait-NotBusy }
+    $mode = 'wait'
+    Run-Job $sha
+    $c2 = Container; $handled = if ($c2) { Rev $c2 } else { '' }
+    # this watcher changed with that version: hand over to the new copy
+    if ((Get-FileHash -LiteralPath $self).Hash -ne $selfHash) {
+      WLog 'watcher updated: restarting it'
+      $mx.ReleaseMutex()
+      $exe = if (Test-Path (Join-Path $d 'headless-ok.txt')) { 'conhost.exe' } else { 'powershell.exe' }
+      $al = "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$self`""
+      if ($exe -eq 'conhost.exe') { $al = "--headless powershell.exe $al" }
+      Start-Process $exe -ArgumentList $al -WindowStyle Hidden
+      exit
+    }
+  } catch { WLog "error: $($_.Exception.Message)"; Start-Sleep -Seconds 30 }
+}
 '@
-try { if (-not (Test-Path $launch) -or (Get-Content $launch -Raw) -ne $launcher) { [IO.File]::WriteAllText($launch, $launcher, (New-Object Text.UTF8Encoding $true)) } } catch {}
 
 $tried = Join-Path $dir 'tried.txt'
-# The task is registered in its final shape by setup-autoupdate.ps1 (every minute, headless start); this job never
-# changes it (a task made from an admin terminal can't be changed by the job: "Access is denied"). It only checks the
-# shape, and if it's old, says so once a day: rerun the setup line.
-function Check-Task {
-try {
-  $task = Get-ScheduledTask -TaskName 'degoog clean-titles update' -ErrorAction Stop
-  $tr = $task.Triggers | Select-Object -First 1; $act = $task.Actions | Select-Object -First 1
-  $ok = $tr -and $tr.Repetition -and $tr.Repetition.Interval -eq 'PT1M' -and $act -and $act.Arguments -match [regex]::Escape($launch)
-  $nf = Join-Path $dir 'task-nag.txt'
-  if ($ok) { Remove-Item $nf -ErrorAction SilentlyContinue; return }
-  if (-not (Test-Path $nf) -or (Get-Item $nf).LastWriteTime -lt (Get-Date).AddHours(-20)) {
-    Set-Content -Path $nf -Value (Get-Date -Format s)
-    Log "$(Get-Date -Format s) task is in an old shape (interval $($tr.Repetition.Interval)): rerun setup-autoupdate.ps1"
-    Notify 'degoog: auto-update needs its setup line run once more (in PowerShell) to check every minute.'
-  }
-} catch { Log "task check failed $(Get-Date -Format s): $($_.Exception.Message)" }
+# When this job wants to run again by itself (a failed install: in an hour; the AI still building: 10, 20, 40... min):
+# the watcher sleeps until then (ct-wait.js timer), no checking in between
+$nextF = Join-Path $dir 'next-run.txt'
+function NextRun($when) { Set-Content -Path $nextF -Value ([datetime]$when).AddSeconds(5).ToString('o') }
+# The watcher in place: its file (this version's copy), a Startup-folder shortcut (your user, no admin), running now,
+# and the old every-minute task gone. If that task was made from an admin terminal this user can't remove it: it then
+# starts a launcher that does nothing, and one notification asks to run the setup line once in an admin PowerShell.
+function Setup-Watcher {
+  try {
+    $wf = Join-Path $dir 'watcher.ps1'
+    if (-not (Test-Path $wf) -or ([IO.File]::ReadAllText($wf)) -ne $watcher) { [IO.File]::WriteAllText($wf, $watcher, (New-Object Text.UTF8Encoding $true)) }
+    $old = Get-ScheduledTask -TaskName 'degoog clean-titles update' -ErrorAction SilentlyContinue
+    $hk = Join-Path $dir 'headless-ok.txt'
+    if ($old -and ($old.Actions | Select-Object -First 1).Execute -match 'conhost') { Set-Content -Path $hk -Value ok }
+    $al = "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$wf`""
+    $exe = 'powershell.exe'; if (Test-Path $hk) { $exe = 'conhost.exe'; $al = "--headless powershell.exe $al" }
+    $lnk = Join-Path ([Environment]::GetFolderPath('Startup')) 'degoog clean-titles watcher.lnk'
+    $sh = New-Object -ComObject WScript.Shell
+    $cur = if (Test-Path $lnk) { $sh.CreateShortcut($lnk) } else { $null }
+    if (-not $cur -or $cur.Arguments -ne $al) { $k = $sh.CreateShortcut($lnk); $k.TargetPath = (Join-Path $env:WINDIR "System32\$exe"); $k.Arguments = $al; $k.WindowStyle = 7; $k.Save() }
+    if (-not $env:CT_WATCHER) {
+      $m = $null
+      if ([Threading.Mutex]::TryOpenExisting('Local\degoog-clean-titles-watcher', [ref]$m)) { $m.Dispose() } else { Start-Process $exe -ArgumentList $al -WindowStyle Hidden }
+    }
+    if ($old) {
+      [IO.File]::WriteAllText((Join-Path $dir 'update.ps1'), "# replaced by the watcher (watcher.ps1); this does nothing`r`n", (New-Object Text.UTF8Encoding $true))
+      try { Unregister-ScheduledTask -TaskName 'degoog clean-titles update' -Confirm:$false -ErrorAction Stop; Log "$(Get-Date -Format s) old every-minute task removed: the watcher does it all now" }
+      catch {
+        $nf = Join-Path $dir 'task-nag.txt'
+        if (-not (Test-Path $nf) -or (Get-Item $nf).LastWriteTime -lt (Get-Date).AddHours(-20)) {
+          Set-Content -Path $nf -Value (Get-Date -Format s)
+          Log "$(Get-Date -Format s) the old every-minute task can't be removed by this user: $($_.Exception.Message)"
+          Notify 'degoog: run the setup line once more in an admin PowerShell to remove the old every-minute task (the new watcher is already running).'
+        }
+      }
+    }
+  } catch { Log "watcher setup failed $(Get-Date -Format s): $($_.Exception.Message)"; Notify "degoog: the update watcher couldn't be set up. Details: $log" }
 }
-function SendReports { SendReportsCore; Check-Task }
+function SendReports { SendReportsCore; Setup-Watcher }
 # Reads the installer's self-check output and records the outcome. The AI builds in the background on a first
 # install: while the check says it isn't up yet, the version is "pending" and only the self-check is re-run (every
-# 10 min, no reinstall, so degoog isn't restarted again). A failed install is retried at most hourly, not every run.
+# 10 min, no reinstall, so degoog isn't restarted again). A failed install is retried after an hour (next-run.txt).
 function Judge($sha, $out) {
   $aiPending = $out -match 'not answering yet|not active yet'
   if ($out -match 'All PASS \(clean-titles self-check\)') { $ok = $true; Issue '' }
   elseif ($out -match '(\d+) FAIL \(clean-titles self-check\)') { $ok = $true; Issue "self-check after updating to ${sha}: $($Matches[1]) FAIL`n$(Tail $out)" }
   else { $ok = $false; Issue "the update to $sha didn't finish`n$(Tail $out)" }
-  if (-not $ok) { Set-Content -Path $tried -Value "$sha fail $(Get-Date -Format o)" }
+  if (-not $ok) { Set-Content -Path $tried -Value "$sha fail $(Get-Date -Format o)"; NextRun (Get-Date).AddMinutes(60) }
   elseif ($aiPending) {
     # n-th check in a row that found the AI not up yet: the next one waits twice as long (10 min, 20, 40... up to 6 h)
     $n = 1; if (Test-Path $tried) { $p = (Get-Content $tried -Raw).Trim() -split ' '; if ($p.Count -ge 4 -and $p[0] -eq $sha -and $p[1] -eq 'pending') { $n = [int]$p[3] + 1 } }
     Set-Content -Path $tried -Value "$sha pending $(Get-Date -Format o) $n"
+    NextRun (Get-Date).AddMinutes([math]::Min(10 * [math]::Pow(2, $n - 1), 360))
     if ($n -eq 6) { Notify 'degoog: the AI part still is not up after 5 checks; the next checks back off (up to every 6 h).'; Issue "the AI part (ct-vision) is still not up after 5 self-checks for ${sha}`n$(Tail $out)" }
   }
-  else { Set-Content -Path $mark -Value $sha; Remove-Item $tried, (Join-Path $dir 'watch-until.txt') -ErrorAction SilentlyContinue }
+  else { Set-Content -Path $mark -Value $sha; Remove-Item $tried, (Join-Path $dir 'watch-until.txt'), $nextF -ErrorAction SilentlyContinue }
 }
 try {
   # Version = a hash of the installer itself (raw files carry no commit id); unchanged file = 304, nothing to do
   $inst = Join-Path $dir 'installer.ps1'
-  # main unchanged since the last look = nothing to do (one git ls-remote a minute, done by the launcher)
+  # main unchanged since the last look = nothing to do but the reports (the watcher passes main's commit in CT_MAIN)
   $seen = Join-Path $dir 'main-seen.txt'
   $tPend = (Test-Path $tried) -and ((Get-Content $tried -Raw) -notmatch ' ok ')
   if ($env:CT_MAIN -and -not $tPend -and (Test-Path $seen) -and (Get-Content $seen -Raw).Trim() -eq $env:CT_MAIN -and (Test-Path $inst)) { SendReports; return }
@@ -295,10 +388,10 @@ try {
   if ((Test-Path $mark) -and ((Get-Content $mark -Raw).Trim() -eq $sha)) { SendReports; return }
   $t = if (Test-Path $tried) { (Get-Content $tried -Raw).Trim() -split ' ' } else { @() }
   $age = if ($t.Count -ge 3) { ((Get-Date) - [datetime]$t[2]).TotalMinutes } else { 1e9 }
-  if ($t.Count -ge 3 -and $t[0] -eq $sha -and $t[1] -eq 'fail' -and $age -lt 60) { SendReports; return }
+  if ($t.Count -ge 3 -and $t[0] -eq $sha -and $t[1] -eq 'fail' -and $age -lt 60) { NextRun ([datetime]$t[2]).AddMinutes(60); SendReports; return }
   if ($t.Count -ge 3 -and $t[0] -eq $sha -and $t[1] -eq 'pending') {
     $wait = [math]::Min(10 * [math]::Pow(2, [math]::Max(0, [int]$(if ($t.Count -ge 4) { $t[3] } else { 1 }) - 1)), 360)
-    if ($age -lt $wait) { SendReports; return }
+    if ($age -lt $wait) { NextRun ([datetime]$t[2]).AddMinutes($wait); SendReports; return }
     # self-check only, from the installer already downloaded (no reinstall, no degoog restart)
     $m = [regex]::Match($code, "WriteAllText\(`"\`$env:TEMP\\ct-check\.js`", @'\r?\n([\s\S]*?)\r?\n'@\)")
     $c = docker ps -q | Where-Object { (docker inspect $_ --format '{{range .Mounts}}{{.Destination}} {{end}}') -match '/app/data' } | Select-Object -First 1

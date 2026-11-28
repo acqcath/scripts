@@ -30,7 +30,7 @@ def build_map():
            'Every section, function and route in degoog/wip/files with its line. Read the lines you need (`sed -n A,Bp file`), not whole files.',
            'Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-*.js (built into files/ct-page.js after core.js + answers.js): edit the modules.', '']
     mods = sorted(glob.glob('files/server/[0-9][0-9]-*.js')) + sorted(glob.glob('files/page/[0-9][0-9]-*.js'))
-    srcs = [m[len('files/'):] for m in mods] + ['core.js', 'answers.js', 'ctcheck.js', 'names.js', 'inline.js', 'safeoff.js', 'aittl.js', 'setcss.js']
+    srcs = [m[len('files/'):] for m in mods] + ['core.js', 'answers.js', 'ctcheck.js', 'names.js', 'inline.js', 'safeoff.js', 'aittl.js', 'setcss.js', 'ct-wait.js']
     fn = re.compile(r'^(?:export )?(?:const|let|function|async function) ([A-Za-z_$][\w$]*)\s*(?:=\s*(?:async\s*)?(?:\(|[A-Za-z_$][\w$]*\s*=>|function)|\()')
     for f in srcs:
         p = f'files/{f}'

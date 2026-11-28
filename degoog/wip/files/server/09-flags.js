@@ -2,8 +2,8 @@
 // The reports a release fixed, {flag id: version}: files/fixed.json, built in by build.py (CT_FIXED)
 // ===== ⚑ Flags: "what's wrong with these results?" from the ⚑ in the tab row =====
 // Save in the ⚑ box keeps each flag (the search, the tab, your note, its top 10 results) in flags.json on this
-// server only. The PC's job sends what's waiting about 90 s after the last ⚑ (flagDue: a few in a row go together),
-// in one prompt (flagPrompt), plus the updater's last problem (update-issue.txt, sent at once).
+// server only. The PC's watcher sends what's waiting as soon as a ⚑ is saved, in one prompt (flagPrompt), plus the
+// updater's last problem (update-issue.txt).
 const flagsFile = () => `${DIR}/flags.json`, issueFile = () => `${DIR}/update-issue.txt`;
 // The installer's last "install timing (s)" line (written by ../install.ps1 after its self-check), shown in status and reports
 const installTiming = () => { try { return fs.readFileSync(`${DIR}/install-timing.txt`, "utf8").trim().slice(0, 300); } catch { return ""; } };
@@ -74,10 +74,9 @@ const aiAsk = async (messages, maxTokens = 1500) => {
   return out;
 };
 const flagCount = () => flagOpen().length + (flagIssue() ? 1 : 0);
-// ===== Sending soon, "fixed" once, and what the PC's job reads =====
-export const FLAG_WAIT_MS = 90000;
-// Sent when the updater has a problem, or 90 s after the newest waiting ⚑ (more ⚑ in a row join the same session)
-export const flagDue = (open, issue, now = Date.now()) => !!issue || (open.length > 0 && now - Math.max(...open.map((f) => f.t)) >= FLAG_WAIT_MS);
+// ===== Sending at once, "fixed" once, and what the PC's watcher sleeps on =====
+// Sent as soon as anything waits: a ⚑ (the user's explicit ask) or the updater's last problem
+export const flagDue = (open, issue) => !!issue || open.length > 0;
 // Reports fixed by the installed version that haven't been told yet: told once, on whichever device opens degoog
 // first (the server marks them, so the phone seeing it means the PC doesn't). -> [{ver, what}]
 export const fixedNews = (list, fixed, now = Date.now()) => {
@@ -90,14 +89,30 @@ export const fixedNews = (list, fixed, now = Date.now()) => {
   }
   return out;
 };
-// pc.json for the PC's job (../autoupdate-job.ps1 reads it with one docker exec cat): when the waiting reports are due
-// (epoch ms, 0 = nothing waiting) and when the last search ran, so an update never restarts degoog mid-search
+// pc.json, which the PC's watcher (../autoupdate-job.ps1 $watcher, through ct-wait.js inside this container) sleeps
+// on: rev = what's waiting to be sent (changes with each new ⚑ or update problem; "" = nothing), last = when the last
+// search ran, so an update never restarts degoog in the middle of a search
 let LAST_SEARCH = 0, _pcT = null, _pcAt = 0;
 const pcWrite = () => {
   const open = flagOpen(), i = flagIssue();
-  const due = i ? 1 : open.length ? Math.max(...open.map((f) => f.t)) + FLAG_WAIT_MS : 0;
-  try { fs.writeFileSync(`${DIR}/pc.json.tmp`, JSON.stringify({ due, last: LAST_SEARCH })); fs.renameSync(`${DIR}/pc.json.tmp`, `${DIR}/pc.json`); } catch {}
+  const rev = flagDue(open, i) ? `${open.length ? Math.max(...open.map((f) => f.id)) : 0}|${i ? i.t : 0}` : "";
+  const j = JSON.stringify({ rev, last: LAST_SEARCH });
+  try { fs.writeFileSync(`${DIR}/pc.json.tmp`, j); fs.renameSync(`${DIR}/pc.json.tmp`, `${DIR}/pc.json`); } catch {}
+  for (const c of PC_SOCKS) { try { c.write(j + "\n"); } catch {} }
   _pcAt = Date.now();
+};
+// ...and the same line pushed at once to ct-wait.js over a socket in the container's /tmp (a file change alone may not
+// wake it on every kind of Docker volume)
+export const PC_SOCK = "/tmp/ct-pc.sock";
+const PC_SOCKS = new Set();
+const pcListen = () => {
+  try { fs.unlinkSync(PC_SOCK); } catch {}
+  try {
+    const srv = netServer((c) => { PC_SOCKS.add(c); c.on("close", () => PC_SOCKS.delete(c)); c.on("error", () => PC_SOCKS.delete(c)); });
+    srv.on("error", () => {});
+    srv.listen(PC_SOCK);
+    if (srv.unref) srv.unref();
+  } catch {}
 };
 // Each search: written at most every 10 s, the last one always (a trailing write)
 const searchSeen = () => {

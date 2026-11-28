@@ -59,13 +59,11 @@ test("flag: ⚑ box saves; no count, no send link", async () => {
   await win.happyDOM.close();
 });
 
-import { flagDue, fixedNews, FLAG_WAIT_MS } from "../files/index.js";
-test("flag: sent 90 s after the newest ⚑ (a few in a row go together), an update problem at once", () => {
-  const now = 1e12;
-  expect(flagDue([], null, now)).toBe(false);
-  expect(flagDue([], { t: 1, text: "x" }, now)).toBe(true);
-  expect(flagDue([{ t: now - FLAG_WAIT_MS - 1 }, { t: now - 10 }], null, now)).toBe(false); // a new one keeps the batch open
-  expect(flagDue([{ t: now - FLAG_WAIT_MS - 1 }, { t: now - FLAG_WAIT_MS }], null, now)).toBe(true);
+import { flagDue, fixedNews } from "../files/index.js";
+test("flag: sent as soon as a ⚑ or an update problem waits", () => {
+  expect(flagDue([], null)).toBe(false);
+  expect(flagDue([], { t: 1, text: "x" })).toBe(true);
+  expect(flagDue([{ t: 5 }], null)).toBe(true);
 });
 test("flag: a fixed report is told once, wherever degoog is opened first", () => {
   const list = [{ id: 11, t: 11, q: "kalimba tabs", note: "porn in the results" }, { id: 12, t: 12, q: "rust book", note: "" }, { id: 13, t: 13, q: "x", note: "" }];
@@ -137,4 +135,28 @@ test("page: product panel in the right column", async () => {
   expect(card).toBeTruthy();
   expect(card.textContent).toContain("$299 – $349 (3 sellers)");
   expect(card.textContent).toContain("Released");
+});
+
+test("flag: a fixed report shows one small note at the bottom (told once by the server)", async () => {
+  const win = new Window({ url: "https://degoog.local/search?q=kalimba" });
+  const { document } = win;
+  document.body.innerHTML = '<div id="results-tabs"></div><div id="results-list"></div>';
+  let asked = 0;
+  win.fetch = async (url, init) => {
+    const q = init && init.body ? JSON.parse(init.body).query || "" : "";
+    let out = { ok: 1 };
+    if (/bridge fixednews /.test(q)) out = asked++ ? { items: [] } : { items: [{ ver: "v93", what: "porn under kalimba" }] };
+    return new win.Response(JSON.stringify({ html: JSON.stringify(out).replace(/&/g, "&amp;").replace(/</g, "&lt;") }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  class MO { constructor() {} observe() {} disconnect() {} takeRecords() { return []; } }
+  const scope = new Proxy(win, { has: () => true, get: (t, k) => { if (k === "MutationObserver") return MO; if (k === Symbol.unscopables) return undefined; if (!(k in t)) return globalThis[k]; const v = Reflect.get(t, k); return typeof v === "function" && typeof k === "string" && /^[a-z]/.test(k) ? v.bind(t) : v; }, set: (t, k, v) => { t[k] = v; return true; } });
+  globalThis.__ctAIW = win.__ctAIW = new Map(); globalThis.__ctPUBW = win.__ctPUBW = new Map();
+  new Function("scope", `with (scope) {\nconst __PLUGIN_ID__="clean-titles";\n${fs.readFileSync(new URL("../files/ct-page.js", import.meta.url), "utf8")}\n}`)(scope);
+  await new Promise((r) => setTimeout(r, 30));
+  const n = document.getElementById("ct-fixed");
+  expect(n && n.getAttribute("role")).toBe("status");
+  expect(n.textContent).toContain("Fixed in v93");
+  expect(n.textContent).toContain("porn under kalimba");
+  expect(asked).toBe(1);
+  await win.happyDOM.close();
 });

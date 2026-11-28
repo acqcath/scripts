@@ -2,6 +2,7 @@
 import * as fs from "node:fs";
 import { createHash } from "node:crypto";
 import { lookup } from "node:dns/promises";
+import { createServer as netServer } from "node:net";
 
 const INFO_HTML =
   `<div class="command-result"><p>Tidies result titles and loads sharper news/video thumbnails on every search page.</p></div>`;

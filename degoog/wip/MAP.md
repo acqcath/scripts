@@ -3,28 +3,28 @@
 Every section, function and route in degoog/wip/files with its line. Read the lines you need (`sed -n A,Bp file`), not whole files.
 Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-*.js (built into files/ct-page.js after core.js + answers.js): edit the modules.
 
-## server/01-base.js (175 lines)
-  - `braveOriginal` :14
-  - `upgrade` :34
-- **Sites: degoog's own block/score lists, read by /sites, Settings and anti-SEO** :58
-  - `plainHost` :60
-  - `sitesFromLists` :61
-  - `pagePartMissing` :77
-- **Sites in Settings: the same Prefer / Normal / Lower / Hide list as each result's menu** :90
-  - `cleanSite` :99
-  - `sitesOfRows` :101
-  - `rowsOfSites` :112
-  - `sameSites` :113
-  - `applySites` :115
-  - `_setDegoog` :133
-  - `degoog` :134
-  - `mirrorFile` :143
-  - `readMirror` :144
-  - `queueSites` :146
-  - `showSites` :147
-  - `mirrorTo` :149
-  - `sitesFromSettings` :156
-  - `_sitesIdle` :173
+## server/01-base.js (176 lines)
+  - `braveOriginal` :15
+  - `upgrade` :35
+- **Sites: degoog's own block/score lists, read by /sites, Settings and anti-SEO** :59
+  - `plainHost` :61
+  - `sitesFromLists` :62
+  - `pagePartMissing` :78
+- **Sites in Settings: the same Prefer / Normal / Lower / Hide list as each result's menu** :91
+  - `cleanSite` :100
+  - `sitesOfRows` :102
+  - `rowsOfSites` :113
+  - `sameSites` :114
+  - `applySites` :116
+  - `_setDegoog` :134
+  - `degoog` :135
+  - `mirrorFile` :144
+  - `readMirror` :145
+  - `queueSites` :147
+  - `showSites` :148
+  - `mirrorTo` :150
+  - `sitesFromSettings` :157
+  - `_sitesIdle` :174
 
 ## server/02-net.js (23 lines)
 - **Shared fetch helper: every outside request goes through here (timeout, size cap, never throws)** :2
@@ -176,7 +176,7 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
   - `doiAsk` :49
   - `doiNames` :56
 
-## server/09-flags.js (108 lines)
+## server/09-flags.js (123 lines)
 - **⚑ Flags: "what's wrong with these results?" from the ⚑ in the tab row** :3
   - `flagsFile` :7
   - `installTiming` :9
@@ -189,11 +189,12 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
   - `flagPrompt` :34
   - `aiAsk` :49
   - `flagCount` :76
-- **Sending soon, "fixed" once, and what the PC's job reads** :77
-  - `flagDue` :80
-  - `fixedNews` :83
+- **Sending at once, "fixed" once, and what the PC's watcher sleeps on** :77
+  - `flagDue` :79
+  - `fixedNews` :82
   - `pcWrite` :96
-  - `searchSeen` :103
+  - `pcListen` :108
+  - `searchSeen` :118
 
 ## server/10-needs.js (130 lines)
   - `needsParse` :22
@@ -356,13 +357,15 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
   - `advParse` :258
   - `tools` :270
 
-## page/06-flag.js (149 lines)
+## page/06-flag.js (167 lines)
   - `flagTop` :5
   - `flagCtx` :20
   - `curType` :47
   - `flagBox` :48
   - `flagPlace` :125
   - `flagBtn` :132
+- **"Fixed" note: the first time degoog is opened anywhere after a release fixed your report** :149
+  - `fixedNote` :152
 
 ## page/07-layout.js (212 lines)
   - `topGap` :5
@@ -438,7 +441,7 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
   - `prodCard` :213
   - `productPass` :237
 
-## page/11-init.js (136 lines)
+## page/11-init.js (137 lines)
   - `tabKind` :2
   - `tabKeep` :3
   - `passReset` :31
@@ -446,7 +449,7 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
   - `safe` :33
   - `tabRescue` :38
   - `init` :53
-- **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :92
+- **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :93
 
 ## core.js (611 lines)
 - **Sites: registrable domain via the public suffix list** :4
@@ -624,7 +627,14 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
 
 ## setcss.js (12 lines)
 
-## custom.css (918 lines)
+## ct-wait.js (63 lines)
+  - `out` :15
+  - `pc` :16
+  - `check` :18
+  - `sock` :30
+  - `listen` :42
+
+## custom.css (926 lines)
 - Catppuccin Mocha colors :1
 - DESCRIPTION SIZE :22
 - v50 :24
@@ -712,6 +722,7 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
 - CJK opening bracket first in a title or snippet :886
 - Product panel (M6) :889
 - Loading placeholders in the shape of what comes (script :899
+- "Fixed" note (page/06 fixedNote) :918
 
 ## vision/app.py (191 lines)
   - `load` :21
