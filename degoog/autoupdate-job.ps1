@@ -25,10 +25,70 @@ function Issue($text) {
   } catch {}
 }
 function Tail($t) { if ($t.Length -gt 2800) { $t.Substring($t.Length - 2800) } else { $t } }
-# Reports from the flag in degoog go to Claude by themselves, all in one Claude Code session (claude --cloud) on
-# acqcath/scripts: an update problem (the update broke something) right away; the rest once the local model on the
-# degoog server (ai-summary's) judges them worth a session, since each session uses weekly Claude usage. Needs Git and the Claude Code CLI, signed in once, on this PC (the user installs them:
-# licenses are theirs to accept); until then a notification (at most daily) gives the one line and reports wait.
+# Reports from the flag in degoog go to Claude by themselves, all into ONE standing Claude Code cloud session on
+# acqcath/scripts (its id in reports-session.txt): an update problem right away; the rest once the local model on the
+# degoog server judges them worth a session (each turn uses weekly Claude usage). Sending is non-interactive
+# (`claude -p --cloud <id>`, prompt on stdin, JSON result); only CREATING a cloud session needs a terminal, so that
+# happens once, inside a headless console (no window), and the id is read off that console. If that fails (sign-in
+# or a question on screen), the same thing opens in a visible window at most once a day, with a notification.
+# Git and the Claude CLI are installed by the job itself.
+$sessF = Join-Path $dir 'reports-session.txt'
+$sessRe = '(session_[A-Za-z0-9]{16,}|cse_[A-Za-z0-9]{16,})'
+# Run inside a console: starts `claude --cloud "<prompt>"`, reads the console text every 2 s until a session id shows,
+# saves it, then closes claude (the session keeps running in the cloud)
+$newSessPs = @'
+param($promptFile, $outFile, $repo, $waitSec)
+Set-Location -LiteralPath $repo
+$q = [IO.File]::ReadAllText($promptFile)
+$p = Start-Process claude -ArgumentList '--cloud', ('"' + $q + '"') -NoNewWindow -PassThru
+$re = '(session_[A-Za-z0-9]{16,}|cse_[A-Za-z0-9]{16,})'
+$end = (Get-Date).AddSeconds([int]$waitSec); $id = $null
+while (-not $id -and (Get-Date) -lt $end) {
+  Start-Sleep -Seconds 2
+  try {
+    $r = $Host.UI.RawUI; $w = $r.BufferSize.Width; $h = [Math]::Min($r.BufferSize.Height, $r.CursorPosition.Y + 60)
+    $cells = $r.GetBufferContents((New-Object Management.Automation.Host.Rectangle 0, 0, ($w - 1), ($h - 1)))
+    # rows back into lines: a full-width row was wrapped, so it joins the next one without a break
+    $sb = New-Object Text.StringBuilder
+    for ($y = 0; $y -lt $h; $y++) { $row = -join (0..($w - 1) | ForEach-Object { $cells[$y, $_].Character }); [void]$sb.Append($row.TrimEnd()); if ($row[$w - 1] -eq ' ') { [void]$sb.Append("`n") } }
+    $t = $sb.ToString()
+    if ($t -match $re) { $id = $Matches[1] }
+  } catch {}
+  if ($p.HasExited -and -not $id) { Start-Sleep -Seconds 1; if ($p.HasExited) { $end = (Get-Date).AddSeconds(3) } }
+}
+if ($id) { Set-Content -LiteralPath $outFile -Value $id }
+try { if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force } } catch {}
+'@
+$newSessPrompt = 'Standing session for degoog clean-titles flag reports. Reports from the user''s update job arrive here as later messages; handle each one as degoog/wip/QUICKSTART.md says under Flags. Nothing to do yet: reply only with the word ready.'
+function New-ReportsSession($repo) {
+  $ps1 = Join-Path $dir 'new-session.ps1'; $pf = Join-Path $dir 'new-session-prompt.txt'; $of = Join-Path $dir 'new-session-id.txt'
+  $take = { if (Test-Path $of) { $i = (Get-Content $of -Raw).Trim(); Remove-Item $of; if ($i -match "^$sessRe$") { Set-Content -Path $sessF -Value $i; Log "$(Get-Date -Format s) reports session created: $i"; return $i } } }
+  $got = & $take; if ($got) { return $got }   # e.g. from the visible window of an earlier run
+  # at most one attempt a day: a start whose id couldn't be read may still have made a cloud session
+  $att = Join-Path $dir 'new-session-attempt.txt'
+  if ((Test-Path $att) -and (Get-Item $att).LastWriteTime -gt (Get-Date).AddHours(-20)) { return $null }
+  Set-Content -Path $att -Value (Get-Date -Format s)
+  [IO.File]::WriteAllText($ps1, $newSessPs, (New-Object Text.UTF8Encoding $true)); [IO.File]::WriteAllText($pf, $newSessPrompt)
+  $args0 = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$ps1`"", "`"$pf`"", "`"$of`"", "`"$repo`"")
+  # headless console: claude sees a real terminal, nothing shows on screen
+  try { $p = Start-Process conhost.exe -ArgumentList (@('--headless', 'powershell.exe') + $args0 + '200') -PassThru -WindowStyle Hidden; if (-not $p.WaitForExit(240000)) { try { $p.Kill() } catch {} } } catch {}
+  $got = & $take; if ($got) { return $got }
+  # didn't work hidden (sign-in or a question on screen): the same in a visible window; a later run picks the id up
+  Start-Process conhost.exe -ArgumentList (@('powershell.exe') + $args0 + '900')
+  Notify "degoog: a Claude window opened to start the reports session. If it asks you to sign in or confirm, do that once; it closes itself."
+  Log "$(Get-Date -Format s) reports session: hidden start found no session id, opened a visible window"
+  return $null
+}
+function Send-ToSession($id, $text) {
+  $pf = Join-Path $env:TEMP 'ct-report.txt'; $out = Join-Path $env:TEMP 'ct-claude.txt'
+  [IO.File]::WriteAllText($pf, $text, (New-Object Text.UTF8Encoding $false))
+  $p = Start-Process claude -ArgumentList '-p', '--cloud', $id, '--output-format', 'json' -WorkingDirectory $dir -NoNewWindow -PassThru -RedirectStandardInput $pf -RedirectStandardOutput $out -RedirectStandardError "$out.err"
+  if (-not $p.WaitForExit(120000)) { try { $p.Kill() } catch {} }
+  $res = ((Get-Content $out -Raw -ErrorAction SilentlyContinue) + '' + (Get-Content "$out.err" -Raw -ErrorAction SilentlyContinue))
+  Remove-Item -Force $pf, $out, "$out.err" -ErrorAction SilentlyContinue
+  $j = $null; foreach ($l in ($res -split "`n")) { if ($l.Trim().StartsWith('{')) { try { $j = $l | ConvertFrom-Json } catch {} } }
+  return @{ ok = [bool]($j -and $j.ok); text = $res.Trim() }
+}
 function SendReportsCore {
   $js = Join-Path $env:TEMP 'ct-flags.js'
   try {
@@ -43,14 +103,12 @@ process.stdout.write(String(j.html || "").replace(/&lt;/g, "<").replace(/&gt;/g,
 '@)
     docker cp $js "${c}:/tmp/ct-flags.js" | Out-Null
     $w = (docker exec $c bun /tmp/ct-flags.js | Out-String) | ConvertFrom-Json
-    if (-not $w -or -not $w.n) { return }
+    if (-not $w -or -not $w.n -or -not $w.send) { return }
     $stamp = Join-Path $dir 'reports-sent.txt'
-    if (-not $w.send) { return }
     $mg = Join-Path $dir 'mingit'
     $env:Path = "$env:Path;$env:USERPROFILE\.local\bin;$env:ProgramFiles\Git\cmd;$mg\cmd"
     $nag = Join-Path $dir 'signin-nag.txt'
-    $ready = (Get-Command git -ErrorAction SilentlyContinue) -and (Get-Command claude -ErrorAction SilentlyContinue)
-    if (-not $ready) {
+    if (-not ((Get-Command git -ErrorAction SilentlyContinue) -and (Get-Command claude -ErrorAction SilentlyContinue))) {
       # Installs what's missing by itself (the user asked for no manual installs), at most once a day
       if (-not (Test-Path $nag) -or (Get-Item $nag).LastWriteTime -lt (Get-Date).AddHours(-20)) {
         Set-Content -Path $nag -Value (Get-Date -Format s)
@@ -64,36 +122,37 @@ process.stdout.write(String(j.html || "").replace(/&lt;/g, "<").replace(/&gt;/g,
             Invoke-WebRequest $a.browser_download_url -OutFile $zip -UseBasicParsing
             Expand-Archive $zip -DestinationPath $mg -Force
             Remove-Item -Force $zip -ErrorAction SilentlyContinue
-          } catch { "mingit install failed $(Get-Date -Format s): $($_.Exception.Message)" | Add-Content -Path $log }
+          } catch { Log "mingit install failed $(Get-Date -Format s): $($_.Exception.Message)" }
         }
         if (-not (Get-Command claude -ErrorAction SilentlyContinue)) { try { Invoke-RestMethod https://claude.ai/install.ps1 | Invoke-Expression 2>&1 | Out-Null } catch {} }
       }
-      if (-not ((Get-Command git -ErrorAction SilentlyContinue) -and (Get-Command claude -ErrorAction SilentlyContinue))) { return }
+      if (-not ((Get-Command git -ErrorAction SilentlyContinue) -and (Get-Command claude -ErrorAction SilentlyContinue))) { Log "$(Get-Date -Format s) reports waiting: git or claude not installed yet"; return }
     }
     $repo = Join-Path $dir 'repo'
     if (-not (Test-Path (Join-Path $repo '.git'))) { git clone -q --depth 1 --filter=blob:none --sparse https://github.com/acqcath/scripts $repo 2>&1 | Out-Null; git -C $repo sparse-checkout set degoog 2>&1 | Out-Null }
     git -C $repo pull -q --ff-only 2>&1 | Out-Null
-    $out = Join-Path $env:TEMP 'ct-claude.txt'
-    $p = Start-Process claude -ArgumentList '--cloud', ('"' + $w.prompt + '"') -WorkingDirectory $repo -NoNewWindow -PassThru -RedirectStandardOutput $out -RedirectStandardError "$out.err"
-    if (-not $p.WaitForExit(300000)) { try { $p.Kill() } catch {} }
-    $res = ((Get-Content $out -Raw -ErrorAction SilentlyContinue) + (Get-Content "$out.err" -Raw -ErrorAction SilentlyContinue))
-    Remove-Item -Force $out, "$out.err" -ErrorAction SilentlyContinue
-    if ($res -match 'session_\w+') {
+    $id = if (Test-Path $sessF) { (Get-Content $sessF -Raw).Trim() } else { '' }
+    if ($id -notmatch "^$sessRe$") { $id = New-ReportsSession $repo; if (-not $id) { return } }
+    $r = Send-ToSession $id $w.prompt
+    # archived or deleted session: start a new standing one and send there
+    if (-not $r.ok -and $r.text -match 'not found|archived') { Remove-Item $sessF -ErrorAction SilentlyContinue; $id = New-ReportsSession $repo; if ($id) { $r = Send-ToSession $id $w.prompt } }
+    if ($r.ok) {
       docker exec $c bun /tmp/ct-flags.js sent | Out-Null
-      "$(Get-Date -Format s) sent $($w.n) report(s): $($Matches[0])" | Set-Content -Path $stamp
-      # a fix is on its way: check every minute until it's installed (or 6 h pass), then back to hourly
+      "$(Get-Date -Format s) sent $($w.n) report(s) to $id" | Set-Content -Path $stamp
+      # a fix is on its way: the full job runs every minute until it's installed (or 6 h pass)
       Set-Content -Path (Join-Path $dir 'watch-until.txt') -Value (Get-Date).AddHours(6).ToString('o')
-    } else {
-      "$(Get-Date -Format s) reports not sent: $res" | Add-Content -Path $log
-      if (-not (Test-Path $nag) -or (Get-Item $nag).LastWriteTime -lt (Get-Date).AddHours(-20)) {
-        Set-Content -Path $nag -Value (Get-Date -Format s)
-        # Not signed in yet: open Claude's sign-in once a day; approving it in the browser is the only step left
-        Start-Process powershell -ArgumentList '-NoExit', '-Command', 'claude'
-        Notify "degoog: approve the Claude sign-in that just opened (one time)."
+      Remove-Item (Join-Path $dir 'send-fail.txt') -ErrorAction SilentlyContinue
+    } elseif ($id) {
+      Log "$(Get-Date -Format s) reports not sent to ${id}: $(Tail $r.text)"
+      $sf = Join-Path $dir 'send-fail.txt'
+      if (-not (Test-Path $sf) -or (Get-Item $sf).LastWriteTime -lt (Get-Date).AddHours(-20)) {
+        Set-Content -Path $sf -Value (Get-Date -Format s)
+        if ($r.text -match 'auth login|sign-in|/login|Not logged in') { Start-Process conhost.exe -ArgumentList 'powershell.exe', '-NoProfile', '-Command', 'claude auth login'; Notify 'degoog: sign in to Claude in the window that just opened (one time), so reports can be sent.' }
+        else { Notify "degoog: reports couldn't be sent to Claude. Details: $log" }
       }
     }
   } catch {
-    "reports check failed $(Get-Date -Format s): $($_.Exception.Message)" | Add-Content -Path $log
+    Log "reports check failed $(Get-Date -Format s): $($_.Exception.Message)"
   } finally {
     Remove-Item -Force $js -ErrorAction SilentlyContinue
     if ($c) { docker exec $c rm -f /tmp/ct-flags.js 2>&1 | Out-Null }
@@ -165,47 +224,24 @@ if (Test-Path $j) { & $j; if ($env:CT_MAIN) { Set-Content -Path $seenF -Value $e
 try { if (-not (Test-Path $launch) -or (Get-Content $launch -Raw) -ne $launcher) { [IO.File]::WriteAllText($launch, $launcher, (New-Object Text.UTF8Encoding $true)) } } catch {}
 
 $tried = Join-Path $dir 'tried.txt'
-# The task itself, kept in its best shape by this job. It starts every minute; the launcher above stops at once unless
-# main moved (new release -> installed within a minute), an hour passed (new flag reports are sent), or a sent
-# report's fix / an AI self-check is still on its way (then the full job runs every minute, as before).
-# Daily trigger repeating for 1 day works on every Windows version, started through Windows 11's headless console so no window ever flashes
-# (powershell -WindowStyle Hidden still flashes, and stays open when Windows Terminal is the default). The headless
-# start is tested first (it must leave a marker file); if it fails, the plain hidden start stays and it's retried daily.
-function Sync-Task {
+# The task is registered in its final shape by setup-autoupdate.ps1 (every minute, headless start); this job never
+# changes it (a task made from an admin terminal can't be changed by the job: "Access is denied"). It only checks the
+# shape, and if it's old, says so once a day: rerun the setup line.
+function Check-Task {
 try {
-  $wf = Join-Path $dir 'watch-until.txt'
-  $fast = (Test-Path $tried) -or ((Test-Path $wf) -and ([datetime](Get-Content $wf -Raw).Trim()) -gt (Get-Date))
-  if (-not $fast) { Remove-Item $wf -ErrorAction SilentlyContinue }
-  $want = 'PT1M' # cheap: the launcher exits after one git ls-remote when there's nothing to do
   $task = Get-ScheduledTask -TaskName 'degoog clean-titles update' -ErrorAction Stop
-  $tr = $task.Triggers | Select-Object -First 1
-  $act = $task.Actions | Select-Object -First 1
-  $ps = "powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$launch`""
-  $okTrig = $tr -and $tr.Repetition -and $tr.Repetition.Interval -eq $want -and $tr.Repetition.Duration -eq 'P1D' -and $tr.CimClass.CimClassName -eq 'MSFT_TaskDailyTrigger'
-  $okAct = $act -and $act.Execute -match 'conhost' -and $act.Arguments -match [regex]::Escape($launch)
-  $newAct = $null
-  if (-not $okAct) {
-    $failF = Join-Path $dir 'headless-failed.txt'
-    if (-not (Test-Path $failF) -or (Get-Item $failF).LastWriteTime -lt (Get-Date).AddDays(-1)) {
-      $m = Join-Path $dir 'headless-ok.txt'; Remove-Item $m -ErrorAction SilentlyContinue
-      try { $p = Start-Process conhost.exe -ArgumentList @('--headless', 'powershell.exe', '-NoProfile', '-Command', "Set-Content -LiteralPath '$m' -Value ok") -PassThru -WindowStyle Hidden; [void]$p.WaitForExit(30000) } catch {}
-      Start-Sleep -Milliseconds 500
-      if (Test-Path $m) { Remove-Item $m; Remove-Item $failF -ErrorAction SilentlyContinue; $newAct = New-ScheduledTaskAction -Execute 'conhost.exe' -Argument "--headless $ps" }
-      else { Set-Content -Path $failF -Value (Get-Date -Format s); Log "headless start test failed $(Get-Date -Format s); keeping the hidden start" }
-    }
-    if (-not $newAct -and -not ($act.Execute -match 'powershell' -and $act.Arguments -match [regex]::Escape($launch))) { $newAct = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ($ps -replace '^powershell\.exe ', '') }
+  $tr = $task.Triggers | Select-Object -First 1; $act = $task.Actions | Select-Object -First 1
+  $ok = $tr -and $tr.Repetition -and $tr.Repetition.Interval -eq 'PT1M' -and $act -and $act.Arguments -match [regex]::Escape($launch)
+  $nf = Join-Path $dir 'task-nag.txt'
+  if ($ok) { Remove-Item $nf -ErrorAction SilentlyContinue; return }
+  if (-not (Test-Path $nf) -or (Get-Item $nf).LastWriteTime -lt (Get-Date).AddHours(-20)) {
+    Set-Content -Path $nf -Value (Get-Date -Format s)
+    Log "$(Get-Date -Format s) task is in an old shape (interval $($tr.Repetition.Interval)): rerun setup-autoupdate.ps1"
+    Notify 'degoog: auto-update needs its setup line run once more (in PowerShell) to check every minute.'
   }
-  if (-not $okTrig -or $newAct) {
-    $nt = New-ScheduledTaskTrigger -Daily -At '00:00'
-    $nt.Repetition = (New-ScheduledTaskTrigger -Once -At '00:00' -RepetitionInterval ([Xml.XmlConvert]::ToTimeSpan($want)) -RepetitionDuration (New-TimeSpan -Days 1)).Repetition
-    $setArgs = @{ TaskName = 'degoog clean-titles update'; Trigger = $nt; ErrorAction = 'Stop' }
-    if ($newAct) { $setArgs.Action = $newAct }
-    Set-ScheduledTask @setArgs | Out-Null
-    Log "$(Get-Date -Format s) task set: every minute$(if ($fast) { ' (fix on its way)' })$(if ($newAct) { ", start: $($newAct.Execute)" })"
-  }
-} catch { Log "task update failed $(Get-Date -Format s): $($_.Exception.Message)" }
+} catch { Log "task check failed $(Get-Date -Format s): $($_.Exception.Message)" }
 }
-function SendReports { SendReportsCore; Sync-Task }
+function SendReports { SendReportsCore; Check-Task }
 # Reads the installer's self-check output and records the outcome. The AI builds in the background on a first
 # install: while the check says it isn't up yet, the version is "pending" and only the self-check is re-run (every
 # 10 min, no reinstall, so degoog isn't restarted again). A failed install is retried at most hourly, not every run.
