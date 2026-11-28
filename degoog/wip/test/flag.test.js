@@ -37,7 +37,7 @@ test("flag: ⚑ box saves; no count, no send link", async () => {
   new Function("scope", `with (scope) {\nconst __PLUGIN_ID__="clean-titles";\n${fs.readFileSync(new URL("../files/ct-page.js", import.meta.url), "utf8")}\n}`)(scope);
   await new Promise((r) => setTimeout(r, 30));
   const flag = document.getElementById("ct-flag");
-  expect(document.getElementById("nav-settings-results").nextElementSibling.id).toBe("ct-flag"); // right after the gear
+  expect(document.getElementById("nav-settings-results").previousElementSibling.id).toBe("ct-flag"); // just before the gear, every screen size
   expect(flag.textContent).toBe("⚑"); // no waiting count (user asked)
   flag.click();
   const box = document.getElementById("ct-flagbox");

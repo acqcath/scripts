@@ -1593,6 +1593,8 @@ const doiNames = async (rs) => {
 // server only. The local model (flagJudge) decides when what's waiting is worth a Claude session; the PC's hourly job
 // then sends it all in one (core flagPrompt), plus the updater's last problem (update-issue.txt, sent at once).
 const flagsFile = () => `${DIR}/flags.json`, issueFile = () => `${DIR}/update-issue.txt`;
+// The installer's last "install timing (s)" line (written by ../install.ps1 after its self-check), shown in status and reports
+const installTiming = () => { try { return fs.readFileSync(`${DIR}/install-timing.txt`, "utf8").trim().slice(0, 300); } catch { return ""; } };
 let FLAGS = null;
 const readFlags = () => { if (FLAGS) return FLAGS; try { const j = JSON.parse(fs.readFileSync(flagsFile(), "utf8")); FLAGS = j && Array.isArray(j.list) ? j : { list: [], issueAt: 0 }; } catch { FLAGS = { list: [], issueAt: 0 }; } return FLAGS; };
 const saveFlags = () => { try { fs.writeFileSync(`${flagsFile()}.tmp`, JSON.stringify(FLAGS)); fs.renameSync(`${flagsFile()}.tmp`, flagsFile()); } catch {} };
@@ -1955,7 +1957,7 @@ export const routes = [
       // The PC's hourly job (../autoupdate-job.ps1 SendReports): the prompt itself, with no " or \ in it, because
       // Windows PowerShell mangles those in arguments to programs
       const jd = open.length ? await flagJudge().catch(() => null) : null;
-      if (new URL(req.url).searchParams.get("prompt") === "1") return jsonOut({ n: open.length + (i ? 1 : 0), issue: !!i, send: !!i || !!(jd && jd.send), why: jd ? jd.why : "", prompt: flagPromptS(open, i ? i.text : "").replace(/["\\]/g, "'") });
+      if (new URL(req.url).searchParams.get("prompt") === "1") return jsonOut({ n: open.length + (i ? 1 : 0), issue: !!i, send: !!i || !!(jd && jd.send), why: jd ? jd.why : "", prompt: (flagPromptS(open, i ? i.text : "") + (installTiming() ? "\nLast install " + installTiming() : "")).replace(/["\\]/g, "'") });
       return jsonOut({ flags: open, issue: i ? i.text : "", send: !!(jd && jd.send), why: jd ? jd.why : "" });
     },
   },
@@ -1973,7 +1975,7 @@ export const routes = [
   },
   {
     // One-look health for Claude (one JS call in the browser pane, since each pane action needs the user's approval):
-    // {ver, pageMissing, ai, aiMs, flags, issue, up}
+    // {ver, pageMissing, ai, aiMs, flags, timing, issue, up}
     method: "get",
     path: "/status",
     async handler() {
@@ -1983,7 +1985,7 @@ export const routes = [
       let ai = false;
       try { const r = await fetch(VIS + "/health", { signal: AbortSignal.timeout(1500) }); ai = r.ok; } catch {}
       const i = flagIssue();
-      return jsonOut({ ver, pageMissing: PAGE_MISSING, ai, aiMs: Date.now() - t0, flags: flagOpen().length, issue: i ? i.text.split("\n").slice(0, 3).join(" | ").slice(0, 300) : "", up: Math.round(process.uptime()), speed: { hook: median(SPEED.hook), rank: median(SPEED.rank), gpu: median(SPEED.gpu), queue: median(SPEED.queue), n: SPEED.hook.length } });
+      return jsonOut({ ver, pageMissing: PAGE_MISSING, ai, aiMs: Date.now() - t0, flags: flagOpen().length, timing: installTiming(), issue: i ? i.text.split("\n").slice(0, 3).join(" | ").slice(0, 300) : "", up: Math.round(process.uptime()), speed: { hook: median(SPEED.hook), rank: median(SPEED.rank), gpu: median(SPEED.gpu), queue: median(SPEED.queue), n: SPEED.hook.length } });
     },
   },
   {
@@ -2361,8 +2363,8 @@ export default {
 };
 '@)
 [IO.File]::WriteAllText("$t\script.js", @'
-// clean-titles v79
-const CT_VER = "v79";
+// clean-titles v80
+const CT_VER = "v80";
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -3916,6 +3918,9 @@ try {
 } catch {}
 const fadeIn = (e) => { e.classList.add("ct-in"); e.addEventListener("animationend", () => e.classList.remove("ct-in"), { once: true }); return e; };
 // The tab row ends where the search bar ends (Tools sits under the bar's → button, in the same column as results)
+// One icon per site across the page: the first favicon seen for a host is used for every later result from it
+const FAVS = new Map();
+const favOf = (h, f) => { if (!f) return FAVS.get(h) || ""; if (!FAVS.has(h)) FAVS.set(h, f); return FAVS.get(h); };
 const tabsEdge = () => {
   const bar = document.getElementById("results-search-bar"), tabs = document.getElementById("results-tabs");
   if (!bar || !tabs) return;
@@ -3924,6 +3929,10 @@ const tabsEdge = () => {
   const pr = Math.round(tabs.getBoundingClientRect().right - bar.getBoundingClientRect().right);
   if (pr >= 0 && bar.getBoundingClientRect().width > 200) tabs.style.setProperty("--ct-tabs-pr", `${pr}px`);
   else tabs.style.removeProperty("--ct-tabs-pr");
+  // Tools sits at the bar's right edge whenever the tabs leave room (any width); only when the row has to scroll does
+  // it follow the last tab, behind a thin divider (measured, not a screen-size rule)
+  const t = document.getElementById("ct-tools");
+  if (t) { tabs.classList.remove("ct-tight"); if (t.offsetLeft - (t.previousElementSibling ? t.previousElementSibling.offsetLeft + t.previousElementSibling.offsetWidth : 0) < 8 || tabs.scrollWidth > tabs.clientWidth + 1) tabs.classList.add("ct-tight"); }
   if (!tabsEdge.ro && window.ResizeObserver) { tabsEdge.ro = new ResizeObserver(() => requestAnimationFrame(tabsEdge)); tabsEdge.ro.observe(bar); tabsEdge.ro.observe(tabs); }
 };
 const lineUp = () => {
@@ -5345,7 +5354,7 @@ const flagBox = (btn) => {
 const flagPlace = () => {
   const f = document.getElementById("ct-flag"), g = document.getElementById("nav-settings-results");
   if (!f || !g) return;
-  // phone: the gear is pinned to the header's top right, so ⚑ is pinned just left of it at the same height
+  // phone: the gear is pinned to the header's top right, so ⚑ is pinned just left of it at the same height (same order as PC)
   if (PHONE.matches) { f.style.top = `${g.offsetTop}px`; f.style.right = `${g.offsetParent ? g.offsetParent.clientWidth - g.offsetLeft : 0}px`; f.style.height = `${g.offsetHeight}px`; }
   else f.style.top = f.style.right = f.style.height = "";
 };
@@ -5360,7 +5369,7 @@ const flagBtn = () => {
   f.setAttribute("aria-expanded", "false");
   f.addEventListener("click", () => flagBox(f));
   f.textContent = "⚑";
-  g.after(f);
+  g.before(f); // ⚑ then gear on every screen size (the gear keeps degoog's own outer-edge spot)
   flagPlace();
   if (!flagPlace.on) { flagPlace.on = 1; PHONE.addEventListener("change", flagPlace); addEventListener("resize", flagPlace); }
 };
@@ -5498,7 +5507,7 @@ const info = (el) => {
       el, u, h, href: a.href, title: (el.dataset.ctCap ? cleanTitle(raw, a.href) : "") || raw,
       snippet: p ? (p.textContent || "").replace(dEl && p.contains(dEl) ? dEl.textContent : "", "").replace(/^\s*·\s*/, "").trim() : "",
       w: when(dEl ? dEl.dataset.raw || dEl.textContent : ""), thumb: el.querySelector(".result-thumbnail-wrap:not([style*='none']) img")?.src || "",
-      fav: el.querySelector("img.result-favicon")?.src || "", dur: el.querySelector(".degoog-result--video-duration")?.textContent.trim() || "",
+      fav: favOf(h, el.querySelector("img.result-favicon")?.src || ""), dur: el.querySelector(".degoog-result--video-duration")?.textContent.trim() || "",
     };
     r.video = VIDEO_URL(u, h) || !!el.querySelector(".degoog-result--thumb--video");
     const ai = AIW.get(aiKey(el.dataset.resultUrl || a.href));
@@ -5671,7 +5680,7 @@ const groups = () => {
     return (j && j.results || []).map((x) => {
       let u; try { u = new URL(x.url); } catch { return null; }
       const h = u.hostname.replace(/^(www|m|old)\./, "");
-      return { u, h, href: x.url, title: cleanTitle(String(x.title || ""), x.url) || String(x.title || ""), snippet: String(x.snippet || ""), fav: x.favicon || "",
+      return { u, h, href: x.url, title: cleanTitle(String(x.title || ""), x.url) || String(x.title || ""), snippet: String(x.snippet || ""), fav: favOf(h, x.favicon || ""),
         w: x.publishedAt ? { t: Date.parse(`${x.publishedAt}T12:00:00Z`), exact: false } : null, ai: typeof x.ctRel === "number" ? x.ctRel : undefined, forum: forumOf(u, h) };
     }).filter((r) => r && r.title && relOk(r.title, r.href));
   };
@@ -5743,7 +5752,7 @@ const groups = () => {
       const h = u.hostname.replace(/^(www|m)\./, "");
       const rel = /(\d+)\s+(minute|hour|day)s?\s+ago/i.exec(x.snippet || "");
       const w = rel ? when(rel[0]) : x.publishedAt ? { t: Date.parse(`${x.publishedAt}T12:00:00Z`), exact: false } : null;
-      return { h, href: x.url, title: cleanTitle(String(x.title || ""), x.url) || String(x.title || ""), w, thumb: x.thumbnail || "", fav: x.favicon || "", ai: x.ctRel };
+      return { h, href: x.url, title: cleanTitle(String(x.title || ""), x.url) || String(x.title || ""), w, thumb: x.thumbnail || "", fav: favOf(h, x.favicon || ""), ai: x.ctRel };
     // Real News answers carry no date at all (recorded steelers/nvidia: 0 of 55 dated), so undated stories count as
     // current (a News search returns current news) and keep degoog's order; one dated older than fresh() is left out
     }).filter((r) => r && r.title && (!r.w || fresh(r.w)) && !onPage.has(r.href.split("#")[0]) && !seen.has(r.h) && seen.add(r.h)).slice(0, 8);
@@ -7232,23 +7241,23 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 
 /* Tools: a small link beside the tabs, opening Google-style advanced search fields */
 /* Tools lives with the search it changes: on wider screens the tab row ends where the search bar ends, and Tools
-   sits at that edge, right under the bar's ✕ and → (one column: logo, bar, tabs, results). On phones it follows the
-   last tab behind a thin divider, inside the scrolling tab row. Same size and baseline as the tabs. */
-#ct-tools { position: relative; align-self: stretch; display: flex; align-items: center; background: none; border: 0; border-bottom: 3px solid transparent; padding: 0 12px 0 16px; margin-left: 4px; font: inherit; font-size: .8125rem; color: var(--text-secondary); cursor: pointer; flex: none; }
-#ct-tools::before { content: ""; position: absolute; left: 0; top: 50%; height: 16px; margin-top: -8px; width: 1px; background: var(--border-light); }
+   sits at that edge, right under the bar's ✕ and → (one column: logo, bar, tabs, results), on every screen size.
+   Only when the tabs fill the row (script.js tabsEdge adds .ct-tight) does it follow the last tab behind a thin divider. Same size and baseline as the tabs. */
+#ct-tools { position: relative; align-self: stretch; display: flex; align-items: center; background: none; border: 0; border-bottom: 3px solid transparent; padding: 0 14px; margin-left: auto !important; font: inherit; font-size: .8125rem; color: var(--text-secondary); cursor: pointer; flex: none; }
+#results-tabs.ct-tight #ct-tools { margin-left: 4px !important; padding: 0 12px 0 16px; }
+#ct-tools::before { display: none; }
+#results-tabs.ct-tight #ct-tools::before { display: block; content: ""; position: absolute; left: 0; top: 50%; height: 16px; margin-top: -8px; width: 1px; background: var(--border-light); }
 @media (min-width: 768px) {
   #results-tabs:has(#ct-tools) { padding-right: var(--ct-tabs-pr, 0px) !important; }
-  #results-tabs #ct-tools { margin-left: auto !important; padding: 0 14px; }
-  #ct-tools::before { display: none; }
 }
 #ct-tools:hover { color: var(--text-primary); }
 #ct-tools[aria-expanded="true"] { color: var(--text-primary); }
-/* ⚑ Flag: right after the settings gear, the same round button (PC: in the header row; phone: pinned just left of the
+/* ⚑ Flag: just before the settings gear, the same round button (PC: in the header row; phone: pinned just left of the
    gear, placed by script.js flagPlace). Its box opens over the results under it. */
 #ct-flag { display: flex; align-items: center; justify-content: center; flex: none; box-sizing: border-box; height: 2.75rem; width: 2.75rem; margin: 0; padding: 0; border: 0; border-radius: 999px; background: none; font: inherit; font-size: 1.15rem; line-height: 1; color: var(--text-secondary); cursor: pointer; }
 #ct-flag:hover, #ct-flag[aria-expanded="true"] { background: var(--bg-hover); color: var(--text-primary); }
 @media (min-width: 768px) {
-  #results-header #ct-flag { margin-left: -.75rem; } /* the header's 1rem gap minus .25rem: as close to the gear as the gear is to the bar */
+  #results-header #ct-flag { margin-right: -.75rem; } /* the header's 1rem gap minus .25rem: ⚑ sits .25rem before the gear */
 }
 @media (max-width: 767px) {
   #ct-flag { position: absolute; width: 2.5rem; height: 2.5rem; }
@@ -7924,7 +7933,7 @@ $null = docker exec $c sh -c 'for i in $(seq 1 40); do curl -fs -o /dev/null htt
 $ctT['ready'] = $ctSw.Elapsed.TotalSeconds
 
 $ss = docker exec $c cat /app/data/server-settings.json | Out-String | ConvertFrom-Json
-"plugin code inside the page (should be v79): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
+"plugin code inside the page (should be v80): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
 "page files (should be a ct and a psl file): " + (docker exec $c sh -c 'ls /app/src/public/ct/')
 "progressive results off (should be False): $($ss.settings.streamingEnabled -eq $true)"
 "typo fixer word list (should be about 82800): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/words.txt')
@@ -8185,5 +8194,7 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
 '@)
 docker cp "$env:TEMP\ct-check.js" "${c}:/tmp/ct-check.js"; docker exec $c bun /tmp/ct-check.js; docker exec $c rm -f /tmp/ct-check.js; Remove-Item -Force "$env:TEMP\ct-check.js"
 $ctT['check'] = $ctSw.Elapsed.TotalSeconds; $p0 = 0
-"install timing (s): " + (($ctT.Keys | ForEach-Object { $v = $ctT[$_]; "$_ {0:N1}" -f ($v - $p0); $p0 = $v }) -join ", ") + ", total {0:N1}" -f $ctSw.Elapsed.TotalSeconds
+$ctTl = "install timing (s): " + (($ctT.Keys | ForEach-Object { $v = $ctT[$_]; "$_ {0:N1}" -f ($v - $p0); $p0 = $v }) -join ", ") + ", total {0:N1}" -f $ctSw.Elapsed.TotalSeconds
+$ctTf = Join-Path $env:TEMP 'ct-timing.txt'; [IO.File]::WriteAllText($ctTf, "$(Get-Date -Format s) $ctTl"); docker cp $ctTf "${c}:/app/data/plugins/clean-titles/install-timing.txt" 2>$null | Out-Null; Remove-Item -Force $ctTf -ErrorAction SilentlyContinue
+$ctTl
 } | Tee-Object -Variable o; $o | Out-String | Set-Clipboard

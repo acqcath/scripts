@@ -1589,6 +1589,8 @@ const doiNames = async (rs) => {
 // server only. The local model (flagJudge) decides when what's waiting is worth a Claude session; the PC's hourly job
 // then sends it all in one (core flagPrompt), plus the updater's last problem (update-issue.txt, sent at once).
 const flagsFile = () => `${DIR}/flags.json`, issueFile = () => `${DIR}/update-issue.txt`;
+// The installer's last "install timing (s)" line (written by ../install.ps1 after its self-check), shown in status and reports
+const installTiming = () => { try { return fs.readFileSync(`${DIR}/install-timing.txt`, "utf8").trim().slice(0, 300); } catch { return ""; } };
 let FLAGS = null;
 const readFlags = () => { if (FLAGS) return FLAGS; try { const j = JSON.parse(fs.readFileSync(flagsFile(), "utf8")); FLAGS = j && Array.isArray(j.list) ? j : { list: [], issueAt: 0 }; } catch { FLAGS = { list: [], issueAt: 0 }; } return FLAGS; };
 const saveFlags = () => { try { fs.writeFileSync(`${flagsFile()}.tmp`, JSON.stringify(FLAGS)); fs.renameSync(`${flagsFile()}.tmp`, flagsFile()); } catch {} };
@@ -1951,7 +1953,7 @@ export const routes = [
       // The PC's hourly job (../autoupdate-job.ps1 SendReports): the prompt itself, with no " or \ in it, because
       // Windows PowerShell mangles those in arguments to programs
       const jd = open.length ? await flagJudge().catch(() => null) : null;
-      if (new URL(req.url).searchParams.get("prompt") === "1") return jsonOut({ n: open.length + (i ? 1 : 0), issue: !!i, send: !!i || !!(jd && jd.send), why: jd ? jd.why : "", prompt: flagPromptS(open, i ? i.text : "").replace(/["\\]/g, "'") });
+      if (new URL(req.url).searchParams.get("prompt") === "1") return jsonOut({ n: open.length + (i ? 1 : 0), issue: !!i, send: !!i || !!(jd && jd.send), why: jd ? jd.why : "", prompt: (flagPromptS(open, i ? i.text : "") + (installTiming() ? "\nLast install " + installTiming() : "")).replace(/["\\]/g, "'") });
       return jsonOut({ flags: open, issue: i ? i.text : "", send: !!(jd && jd.send), why: jd ? jd.why : "" });
     },
   },
@@ -1969,7 +1971,7 @@ export const routes = [
   },
   {
     // One-look health for Claude (one JS call in the browser pane, since each pane action needs the user's approval):
-    // {ver, pageMissing, ai, aiMs, flags, issue, up}
+    // {ver, pageMissing, ai, aiMs, flags, timing, issue, up}
     method: "get",
     path: "/status",
     async handler() {
@@ -1979,7 +1981,7 @@ export const routes = [
       let ai = false;
       try { const r = await fetch(VIS + "/health", { signal: AbortSignal.timeout(1500) }); ai = r.ok; } catch {}
       const i = flagIssue();
-      return jsonOut({ ver, pageMissing: PAGE_MISSING, ai, aiMs: Date.now() - t0, flags: flagOpen().length, issue: i ? i.text.split("\n").slice(0, 3).join(" | ").slice(0, 300) : "", up: Math.round(process.uptime()), speed: { hook: median(SPEED.hook), rank: median(SPEED.rank), gpu: median(SPEED.gpu), queue: median(SPEED.queue), n: SPEED.hook.length } });
+      return jsonOut({ ver, pageMissing: PAGE_MISSING, ai, aiMs: Date.now() - t0, flags: flagOpen().length, timing: installTiming(), issue: i ? i.text.split("\n").slice(0, 3).join(" | ").slice(0, 300) : "", up: Math.round(process.uptime()), speed: { hook: median(SPEED.hook), rank: median(SPEED.rank), gpu: median(SPEED.gpu), queue: median(SPEED.queue), n: SPEED.hook.length } });
     },
   },
   {

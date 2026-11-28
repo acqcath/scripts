@@ -615,23 +615,23 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 
 /* Tools: a small link beside the tabs, opening Google-style advanced search fields */
 /* Tools lives with the search it changes: on wider screens the tab row ends where the search bar ends, and Tools
-   sits at that edge, right under the bar's ✕ and → (one column: logo, bar, tabs, results). On phones it follows the
-   last tab behind a thin divider, inside the scrolling tab row. Same size and baseline as the tabs. */
-#ct-tools { position: relative; align-self: stretch; display: flex; align-items: center; background: none; border: 0; border-bottom: 3px solid transparent; padding: 0 12px 0 16px; margin-left: 4px; font: inherit; font-size: .8125rem; color: var(--text-secondary); cursor: pointer; flex: none; }
-#ct-tools::before { content: ""; position: absolute; left: 0; top: 50%; height: 16px; margin-top: -8px; width: 1px; background: var(--border-light); }
+   sits at that edge, right under the bar's ✕ and → (one column: logo, bar, tabs, results), on every screen size.
+   Only when the tabs fill the row (script.js tabsEdge adds .ct-tight) does it follow the last tab behind a thin divider. Same size and baseline as the tabs. */
+#ct-tools { position: relative; align-self: stretch; display: flex; align-items: center; background: none; border: 0; border-bottom: 3px solid transparent; padding: 0 14px; margin-left: auto !important; font: inherit; font-size: .8125rem; color: var(--text-secondary); cursor: pointer; flex: none; }
+#results-tabs.ct-tight #ct-tools { margin-left: 4px !important; padding: 0 12px 0 16px; }
+#ct-tools::before { display: none; }
+#results-tabs.ct-tight #ct-tools::before { display: block; content: ""; position: absolute; left: 0; top: 50%; height: 16px; margin-top: -8px; width: 1px; background: var(--border-light); }
 @media (min-width: 768px) {
   #results-tabs:has(#ct-tools) { padding-right: var(--ct-tabs-pr, 0px) !important; }
-  #results-tabs #ct-tools { margin-left: auto !important; padding: 0 14px; }
-  #ct-tools::before { display: none; }
 }
 #ct-tools:hover { color: var(--text-primary); }
 #ct-tools[aria-expanded="true"] { color: var(--text-primary); }
-/* ⚑ Flag: right after the settings gear, the same round button (PC: in the header row; phone: pinned just left of the
+/* ⚑ Flag: just before the settings gear, the same round button (PC: in the header row; phone: pinned just left of the
    gear, placed by script.js flagPlace). Its box opens over the results under it. */
 #ct-flag { display: flex; align-items: center; justify-content: center; flex: none; box-sizing: border-box; height: 2.75rem; width: 2.75rem; margin: 0; padding: 0; border: 0; border-radius: 999px; background: none; font: inherit; font-size: 1.15rem; line-height: 1; color: var(--text-secondary); cursor: pointer; }
 #ct-flag:hover, #ct-flag[aria-expanded="true"] { background: var(--bg-hover); color: var(--text-primary); }
 @media (min-width: 768px) {
-  #results-header #ct-flag { margin-left: -.75rem; } /* the header's 1rem gap minus .25rem: as close to the gear as the gear is to the bar */
+  #results-header #ct-flag { margin-right: -.75rem; } /* the header's 1rem gap minus .25rem: ⚑ sits .25rem before the gear */
 }
 @media (max-width: 767px) {
   #ct-flag { position: absolute; width: 2.5rem; height: 2.5rem; }
