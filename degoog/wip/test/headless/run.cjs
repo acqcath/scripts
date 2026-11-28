@@ -1,12 +1,25 @@
 // Headless Chrome check (M1/M6 only): the user's real search page (rec `page`) with its real CSS (rec `css`) and
 // the built page script; recorded results are inserted the way degoog does (one innerHTML), then layout shift is
 // summed with a PerformanceObserver for everything AFTER that insert (must be 0). Screenshots go to argv[2].
-// Run: node test/headless/run.cjs <outdir>
+// Run: node test/headless/run.cjs <outdir>   (CT_CHROME=/usr/bin/google-chrome CT_PW=<path to playwright-core> in the sandbox)
+// Without the private rec/ (Claude's sandbox): a stub page with degoog's element ids and 30 made-up results per
+// search, header and tabs drawn (no degoog base CSS, so layout shift there is indicative; pass ms are real).
+// Each row also lists the 5 slowest page passes on that search (ms, all observer runs added up) and the run count.
 const fs = require("fs"), zlib = require("zlib"), path = require("path");
-const { chromium } = require("playwright");
+const { chromium } = require(process.env.CT_PW || "playwright");
 const { render, ctx } = require("../render.js");
 const W = path.join(__dirname, "..", "..");
-const REC = JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(W, "rec/ct-recordings.json.gz"))));
+const RECF = path.join(W, "rec/ct-recordings.json.gz"), STUB = !fs.existsSync(RECF);
+const stubRec = (qs) => ({
+  css: {},
+  page: '<!doctype html><html><head><meta name="viewport" content="width=device-width"><style id="degoog-custom-css"></style></head><body><div id="results-page">' +
+    '<div id="results-header"></div><div id="results-tabs"></div><div id="results-layout"><div id="results-main"><div id="at-a-glance"></div>' +
+    '<div id="results-list"></div></div><div id="sidebar-col"><div id="results-sidebar"></div></div></div></div></body></html>',
+  searches: qs.map((q) => ({ q, results: Array.from({ length: 30 }, (_, i) => ({ title: `${q} explained, part ${i + 1} - Site ${i % 9}`,
+    url: `https://site${i % 9}.example.com/${q.replace(/\W+/g, "-")}/${i}`, snippet: `How ${q} works, with examples and the common mistakes. Updated guide number ${i + 1} covering ${q}.`,
+    publishedDate: i % 4 ? "" : "2026-10-0" + ((i % 9) + 1), sources: ["bing", "startpage"].slice(0, 1 + (i % 2)) })) })),
+});
+if (STUB) process.env.CT_HEADER = "1";
 const TPL = fs.readFileSync(path.join(W, "test/fixtures/result.html"), "utf8");
 const CODE = fs.readFileSync(path.join(W, "files/ct-page.js"), "utf8");
 const CSS = fs.readFileSync(path.join(W, "files/custom.css"), "utf8");
@@ -25,6 +38,7 @@ const PNG = (() => {
 // CT_CASES="a|b" picks other recorded searches (answer card, AI spot...). AI-worded ones get ai-summary "set up" and
 // a panel arriving 300 ms after the results (then its text 300 ms later), like degoog's slot stream.
 const CASES = process.env.CT_CASES ? process.env.CT_CASES.split("|") : ["react useEffect cleanup", "attention is all you need pdf", "how to reset airpods", "best mechanical keyboard reddit", "apple support"];
+const REC = STUB ? stubRec(CASES) : JSON.parse(zlib.gunzipSync(fs.readFileSync(RECF)));
 const AI_CASE = /^(why|.* vs .*|best laptop)/;
 // The page as the server sends it, minus every script (degoog's app.js isn't here; results are inserted below),
 // with its stylesheets inlined from the recording and this build's custom CSS
@@ -143,6 +157,8 @@ const page = (q) => {
       }) }));
       if (r.shifts.length) console.log(width, q, "\n  " + r.shifts.slice(0, 6).join("\n  "));
       delete r.shifts;
+      const pm = await p.evaluate(() => (globalThis.__ctPass ? globalThis.__ctPass() : null));
+      if (pm) { r.runs = pm.batches; r.slow = Object.entries(pm.ms).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([k, v]) => `${k} ${v.toFixed(1)}`).join(", "); }
       const file = path.join(out, `${width}-${q.replace(/\W+/g, "_")}.png`);
       await p.screenshot({ path: file, fullPage: false });
       rows.push({ width, q, results: n, ...r, errors: errors.length ? errors.slice(0, 2) : 0 });

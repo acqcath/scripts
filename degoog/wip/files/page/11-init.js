@@ -24,7 +24,13 @@ const tabKeep = () => {
   if (tl && tl.parentElement === row && tl.nextElementSibling && tl.nextElementSibling !== fl) row.append(tl);
   if (fl && fl.parentElement === row && fl.nextElementSibling) row.append(fl);
 };
-const safe = (name, fn) => { try { fn(); } catch (e) { console.error(`clean-titles ${name}:`, e); } };
+// Every pass runs through safe(): an error in one never stops the others, and its time is added up per search
+// (PASS_MS: name -> ms, BATCHES: observer runs), so each ⚑ says which passes cost the most on that device
+const PASS_MS = new Map();
+let passFor = "", BATCHES = 0;
+const passReset = () => { const id = searchId(); if (id !== passFor) { passFor = id; PASS_MS.clear(); BATCHES = 0; } BATCHES++; };
+globalThis.__ctPass = () => ({ batches: BATCHES, ms: Object.fromEntries(PASS_MS) }); // read by test/headless/run.cjs
+const safe = (name, fn) => { const t = performance.now(); try { fn(); } catch (e) { console.error(`clean-titles ${name}:`, e); } PASS_MS.set(name, (PASS_MS.get(name) || 0) + performance.now() - t); };
 // A tab tapped while degoog's first search is still starting is ignored by degoog (it has no current search yet), so the
 // page seemed stuck until it finished loading. The tap is kept and repeated until degoog takes it (its tab turns
 // active); degoog then drops the search that was loading and opens the tab. A later tap on another tab cancels it.
@@ -67,6 +73,7 @@ const init = () => {
   safe("drawn", markDrawn);
   // Runs right after degoog inserts results and before the screen updates; only looks inside what was added
   new MutationObserver((muts) => {
+    passReset();
     safe("query", readQuery);
     safe("early", earlyStart);
     safe("answer", ansPass);

@@ -1,5 +1,5 @@
-// clean-titles v87
-const CT_VER = "v87";
+// clean-titles v88
+const CT_VER = "v88";
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -2880,7 +2880,9 @@ const flagCtx = () => {
       if (last && last.box === k) last.n++; else boxes.push({ box: k, n: 1 });
     }
   }
-  return { ver: typeof CT_VER === "string" ? CT_VER : "", vw: innerWidth, vh: innerHeight, dpr: devicePixelRatio, phone: PHONE.matches, load, boxes };
+  // the 8 passes that took longest on this search (ms, all runs added up) and how many observer runs it took
+  const passes = Object.fromEntries([...PASS_MS].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => [k, Math.round(v * 10) / 10]));
+  return { ver: typeof CT_VER === "string" ? CT_VER : "", vw: innerWidth, vh: innerHeight, dpr: devicePixelRatio, phone: PHONE.matches, load, boxes, passes, batches: BATCHES };
 };
 const curType = () => { try { return new URL(location.href).searchParams.get("type") || tabNow || "web"; } catch { return tabNow || "web"; } };
 const flagBox = (btn) => {
@@ -2995,7 +2997,7 @@ const topGap = () => {
   let top = Infinity;
   for (const e of lay.querySelectorAll("#ct-fix, #at-a-glance > *, #sidebar-col > *, .result-item .result-url-row, .skeleton-card, .ct-skc, .ct-skimg, .command-result, .image-card, .video-card")) {
     const r = e.getBoundingClientRect();
-    if (!(r.height > 0)) continue;
+    if (!(r.height > 0) || r.top >= top) continue; // a box's text never starts above its top: no style read needed
     // a line of text starts where its letters start, not where its line spacing starts; a measured placeholder row
     // where its result's link line will start
     const t = e.dataset.ut != null ? r.top + +e.dataset.ut : textTop(e, r);
@@ -4168,7 +4170,13 @@ const tabKeep = () => {
   if (tl && tl.parentElement === row && tl.nextElementSibling && tl.nextElementSibling !== fl) row.append(tl);
   if (fl && fl.parentElement === row && fl.nextElementSibling) row.append(fl);
 };
-const safe = (name, fn) => { try { fn(); } catch (e) { console.error(`clean-titles ${name}:`, e); } };
+// Every pass runs through safe(): an error in one never stops the others, and its time is added up per search
+// (PASS_MS: name -> ms, BATCHES: observer runs), so each ⚑ says which passes cost the most on that device
+const PASS_MS = new Map();
+let passFor = "", BATCHES = 0;
+const passReset = () => { const id = searchId(); if (id !== passFor) { passFor = id; PASS_MS.clear(); BATCHES = 0; } BATCHES++; };
+globalThis.__ctPass = () => ({ batches: BATCHES, ms: Object.fromEntries(PASS_MS) }); // read by test/headless/run.cjs
+const safe = (name, fn) => { const t = performance.now(); try { fn(); } catch (e) { console.error(`clean-titles ${name}:`, e); } PASS_MS.set(name, (PASS_MS.get(name) || 0) + performance.now() - t); };
 // A tab tapped while degoog's first search is still starting is ignored by degoog (it has no current search yet), so the
 // page seemed stuck until it finished loading. The tap is kept and repeated until degoog takes it (its tab turns
 // active); degoog then drops the search that was loading and opens the tab. A later tap on another tab cancels it.
@@ -4211,6 +4219,7 @@ const init = () => {
   safe("drawn", markDrawn);
   // Runs right after degoog inserts results and before the screen updates; only looks inside what was added
   new MutationObserver((muts) => {
+    passReset();
     safe("query", readQuery);
     safe("early", earlyStart);
     safe("answer", ansPass);

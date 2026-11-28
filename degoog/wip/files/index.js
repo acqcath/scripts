@@ -1611,14 +1611,17 @@ const flagOpen = () => readFlags().list.filter((f) => !f.handed);
 export const FLAG_CATS = [["offtopic", "Off-topic"], ["spam", "Spam / junk"], ["missing", "Missing what I wanted"], ["outdated", "Outdated"],
   ["order", "Wrong order"], ["layout", "Layout looks off"], ["broken", "Something's broken or slow"]];
 export const flagCats = (a) => { const ok = new Set(FLAG_CATS.map((c) => c[0])); return [...new Set((Array.isArray(a) ? a : []).map(String))].filter((c) => ok.has(c)); };
-// Context sent with each flag, clipped to sane sizes: {vw, vh, dpr, phone, load: {name: ms}, boxes: [{box, n}]}
+// Context sent with each flag, clipped to sane sizes: {vw, vh, dpr, phone, load: {name: ms}, boxes: [{box, n}],
+// passes: {page pass: ms on this search}, batches: observer runs}
 export const flagCtxClean = (c) => {
   if (!c || typeof c !== "object") return null;
   const num = (v, max = 1e6) => (Number.isFinite(+v) ? Math.max(0, Math.min(max, Math.round(+v))) : null);
   const load = {};
   for (const [k, v] of Object.entries(c.load && typeof c.load === "object" ? c.load : {}).slice(0, 12)) { const n = num(v, 600000); if (n !== null) load[String(k).slice(0, 40)] = n; }
   const boxes = (Array.isArray(c.boxes) ? c.boxes : []).slice(0, 30).map((b) => ({ box: String((b && b.box) || "").slice(0, 60), n: num(b && b.n, 999) || 1 })).filter((b) => b.box);
-  return { ver: String(c.ver || "").slice(0, 20), vw: num(c.vw, 10000), vh: num(c.vh, 10000), dpr: Number.isFinite(+c.dpr) ? Math.round(+c.dpr * 100) / 100 : null, phone: !!c.phone, load, boxes };
+  const passes = {};
+  for (const [k, v] of Object.entries(c.passes && typeof c.passes === "object" ? c.passes : {}).slice(0, 8)) { const n = num(v, 600000); if (n !== null) passes[String(k).slice(0, 20)] = n; }
+  return { ver: String(c.ver || "").slice(0, 20), vw: num(c.vw, 10000), vh: num(c.vh, 10000), dpr: Number.isFinite(+c.dpr) ? Math.round(+c.dpr * 100) / 100 : null, phone: !!c.phone, load, boxes, passes, batches: num(c.batches, 1e6) };
 };
 
 // The prompt the PC job sends into the reports session (its link fits about 14,000 characters: snippets are dropped

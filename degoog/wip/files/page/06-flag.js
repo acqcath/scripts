@@ -40,7 +40,9 @@ const flagCtx = () => {
       if (last && last.box === k) last.n++; else boxes.push({ box: k, n: 1 });
     }
   }
-  return { ver: typeof CT_VER === "string" ? CT_VER : "", vw: innerWidth, vh: innerHeight, dpr: devicePixelRatio, phone: PHONE.matches, load, boxes };
+  // the 8 passes that took longest on this search (ms, all runs added up) and how many observer runs it took
+  const passes = Object.fromEntries([...PASS_MS].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => [k, Math.round(v * 10) / 10]));
+  return { ver: typeof CT_VER === "string" ? CT_VER : "", vw: innerWidth, vh: innerHeight, dpr: devicePixelRatio, phone: PHONE.matches, load, boxes, passes, batches: BATCHES };
 };
 const curType = () => { try { return new URL(location.href).searchParams.get("type") || tabNow || "web"; } catch { return tabNow || "web"; } };
 const flagBox = (btn) => {
