@@ -235,7 +235,7 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - route `/yt` :2132
   - route `/hd` :2142
 
-## script.js (2522 lines)
+## script.js (2528 lines)
   - `bridge` :2
   - `aiKey` :21
   - `fadeIn` :72
@@ -367,7 +367,7 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - `safe` :2426
   - `tabRescue` :2431
   - `init` :2446
-- **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :2478
+- **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :2484
 
 ## core.js (646 lines)
 - **Sites: registrable domain via the public suffix list** :4
@@ -549,7 +549,7 @@ Every section, function and route in degoog/wip/files with its line. Read the li
 
 ## setcss.js (12 lines)
 
-## custom.css (890 lines)
+## custom.css (889 lines)
 - Catppuccin Mocha colors :1
 - DESCRIPTION SIZE :22
 - v50 :24
@@ -612,29 +612,29 @@ Every section, function and route in degoog/wip/files with its line. Read the li
 - Tools lives with the search it changes :615
 - ⚑ Flag :627
 - Phone :656
-- ===== Answer card (local answers) :674
-- Featured snippet :688
-- ===== AI summary spot :699
-- The panel over the 3 lines :712
-- Opened with ⌄ (your tap) :720
-- CMU card details :728
-- Sports card :735
-- Knowledge panel (spec 3) :752
-- Wide screens :772
-- Same-shape results (spec 8) :786
-- "Only reddit :788
-- "Open archived copy" :791
-- Images row (spec 12) :795
-- Quick view :803
-- Meaning line :816
-- Site icons are back (user, 2026-11-23) :823
-- Menu lines are tap targets :826
-- ===== Vertical rhythm (one scale, by how things belong together) ===== :829
-- Line breaks that read well, for every piece of text :842
-- Phones :850
-- Image/video preview :856
-- Image AI :860
-- ===== M4 :864
+- ===== Answer card (local answers) :673
+- Featured snippet :687
+- ===== AI summary spot :698
+- The panel over the 3 lines :711
+- Opened with ⌄ (your tap) :719
+- CMU card details :727
+- Sports card :734
+- Knowledge panel (spec 3) :751
+- Wide screens :771
+- Same-shape results (spec 8) :785
+- "Only reddit :787
+- "Open archived copy" :790
+- Images row (spec 12) :794
+- Quick view :802
+- Meaning line :815
+- Site icons are back (user, 2026-11-23) :822
+- Menu lines are tap targets :825
+- ===== Vertical rhythm (one scale, by how things belong together) ===== :828
+- Line breaks that read well, for every piece of text :841
+- Phones :849
+- Image/video preview :855
+- Image AI :859
+- ===== M4 :863
 
 ## other
 - ../autoupdate-job.ps1: the PC's hourly update job (Issue() puts update problems on the server for ⚑ Report)

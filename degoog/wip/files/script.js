@@ -2444,6 +2444,12 @@ const tabRescue = () => {
 };
 
 const init = () => {
+  // iOS zooms the page into any text box under 16px on focus; maximum-scale=1 stops that (iOS still allows
+  // pinch zoom), so boxes can use the page's text size. iOS only: elsewhere it would block pinch zoom.
+  if (/iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)) {
+    const vp = document.querySelector('meta[name="viewport"]');
+    if (vp && !/maximum-scale/.test(vp.content)) vp.content += ", maximum-scale=1";
+  }
   safe("tabrescue", tabRescue);
   safe("query", readQuery);
   safe("early", earlyStart);

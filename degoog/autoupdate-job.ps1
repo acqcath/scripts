@@ -46,7 +46,8 @@ process.stdout.write(String(j.html || "").replace(/&lt;/g, "<").replace(/&gt;/g,
     if (-not $w -or -not $w.n) { return }
     $stamp = Join-Path $dir 'reports-sent.txt'
     if (-not $w.send) { return }
-    $env:Path = "$env:Path;$env:USERPROFILE\.local\bin;$env:ProgramFiles\Git\cmd"
+    $mg = Join-Path $dir 'mingit'
+    $env:Path = "$env:Path;$env:USERPROFILE\.local\bin;$env:ProgramFiles\Git\cmd;$mg\cmd"
     $nag = Join-Path $dir 'signin-nag.txt'
     $ready = (Get-Command git -ErrorAction SilentlyContinue) -and (Get-Command claude -ErrorAction SilentlyContinue)
     if (-not $ready) {
@@ -54,9 +55,20 @@ process.stdout.write(String(j.html || "").replace(/&lt;/g, "<").replace(/&gt;/g,
       if (-not (Test-Path $nag) -or (Get-Item $nag).LastWriteTime -lt (Get-Date).AddHours(-20)) {
         Set-Content -Path $nag -Value (Get-Date -Format s)
         if (-not (Get-Command git -ErrorAction SilentlyContinue)) { winget install -e --id Git.Git --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null }
+        # No winget (debloated Windows) or it failed: portable MinGit from Git for Windows' own releases, no installer
+        if (-not (Get-Command git -ErrorAction SilentlyContinue) -and -not (Test-Path "$mg\cmd\git.exe")) {
+          try {
+            $rel = Invoke-RestMethod https://api.github.com/repos/git-for-windows/git/releases/latest
+            $a = $rel.assets | Where-Object { $_.name -match '^MinGit-[\d.]+-64-bit\.zip$' } | Select-Object -First 1
+            $zip = Join-Path $env:TEMP 'mingit.zip'
+            Invoke-WebRequest $a.browser_download_url -OutFile $zip -UseBasicParsing
+            Expand-Archive $zip -DestinationPath $mg -Force
+            Remove-Item -Force $zip -ErrorAction SilentlyContinue
+          } catch { "mingit install failed $(Get-Date -Format s): $($_.Exception.Message)" | Add-Content -Path $log }
+        }
         if (-not (Get-Command claude -ErrorAction SilentlyContinue)) { try { Invoke-RestMethod https://claude.ai/install.ps1 | Invoke-Expression 2>&1 | Out-Null } catch {} }
       }
-      return
+      if (-not ((Get-Command git -ErrorAction SilentlyContinue) -and (Get-Command claude -ErrorAction SilentlyContinue))) { return }
     }
     $repo = Join-Path $dir 'repo'
     if (-not (Test-Path (Join-Path $repo '.git'))) { git clone -q --depth 1 --filter=blob:none --sparse https://github.com/acqcath/scripts $repo 2>&1 | Out-Null; git -C $repo sparse-checkout set degoog 2>&1 | Out-Null }

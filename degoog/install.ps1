@@ -1863,7 +1863,7 @@ export const routes = [
     path: "/status",
     async handler() {
       let ver = "";
-      try { const h = fs.readFileSync(PAGE_FILE, "utf8"); const m = /\/public\/ct\/(ct\.[0-9a-f]+\.js)/.exec(h); if (m) ver = (/^\/\/ clean-titles (\S+)/.exec(fs.readFileSync(`/app/src/public/ct/${m[1]}`, "utf8").slice(0, 80)) || [])[1] || ""; } catch {}
+      try { const h = fs.readFileSync(PAGE_FILE, "utf8"); const m = /\/public\/ct\/(ct\.[0-9a-f]+\.js)/.exec(h); ver = (/\/\/ clean-titles (v[\w.-]+)/.exec(m ? fs.readFileSync(`/app/src/public/ct/${m[1]}`, "utf8").slice(0, 80) : h) || [])[1] || ""; } catch {}
       const t0 = Date.now();
       let ai = false;
       try { const r = await fetch(VIS + "/health", { signal: AbortSignal.timeout(1500) }); ai = r.ok; } catch {}
@@ -6159,6 +6159,12 @@ const tabRescue = () => {
 };
 
 const init = () => {
+  // iOS zooms the page into any text box under 16px on focus; maximum-scale=1 stops that (iOS still allows
+  // pinch zoom), so boxes can use the page's text size. iOS only: elsewhere it would block pinch zoom.
+  if (/iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)) {
+    const vp = document.querySelector('meta[name="viewport"]');
+    if (vp && !/maximum-scale/.test(vp.content)) vp.content += ", maximum-scale=1";
+  }
   safe("tabrescue", tabRescue);
   safe("query", readQuery);
   safe("early", earlyStart);
@@ -6998,7 +7004,6 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 @media (max-width: 767px) {
   #ct-flagscrim { background: rgba(0, 0, 0, .5); }
   #ct-flagbox { position: fixed; left: 0; right: 0; bottom: 0; top: auto; width: auto; max-width: none; max-height: 85vh; overflow-y: auto; border-radius: 18px 18px 0 0; border-width: 1px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); gap: 14px; }
-  #ct-flagbox textarea { font-size: 16px; }
   .ct-flag-cat { min-height: 36px; padding: 8px 14px; }
 }
 #ct-adv { display: grid; grid-template-columns: max-content minmax(0, 360px); justify-content: start; gap: 8px 16px; align-items: center; padding: 14px 0 16px; font-size: 13.5px; color: var(--text-secondary); }
@@ -7011,7 +7016,7 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
   #ct-adv { box-sizing: border-box; width: 100%; padding-inline: clamp(1rem, calc(1rem + max(0px, (100vw - 48rem) * 0.31)), 9.375rem); }
   #results-page.centered-mode #ct-adv { max-width: 76rem; margin-inline: auto; padding-inline: 1.25rem; }
 }
-@media (max-width: 767px) { #ct-adv { grid-template-columns: 1fr; gap: 4px; padding: 12px 16px; } #ct-adv input { margin-bottom: 6px; font-size: 16px; } #ct-adv button { grid-column: 1; } }
+@media (max-width: 767px) { #ct-adv { grid-template-columns: 1fr; gap: 4px; padding: 12px 16px; } #ct-adv input { margin-bottom: 6px; } #ct-adv button { grid-column: 1; } }
 /* ===== Answer card (local answers): a rich result, not a box. Gray label line -> 24px answer (or 18px blue title)
    -> one gray detail line. Same layout on PC and phone. ===== */
 #at-a-glance:has(> .ct-ans) > :not(.ct-ans) { display: none !important; }
