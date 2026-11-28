@@ -1400,10 +1400,26 @@ const flagCtx = () => {
 const curType = () => { try { return new URL(location.href).searchParams.get("type") || tabNow || "web"; } catch { return tabNow || "web"; } };
 const flagBox = (btn) => {
   let box = document.getElementById("ct-flagbox");
-  if (box) { box.remove(); btn.setAttribute("aria-expanded", "false"); return; }
+  // A floating card (popover under the ⚑ on PC, bottom sheet on phone): never pushes the results down
+  const close = () => {
+    document.getElementById("ct-flagbox")?.remove(); document.getElementById("ct-flagscrim")?.remove();
+    btn.setAttribute("aria-expanded", "false"); removeEventListener("keydown", esc); removeEventListener("resize", place);
+  };
+  const esc = (e) => { if (e.key === "Escape") { close(); btn.focus(); } };
+  const place = () => {
+    const b = document.getElementById("ct-flagbox");
+    if (!b) return;
+    if (PHONE.matches) { b.style.top = b.style.left = ""; return; }
+    const r = btn.getBoundingClientRect(), w = b.offsetWidth || 440;
+    b.style.top = `${Math.round(r.bottom + scrollY + 6)}px`;
+    b.style.left = `${Math.round(Math.max(12, Math.min(r.right - w, innerWidth - w - 12)) + scrollX)}px`;
+  };
+  if (box) { close(); return; }
   btn.setAttribute("aria-expanded", "true");
   box = document.createElement("form");
   box.id = "ct-flagbox";
+  box.setAttribute("role", "dialog");
+  box.setAttribute("aria-label", "Report a problem");
   const chips = mk("div", "ct-flag-cats", "");
   chips.setAttribute("role", "group");
   chips.setAttribute("aria-label", "What's wrong?");
@@ -1416,14 +1432,19 @@ const flagBox = (btn) => {
   const l = mk("label", "", "");
   const t = document.createElement("textarea");
   t.rows = 2; t.maxLength = 1000; t.setAttribute("autocapitalize", "sentences");
-  l.append(mk("span", "", "Anything else? (optional)"), t);
+  t.placeholder = "Anything else? (optional)"; t.setAttribute("aria-label", "Anything else? (optional)");
+  l.append(t);
   const save = mk("button", "", "Save");
   save.type = "submit";
   const st = mk("span", "ct-flag-st", "");
   const acts = mk("div", "ct-flag-acts", "");
   // Which version this page runs (the auto-update installs new ones by itself): quiet, at the row's far end
   acts.append(save, st, mk("span", "ct-flag-ver", `clean-titles ${typeof CT_VER === "string" ? CT_VER : ""}`));
-  box.append(mk("span", "ct-flag-h", "What's wrong?"), chips, l, acts);
+  const head = mk("div", "ct-flag-top", "");
+  const x = mk("button", "ct-flag-x", "×");
+  x.type = "button"; x.setAttribute("aria-label", "Close"); x.addEventListener("click", close);
+  head.append(mk("span", "ct-flag-h", "What's wrong?"), x);
+  box.append(head, chips, l, acts);
   box.addEventListener("submit", (e) => {
     e.preventDefault(); e.stopPropagation();
     save.disabled = true; st.textContent = "";
@@ -1432,9 +1453,15 @@ const flagBox = (btn) => {
       save.disabled = false;
       if (!j) { st.textContent = "Couldn't save. Try again."; return; }
       t.value = ""; chips.querySelectorAll(".ct-flag-cat").forEach((c) => c.setAttribute("aria-pressed", "false")); st.textContent = "Saved.";
+      setTimeout(() => { if (box.isConnected) close(); }, 1200);
     }).catch(() => { save.disabled = false; st.textContent = "Couldn't save. Try again."; });
   });
-  (document.getElementById("ct-adv") || document.getElementById("results-tabs")).after(box);
+  const scrim = mk("div", "", "");
+  scrim.id = "ct-flagscrim";
+  scrim.addEventListener("click", close);
+  document.body.append(scrim, box);
+  place();
+  addEventListener("keydown", esc); addEventListener("resize", place);
   if (!PHONE.matches) t.focus();
 };
 const flagBtn = () => {

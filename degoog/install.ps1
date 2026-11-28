@@ -2234,8 +2234,8 @@ export default {
 };
 '@)
 [IO.File]::WriteAllText("$t\script.js", @'
-// clean-titles v67
-const CT_VER = "v67";
+// clean-titles v68
+const CT_VER = "v68";
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -5115,10 +5115,26 @@ const flagCtx = () => {
 const curType = () => { try { return new URL(location.href).searchParams.get("type") || tabNow || "web"; } catch { return tabNow || "web"; } };
 const flagBox = (btn) => {
   let box = document.getElementById("ct-flagbox");
-  if (box) { box.remove(); btn.setAttribute("aria-expanded", "false"); return; }
+  // A floating card (popover under the ⚑ on PC, bottom sheet on phone): never pushes the results down
+  const close = () => {
+    document.getElementById("ct-flagbox")?.remove(); document.getElementById("ct-flagscrim")?.remove();
+    btn.setAttribute("aria-expanded", "false"); removeEventListener("keydown", esc); removeEventListener("resize", place);
+  };
+  const esc = (e) => { if (e.key === "Escape") { close(); btn.focus(); } };
+  const place = () => {
+    const b = document.getElementById("ct-flagbox");
+    if (!b) return;
+    if (PHONE.matches) { b.style.top = b.style.left = ""; return; }
+    const r = btn.getBoundingClientRect(), w = b.offsetWidth || 440;
+    b.style.top = `${Math.round(r.bottom + scrollY + 6)}px`;
+    b.style.left = `${Math.round(Math.max(12, Math.min(r.right - w, innerWidth - w - 12)) + scrollX)}px`;
+  };
+  if (box) { close(); return; }
   btn.setAttribute("aria-expanded", "true");
   box = document.createElement("form");
   box.id = "ct-flagbox";
+  box.setAttribute("role", "dialog");
+  box.setAttribute("aria-label", "Report a problem");
   const chips = mk("div", "ct-flag-cats", "");
   chips.setAttribute("role", "group");
   chips.setAttribute("aria-label", "What's wrong?");
@@ -5131,14 +5147,19 @@ const flagBox = (btn) => {
   const l = mk("label", "", "");
   const t = document.createElement("textarea");
   t.rows = 2; t.maxLength = 1000; t.setAttribute("autocapitalize", "sentences");
-  l.append(mk("span", "", "Anything else? (optional)"), t);
+  t.placeholder = "Anything else? (optional)"; t.setAttribute("aria-label", "Anything else? (optional)");
+  l.append(t);
   const save = mk("button", "", "Save");
   save.type = "submit";
   const st = mk("span", "ct-flag-st", "");
   const acts = mk("div", "ct-flag-acts", "");
   // Which version this page runs (the auto-update installs new ones by itself): quiet, at the row's far end
   acts.append(save, st, mk("span", "ct-flag-ver", `clean-titles ${typeof CT_VER === "string" ? CT_VER : ""}`));
-  box.append(mk("span", "ct-flag-h", "What's wrong?"), chips, l, acts);
+  const head = mk("div", "ct-flag-top", "");
+  const x = mk("button", "ct-flag-x", "×");
+  x.type = "button"; x.setAttribute("aria-label", "Close"); x.addEventListener("click", close);
+  head.append(mk("span", "ct-flag-h", "What's wrong?"), x);
+  box.append(head, chips, l, acts);
   box.addEventListener("submit", (e) => {
     e.preventDefault(); e.stopPropagation();
     save.disabled = true; st.textContent = "";
@@ -5147,9 +5168,15 @@ const flagBox = (btn) => {
       save.disabled = false;
       if (!j) { st.textContent = "Couldn't save. Try again."; return; }
       t.value = ""; chips.querySelectorAll(".ct-flag-cat").forEach((c) => c.setAttribute("aria-pressed", "false")); st.textContent = "Saved.";
+      setTimeout(() => { if (box.isConnected) close(); }, 1200);
     }).catch(() => { save.disabled = false; st.textContent = "Couldn't save. Try again."; });
   });
-  (document.getElementById("ct-adv") || document.getElementById("results-tabs")).after(box);
+  const scrim = mk("div", "", "");
+  scrim.id = "ct-flagscrim";
+  scrim.addEventListener("click", close);
+  document.body.append(scrim, box);
+  place();
+  addEventListener("keydown", esc); addEventListener("resize", place);
   if (!PHONE.matches) t.focus();
 };
 const flagBtn = () => {
@@ -6947,11 +6974,16 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 @media (max-width: 767px) {
   #ct-flag { position: sticky; right: 0; z-index: 1; padding: 0 16px 0 12px; background: var(--bg); box-shadow: -10px 0 10px -4px var(--bg); }
 }
-#ct-flagbox { display: grid; gap: 8px; padding: 14px 0 16px; max-width: 600px; font-size: 13.5px; color: var(--text-secondary); }
-#ct-flagbox label { display: grid; gap: 6px; }
-#ct-flagbox textarea { font: inherit; color: var(--text-primary); background: var(--bg-light); border: 1px solid var(--border-light); border-radius: 8px; padding: 7px 10px; outline: none; resize: vertical; min-height: 2.6em; }
+#ct-flagscrim { position: fixed; inset: 0; z-index: 400; background: transparent; }
+#ct-flagbox { position: absolute; z-index: 401; box-sizing: border-box; width: 440px; max-width: calc(100vw - 24px); display: grid; gap: 12px; padding: 14px 16px 16px; background: var(--bg); border: 1px solid var(--border-light); border-radius: 14px; box-shadow: 0 12px 32px rgba(0, 0, 0, .45); font-size: 13.5px; color: var(--text-secondary); }
+.ct-flag-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: -4px; }
+.ct-flag-h { font-weight: 600; font-size: 14.5px; color: var(--text-primary); }
+.ct-flag-x { width: 32px; height: 32px; margin: -6px -8px -6px 0; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--text-secondary); font-size: 22px; line-height: 1; cursor: pointer; }
+.ct-flag-x:hover { background: var(--bg-light); color: var(--text-primary); }
+#ct-flagbox label { display: grid; }
+#ct-flagbox textarea { box-sizing: border-box; width: 100%; font: inherit; color: var(--text-primary); background: var(--bg-light); border: 1px solid var(--border-light); border-radius: 10px; padding: 8px 10px; outline: none; resize: vertical; min-height: 4.2em; }
+#ct-flagbox textarea::placeholder { color: var(--text-secondary); opacity: .8; }
 #ct-flagbox textarea:focus { border-color: var(--primary); }
-.ct-flag-h { color: var(--text-secondary); }
 .ct-flag-cats { display: flex; flex-wrap: wrap; gap: 6px; }
 .ct-flag-cat { font: inherit; font-size: 13px; line-height: 18px; padding: 6px 12px; min-height: 32px; border-radius: 999px; border: 1px solid var(--border-light); background: none; color: var(--text-secondary); cursor: pointer; white-space: nowrap; }
 .ct-flag-cat:hover { color: var(--text-primary); }
@@ -6960,14 +6992,25 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .ct-flag-st:empty { display: none; }
 .ct-flag-ver { margin-left: auto; font-size: 12px; color: var(--text-secondary); opacity: .7; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ct-flag-acts { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-#ct-flagbox .ct-flag-acts button { font: 600 13.5px system-ui, sans-serif; padding: 8px 18px; border-radius: 999px; background: var(--bg-light); color: var(--text-primary); border: 1px solid var(--border-light); cursor: pointer; }
+#ct-flagbox .ct-flag-acts button { font: 600 13.5px system-ui, sans-serif; padding: 8px 20px; border-radius: 999px; background: var(--primary); color: #11111b; border: 0; cursor: pointer; }
 #ct-flagbox .ct-flag-acts button:disabled { opacity: .6; cursor: default; }
-@media (max-width: 767px) { #ct-flagbox { padding: 12px 16px; } #ct-flagbox textarea { font-size: 16px; } }
-#ct-adv { display: grid; grid-template-columns: max-content minmax(0, 360px); gap: 8px 16px; align-items: center; padding: 14px 0 16px; max-width: 600px; font-size: 13.5px; color: var(--text-secondary); }
+/* Phone: bottom sheet */
+@media (max-width: 767px) {
+  #ct-flagscrim { background: rgba(0, 0, 0, .5); }
+  #ct-flagbox { position: fixed; left: 0; right: 0; bottom: 0; top: auto; width: auto; max-width: none; max-height: 85vh; overflow-y: auto; border-radius: 18px 18px 0 0; border-width: 1px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); gap: 14px; }
+  #ct-flagbox textarea { font-size: 16px; }
+  .ct-flag-cat { min-height: 36px; padding: 8px 14px; }
+}
+#ct-adv { display: grid; grid-template-columns: max-content minmax(0, 360px); justify-content: start; gap: 8px 16px; align-items: center; padding: 14px 0 16px; font-size: 13.5px; color: var(--text-secondary); }
 #ct-adv label { display: contents; }
 #ct-adv input { font: inherit; color: var(--text-primary); background: var(--bg-light); border: 1px solid var(--border-light); border-radius: 8px; padding: 7px 10px; outline: none; }
 #ct-adv input:focus { border-color: var(--primary); }
 #ct-adv button { grid-column: 2; justify-self: start; font: 600 13.5px system-ui, sans-serif; padding: 8px 18px; border: 0; border-radius: 999px; background: var(--primary); color: #11111b; cursor: pointer; }
+/* Advanced search box under the tabs sits in the results column, using degoog's own column rules */
+@media (min-width: 768px) {
+  #ct-adv { box-sizing: border-box; width: 100%; padding-inline: clamp(1rem, calc(1rem + max(0px, (100vw - 48rem) * 0.31)), 9.375rem); }
+  #results-page.centered-mode #ct-adv { max-width: 76rem; margin-inline: auto; padding-inline: 1.25rem; }
+}
 @media (max-width: 767px) { #ct-adv { grid-template-columns: 1fr; gap: 4px; padding: 12px 16px; } #ct-adv input { margin-bottom: 6px; font-size: 16px; } #ct-adv button { grid-column: 1; } }
 /* ===== Answer card (local answers): a rich result, not a box. Gray label line -> 24px answer (or 18px blue title)
    -> one gray detail line. Same layout on PC and phone. ===== */
@@ -7551,7 +7594,7 @@ docker restart $c | Out-Null
 $null = docker exec $c sh -c 'for i in $(seq 1 40); do curl -fs -o /dev/null http://127.0.0.1:${DEGOOG_PORT:-4444}/readyz && exit 0; sleep 1; done'
 
 $ss = docker exec $c cat /app/data/server-settings.json | Out-String | ConvertFrom-Json
-"plugin code inside the page (should be v67): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
+"plugin code inside the page (should be v68): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
 "page files (should be a ct and a psl file): " + (docker exec $c sh -c 'ls /app/src/public/ct/')
 "progressive results off (should be False): $($ss.settings.streamingEnabled -eq $true)"
 "typo fixer word list (should be about 82800): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/words.txt')
