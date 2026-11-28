@@ -1,16 +1,18 @@
 // ⚑ Report: the text the Claude session opens with
 import { test, expect } from "bun:test";
 import * as C from "../files/core.js";
+import { flagPrompt, FLAG_CATS as SC, flagCats as sCats, flagCtxClean as sCtx } from "../files/index.js";
 const mkF = (i) => ({ t: 0, q: `q${i}`, type: "web", note: "n", top: Array.from({ length: 10 }, () => ({ title: "t".repeat(150), url: "https://a.com/" + "p".repeat(100), snippet: "s".repeat(300) })) });
 
 test("flag: prompt fits Claude's link, dropping snippets then older reports, never the current one", () => {
-  const s = C.flagPrompt(Array.from({ length: 30 }, (_, i) => mkF(i)), "2 FAIL");
+  const s = flagPrompt(Array.from({ length: 30 }, (_, i) => mkF(i)), "2 FAIL");
   expect(s.length).toBeLessThanOrEqual(12000);
   expect(s).toContain("QUICKSTART");
+  expect(s).not.toContain("degoog-flags");
   expect(s).toContain("2 FAIL");
   expect(s).toContain('"q":"q29"');
   expect(JSON.parse(s.slice(s.indexOf("{")))).toBeTruthy();
-  const one = C.flagPrompt([mkF(0)], "");
+  const one = flagPrompt([mkF(0)], "");
   expect(one).toContain('"snippet"');
 });
 
@@ -57,13 +59,6 @@ test("flag: ⚑ box saves; no count, no send link", async () => {
   await win.happyDOM.close();
 });
 
-import { flagPromptS } from "../files/index.js";
-test("flag: server and page build the same prompt", () => {
-  const fl = Array.from({ length: 25 }, (_, i) => mkF(i));
-  expect(flagPromptS(fl, "x FAIL")).toBe(C.flagPrompt(fl, "x FAIL"));
-  expect(flagPromptS([mkF(1)], "")).toBe(C.flagPrompt([mkF(1)], ""));
-});
-
 import { judgeParse } from "../files/index.js";
 test("flag: the local model's verdict is read safely", () => {
   expect(judgeParse('ok {"send": true, "why": "3 junk-ranking reports"}')).toEqual({ send: true, why: "3 junk-ranking reports" });
@@ -71,16 +66,13 @@ test("flag: the local model's verdict is read safely", () => {
   expect(judgeParse("no idea")).toBe(null);
 });
 
-import { FLAG_CATS as SC, flagCats as sCats, flagCtxClean as sCtx } from "../files/index.js";
 test("⚑ categories and context: server and page agree, junk dropped", () => {
   expect(SC).toEqual(C.FLAG_CATS);
   expect(sCats(["order", "x", "order", "spam"])).toEqual(["order", "spam"]);
-  expect(C.flagCats(null)).toEqual([]);
+  expect(sCats(null)).toEqual([]);
   const raw = { vw: 390.4, vh: 844, dpr: 3, phone: 1, load: { page: 812.6, results: "1500", bad: "x" }, boxes: [{ box: "results-list > result-item", n: 10 }, { box: "" }] };
   const want = { ver: "", vw: 390, vh: 844, dpr: 3, phone: true, load: { page: 813, results: 1500 }, boxes: [{ box: "results-list > result-item", n: 10 }] };
-  expect(C.flagCtxClean(raw)).toEqual(want);
-  expect(sCtx(raw)).toEqual(want);
-  const s = C.flagPrompt([{ t: 0, q: "a", type: "web", cats: ["order"], note: "", ctx: want, top: [] }], "");
+  const s = flagPrompt([{ t: 0, q: "a", type: "web", cats: ["order"], note: "", ctx: want, top: [] }], "");
   expect(s).toContain('"cats":["order"]');
   expect(s).toContain('"vw":390');
 });

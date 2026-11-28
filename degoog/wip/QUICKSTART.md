@@ -29,7 +29,7 @@ only those lines (`sed -n A,Bp files/x.js`).
 ## Where things are (degoog/wip/files)
 - index.js `/needs` (`NEEDS`, `needsFor`): one batched reranker pass per search rating format shares, needs and block fits (vision `/rank` takes per-doc `tasks`); page places blocks by core `fmtShares`/`boxWorth`/`boxAt`. Plan + milestones: PLAN.md. Blocks (forums/news/papers/info/answer) placed by core `blockShare` x fit; fetch gate `blockGo` vs `/cut` median (cut.json).
 - index.js: server plugin. Rank hook `__ctResults` (reranker scores + featured snippet, DOI names, 1.6 s wait), typo fixer (`check`, `TREND`, `NAMES`), routes (`routes`), `net()` fetch helper.
-- script.js: page code. ⚑ Report: `flagBtn`/`flagBox` (link to claude.ai/code/new built before the tap); prompt text: core.js `flagPrompt`.
+- script.js: page code. ⚑ Report: `flagBtn`/`flagBox` (link to claude.ai/code/new built before the tap); prompt text: index.js `flagPrompt`.
 - index.js ⚑ routes: `/flag` (store + hand over), `/flags` (what's waiting); files flags.json, update-issue.txt (written by ../autoupdate-job.ps1 `Issue`).
 - script.js (rest): `row()` cleans one result (title, source line, date), `listPass`/`tabPass`/`relPass`/`ansPass` run in one observer pass before paint, `tabRescue`, `init`.
 - script.js search identity: `searchId()` = address + a counter bumped by each degoog search start (its history entries
@@ -43,7 +43,7 @@ only those lines (`sed -n A,Bp files/x.js`).
 
 ## Build, test, release
 1. `cd degoog/wip && bun install && CT_VERSION=vNN python3 build.py && bun test` (page tests load the BUILT files/ct-page.js: rebuild after any script.js/core.js edit or the test runs old code; happy-dom has no `:scope`, use `[...g.children].find`) (46 tests skip: they need private recordings in rec/).
-2. `CT_VERSION=vNN python3 build.py && python3 patch_installer.py vNN` writes ../install.ps1 and checks every embedded file round-trips. (build_installer.py is obsolete: its v49 skeleton is gone.)
+2. `CT_VERSION=vNN python3 build.py && python3 patch_installer.py vNN` writes ../install.ps1 and checks every embedded file round-trips.
 3. Branch, push (`git -c push.negotiate=true push -u origin vNN`), open the PR with `gh api repos/acqcath/scripts/pulls -f title=... -f head=vNN -f base=main -f body=...` (`gh pr create` fails: GraphQL blocked). Each version branches from a fresh `git fetch --depth=5 origin main && git checkout -B vNN origin/main` (main is squash-merged, so a branch off the last version branch conflicts). Right after a push, merge can say "conflicts" while GitHub recomputes: wait ~10 s and retry once. Then merge it yourself as its own command: `gh api -X PUT repos/acqcath/scripts/pulls/N/merge -f merge_method=squash` (if the safety check blocks it, leave it open, build the next version on top, merge both with the next PR, and tell the user). The PC's auto-update installs main within about a minute of the merge (the job runs every minute and `git ls-remote` spots the new main; hourly only while Git is missing). The task's shape (every minute, conhost --headless) is set only by ../setup-autoupdate.ps1: the job can't change it (task made from an admin terminal = "Access is denied"), it only checks it (`Check-Task`) and notifies.
 
 ## Sandbox limits (save the time)

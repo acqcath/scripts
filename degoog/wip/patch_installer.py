@@ -1,5 +1,4 @@
-# Releases a new version on top of the installer that is already on main (the v49 skeleton that build_installer.py pins
-# is no longer in the repo's history): replaces the body of every embedded file with its source in files/, sets the
+# Releases a new version on top of the installer that is already on main: replaces the body of every embedded file with its source in files/, sets the
 # version, writes ../install.ps1, then checks that every embedded file equals its source.
 #   CT_VERSION=v51 python3 build.py && python3 patch_installer.py v51
 import re, sys, hashlib

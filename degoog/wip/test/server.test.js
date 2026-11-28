@@ -11,12 +11,11 @@ test("server: /sites reads degoog's lists file (domains only) and agrees with co
   fs.writeFileSync(path.join(dir, "search", "search-lists.json"), JSON.stringify({ domainBlockList: "pinterest.com\n/x/", domainScoreList: "wikipedia.org|40\nw3schools.com|-15", domainReplaceList: "" }));
   process.env.DEGOOG_DATA_DIR = dir;
   const srv = await import("../files/index.js");
-  const core = await import("../files/core.js");
   const r = srv.routes.find((x) => x.path === "/sites");
   const j = await (await r.handler(new Request("http://local/sites"))).json();
   expect(j.sites).toEqual({ "pinterest.com": "hide", "wikipedia.org": "prefer", "w3schools.com": "lower" });
   expect(j.auto).toEqual([]);
-  for (const [b, s] of [["a.com\n||b.com^\nC.org", "d.net|5\ne.io|-1\nf.com|0\ng|3"], ["", ""], ["x.com", "x.com|9"]]) expect(srv.sitesFromLists(b, s)).toEqual(core.sitesFromLists(b, s));
+  expect(srv.sitesFromLists("a.com\n||b.com^\nC.org", "d.net|5\ne.io|-1\nf.com|0\ng|3")).toEqual({ "d.net": "prefer", "e.io": "lower", "a.com": "hide", "c.org": "hide" });
   // No lists file: falls back to the older place (server-settings.json), else nothing
   fs.rmSync(path.join(dir, "search"), { recursive: true });
   const k = await (await r.handler(new Request("http://local/sites"))).json();

@@ -136,7 +136,9 @@ test("date labels: relative kept, absolute within a week relative, else exact", 
 });
 
 test("sites: degoog's block/score lists -> one choice per site; Hide wins; patterns left to degoog", async () => {
-  const { sitesFromLists, unblockText, SITE_SCORE } = await import("../files/core.js");
+  const { unblockText, SITE_SCORE } = await import("../files/core.js");
+  process.env.CT_NO_TIMERS = "1";
+  const { sitesFromLists } = await import("../files/index.js"); // the server reads the lists; the page only edits them
   const block = "pinterest.com\n/.*\\.spam\\..*/\n||quora.com^\n\nWWW.Example.org";
   const score = "wikipedia.org|40\nw3schools.com|-15\npinterest.com|10\nzero.com|0\nbad line\nreddit.com|x";
   expect(sitesFromLists(block, score)).toEqual({ "wikipedia.org": "prefer", "w3schools.com": "lower", "pinterest.com": "hide", "www.example.org": "hide" });
