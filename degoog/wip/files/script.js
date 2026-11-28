@@ -71,6 +71,9 @@ try {
 } catch {}
 const fadeIn = (e) => { e.classList.add("ct-in"); e.addEventListener("animationend", () => e.classList.remove("ct-in"), { once: true }); return e; };
 // The tab row ends where the search bar ends (Tools sits under the bar's → button, in the same column as results)
+// One icon per site across the page: the first favicon seen for a host is used for every later result from it
+const FAVS = new Map();
+const favOf = (h, f) => { if (!f) return FAVS.get(h) || ""; if (!FAVS.has(h)) FAVS.set(h, f); return FAVS.get(h); };
 const tabsEdge = () => {
   const bar = document.getElementById("results-search-bar"), tabs = document.getElementById("results-tabs");
   if (!bar || !tabs) return;
@@ -79,6 +82,10 @@ const tabsEdge = () => {
   const pr = Math.round(tabs.getBoundingClientRect().right - bar.getBoundingClientRect().right);
   if (pr >= 0 && bar.getBoundingClientRect().width > 200) tabs.style.setProperty("--ct-tabs-pr", `${pr}px`);
   else tabs.style.removeProperty("--ct-tabs-pr");
+  // Tools sits at the bar's right edge whenever the tabs leave room (any width); only when the row has to scroll does
+  // it follow the last tab, behind a thin divider (measured, not a screen-size rule)
+  const t = document.getElementById("ct-tools");
+  if (t) { tabs.classList.remove("ct-tight"); if (t.offsetLeft - (t.previousElementSibling ? t.previousElementSibling.offsetLeft + t.previousElementSibling.offsetWidth : 0) < 8 || tabs.scrollWidth > tabs.clientWidth + 1) tabs.classList.add("ct-tight"); }
   if (!tabsEdge.ro && window.ResizeObserver) { tabsEdge.ro = new ResizeObserver(() => requestAnimationFrame(tabsEdge)); tabsEdge.ro.observe(bar); tabsEdge.ro.observe(tabs); }
 };
 const lineUp = () => {
@@ -1500,7 +1507,7 @@ const flagBox = (btn) => {
 const flagPlace = () => {
   const f = document.getElementById("ct-flag"), g = document.getElementById("nav-settings-results");
   if (!f || !g) return;
-  // phone: the gear is pinned to the header's top right, so ⚑ is pinned just left of it at the same height
+  // phone: the gear is pinned to the header's top right, so ⚑ is pinned just left of it at the same height (same order as PC)
   if (PHONE.matches) { f.style.top = `${g.offsetTop}px`; f.style.right = `${g.offsetParent ? g.offsetParent.clientWidth - g.offsetLeft : 0}px`; f.style.height = `${g.offsetHeight}px`; }
   else f.style.top = f.style.right = f.style.height = "";
 };
@@ -1515,7 +1522,7 @@ const flagBtn = () => {
   f.setAttribute("aria-expanded", "false");
   f.addEventListener("click", () => flagBox(f));
   f.textContent = "⚑";
-  g.after(f);
+  g.before(f); // ⚑ then gear on every screen size (the gear keeps degoog's own outer-edge spot)
   flagPlace();
   if (!flagPlace.on) { flagPlace.on = 1; PHONE.addEventListener("change", flagPlace); addEventListener("resize", flagPlace); }
 };
@@ -1653,7 +1660,7 @@ const info = (el) => {
       el, u, h, href: a.href, title: (el.dataset.ctCap ? cleanTitle(raw, a.href) : "") || raw,
       snippet: p ? (p.textContent || "").replace(dEl && p.contains(dEl) ? dEl.textContent : "", "").replace(/^\s*·\s*/, "").trim() : "",
       w: when(dEl ? dEl.dataset.raw || dEl.textContent : ""), thumb: el.querySelector(".result-thumbnail-wrap:not([style*='none']) img")?.src || "",
-      fav: el.querySelector("img.result-favicon")?.src || "", dur: el.querySelector(".degoog-result--video-duration")?.textContent.trim() || "",
+      fav: favOf(h, el.querySelector("img.result-favicon")?.src || ""), dur: el.querySelector(".degoog-result--video-duration")?.textContent.trim() || "",
     };
     r.video = VIDEO_URL(u, h) || !!el.querySelector(".degoog-result--thumb--video");
     const ai = AIW.get(aiKey(el.dataset.resultUrl || a.href));
@@ -1826,7 +1833,7 @@ const groups = () => {
     return (j && j.results || []).map((x) => {
       let u; try { u = new URL(x.url); } catch { return null; }
       const h = u.hostname.replace(/^(www|m|old)\./, "");
-      return { u, h, href: x.url, title: cleanTitle(String(x.title || ""), x.url) || String(x.title || ""), snippet: String(x.snippet || ""), fav: x.favicon || "",
+      return { u, h, href: x.url, title: cleanTitle(String(x.title || ""), x.url) || String(x.title || ""), snippet: String(x.snippet || ""), fav: favOf(h, x.favicon || ""),
         w: x.publishedAt ? { t: Date.parse(`${x.publishedAt}T12:00:00Z`), exact: false } : null, ai: typeof x.ctRel === "number" ? x.ctRel : undefined, forum: forumOf(u, h) };
     }).filter((r) => r && r.title && relOk(r.title, r.href));
   };
@@ -1898,7 +1905,7 @@ const groups = () => {
       const h = u.hostname.replace(/^(www|m)\./, "");
       const rel = /(\d+)\s+(minute|hour|day)s?\s+ago/i.exec(x.snippet || "");
       const w = rel ? when(rel[0]) : x.publishedAt ? { t: Date.parse(`${x.publishedAt}T12:00:00Z`), exact: false } : null;
-      return { h, href: x.url, title: cleanTitle(String(x.title || ""), x.url) || String(x.title || ""), w, thumb: x.thumbnail || "", fav: x.favicon || "", ai: x.ctRel };
+      return { h, href: x.url, title: cleanTitle(String(x.title || ""), x.url) || String(x.title || ""), w, thumb: x.thumbnail || "", fav: favOf(h, x.favicon || ""), ai: x.ctRel };
     // Real News answers carry no date at all (recorded steelers/nvidia: 0 of 55 dated), so undated stories count as
     // current (a News search returns current news) and keep degoog's order; one dated older than fresh() is left out
     }).filter((r) => r && r.title && (!r.w || fresh(r.w)) && !onPage.has(r.href.split("#")[0]) && !seen.has(r.h) && seen.add(r.h)).slice(0, 8);
