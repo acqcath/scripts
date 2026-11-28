@@ -2361,8 +2361,8 @@ export default {
 };
 '@)
 [IO.File]::WriteAllText("$t\script.js", @'
-// clean-titles v76
-const CT_VER = "v76";
+// clean-titles v77
+const CT_VER = "v77";
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -5368,9 +5368,13 @@ const flagBtn = () => {
 // measured, so empty or hidden blocks above the results can't add to it; the same on every tab and screen size
 const topGap = () => {
   const tabs = document.getElementById("results-tabs"), lay = document.getElementById("results-layout");
-  if (!tabs || !lay || lay.classList.contains("media-mode")) { lay?.style.removeProperty("--ct-top"); return; }
+  if (!tabs || !lay) return;
+  // The answer area counts as empty when nothing in it is showing (hidden leftovers otherwise kept degoog's
+  // "not empty" margin, an extra 24 px gap above the results)
+  const g = document.getElementById("at-a-glance");
+  if (g) g.classList.toggle("ct-blank", ![...g.children].some((e) => e.getClientRects().length));
   let top = Infinity;
-  for (const e of lay.querySelectorAll("#ct-fix, #at-a-glance > *, #sidebar-col > *, .result-item .result-url-row, .skeleton-card, .command-result")) {
+  for (const e of lay.querySelectorAll("#ct-fix, #at-a-glance > *, #sidebar-col > *, .result-item .result-url-row, .skeleton-card, .command-result, .image-card, .video-card")) {
     const r = e.getBoundingClientRect();
     if (r.height > 0 && r.top < top) top = r.top;
   }
@@ -6645,7 +6649,7 @@ html:root { --ct-desc-pc: 15px; --ct-desc-phone: 13.5px; }
 .ct-alts a:visited { color: var(--text-link-visited); }
 .ct-alts a:hover { text-decoration: underline; }
 /* Typo fix line above results (Google's "Showing results for") */
-#ct-fix { margin: 0 0 4px; padding-left: var(--ct-x, 0px); font-size: 14px; line-height: 21px; color: var(--text-secondary); }
+#ct-fix { margin: 0 0 18px; padding-left: var(--ct-x, 0px); font-size: 14px; line-height: 21px; color: var(--text-secondary); }
 /* Everything the plugin adds enters with degoog's own result fade-in */
 .ct-in { animation: resultFadeIn .3s ease-out both; }
 /* Sharp thumbnail laid over the small one: same box, opacity only (resultFadeIn also slides, which a picture
@@ -6690,7 +6694,8 @@ html:root { --ct-desc-pc: 15px; --ct-desc-phone: 13.5px; }
 /* Images tab: no side panel, full width */
 #results-layout.media-mode #sidebar-col,
 #results-layout.media-mode #image-filters-bar { display: none !important; }
-#results-layout:not(.media-mode) { margin-top: var(--ct-top, 0px) !important; }
+#results-layout { margin-top: var(--ct-top, 0px) !important; }
+html #at-a-glance.ct-blank { margin: 0 !important; padding: 0 !important; }
 #results-layout.media-mode #results-main { max-width: none !important; }
 
 /* Cleaner web results */
@@ -6793,7 +6798,7 @@ html:root { --ct-desc-pc: 15px; --ct-desc-phone: 13.5px; }
   #results-layout:not(.media-mode) #results-main > * { grid-column: 1; order: 2; max-width: 44rem !important; }
   #results-layout:not(.media-mode) #at-a-glance { order: 1; }
   /* "Showing results for" first, above the answer card too (as on phones and Google) */
-  #results-layout:not(.media-mode) #results-main > #ct-fix { order: 1; margin-bottom: 0; }
+  #results-layout:not(.media-mode) #results-main > #ct-fix { order: 1; }
   #results-layout:not(.media-mode) #sidebar-col {
     grid-column: 1; order: 0; width: auto !important;
     margin: 16px 0 0 -16px !important; max-width: calc(44rem + 16px) !important;
@@ -7908,7 +7913,7 @@ $null = docker exec $c sh -c 'for i in $(seq 1 40); do curl -fs -o /dev/null htt
 $ctT['ready'] = $ctSw.Elapsed.TotalSeconds
 
 $ss = docker exec $c cat /app/data/server-settings.json | Out-String | ConvertFrom-Json
-"plugin code inside the page (should be v76): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
+"plugin code inside the page (should be v77): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
 "page files (should be a ct and a psl file): " + (docker exec $c sh -c 'ls /app/src/public/ct/')
 "progressive results off (should be False): $($ss.settings.streamingEnabled -eq $true)"
 "typo fixer word list (should be about 82800): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/words.txt')

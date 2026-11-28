@@ -246,7 +246,7 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - route `/yt` :2256
   - route `/hd` :2266
 
-## script.js (2653 lines)
+## script.js (2657 lines)
   - `bridge` :2
   - `aiKey` :21
   - `fadeIn` :72
@@ -325,66 +325,66 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - `flagPlace` :1500
   - `flagBtn` :1507
   - `topGap` :1524
-  - `skel` :1540
-  - `noUsage` :1551
-- **Sitelinks, Discussions and forums, Videos, Top stories** :1560
-  - `ytId` :1565
-  - `VIDEO_URL` :1572
-  - `forumName` :1576
-  - `when` :1589
-  - `ago` :1597
-  - `fresh` :1608
-  - `hot` :1612
-  - `qHash` :1616
-  - `hashStore` :1617
-  - `info` :1635
-  - `mk` :1658
-  - `favImg` :1659
-  - `moreBtn` :1666
-  - `scroller` :1675
-  - `section` :1687
-  - `forumRow` :1690
-  - `siteName` :1703
-  - `videoCard` :1704
-  - `storyCard` :1726
-  - `used` :1743
-  - `shown` :1744
-  - `groups` :1745
-- **Answer card, local answers (core answers.js: math, units, cooking, tip/percent, dates, patterns)** :1911
-  - `cmuQ` :1917
-  - `aiWanted` :1922
-  - `aiBox` :1938
-  - `aiPass` :1951
-  - `topRes` :1978
-  - `shapeAsk` :1981
-  - `shapeBody` :1995
-  - `sidesPass` :2019
-  - `ansCard` :2061
-  - `livePoll` :2124
-  - `fitLine` :2143
-  - `byWorth` :2154
-  - `ansPass` :2163
-  - `ansCopy` :2212
-  - `onlyPass` :2226
-- **Quick view (spec 11): your tap opens it under the result (it grows: your action), tap again to close** :2249
-  - `qvBox` :2251
-  - `qvs` :2317
-  - `starsWanted` :2318
-  - `starsPass` :2320
-  - `meanPass` :2352
-- **Knowledge panel (spec 3)** :2371
-  - `kpWanted` :2379
-  - `kpCard` :2385
-  - `kpPass` :2428
-  - `money` :2459
-  - `prodCard` :2460
-  - `productPass` :2484
-  - `tabKind` :2526
-  - `tabKeep` :2527
-  - `safe` :2551
-  - `tabRescue` :2556
-  - `init` :2571
-- **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :2609
+  - `skel` :1544
+  - `noUsage` :1555
+- **Sitelinks, Discussions and forums, Videos, Top stories** :1564
+  - `ytId` :1569
+  - `VIDEO_URL` :1576
+  - `forumName` :1580
+  - `when` :1593
+  - `ago` :1601
+  - `fresh` :1612
+  - `hot` :1616
+  - `qHash` :1620
+  - `hashStore` :1621
+  - `info` :1639
+  - `mk` :1662
+  - `favImg` :1663
+  - `moreBtn` :1670
+  - `scroller` :1679
+  - `section` :1691
+  - `forumRow` :1694
+  - `siteName` :1707
+  - `videoCard` :1708
+  - `storyCard` :1730
+  - `used` :1747
+  - `shown` :1748
+  - `groups` :1749
+- **Answer card, local answers (core answers.js: math, units, cooking, tip/percent, dates, patterns)** :1915
+  - `cmuQ` :1921
+  - `aiWanted` :1926
+  - `aiBox` :1942
+  - `aiPass` :1955
+  - `topRes` :1982
+  - `shapeAsk` :1985
+  - `shapeBody` :1999
+  - `sidesPass` :2023
+  - `ansCard` :2065
+  - `livePoll` :2128
+  - `fitLine` :2147
+  - `byWorth` :2158
+  - `ansPass` :2167
+  - `ansCopy` :2216
+  - `onlyPass` :2230
+- **Quick view (spec 11): your tap opens it under the result (it grows: your action), tap again to close** :2253
+  - `qvBox` :2255
+  - `qvs` :2321
+  - `starsWanted` :2322
+  - `starsPass` :2324
+  - `meanPass` :2356
+- **Knowledge panel (spec 3)** :2375
+  - `kpWanted` :2383
+  - `kpCard` :2389
+  - `kpPass` :2432
+  - `money` :2463
+  - `prodCard` :2464
+  - `productPass` :2488
+  - `tabKind` :2530
+  - `tabKeep` :2531
+  - `safe` :2555
+  - `tabRescue` :2560
+  - `init` :2575
+- **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :2613
 
 ## core.js (649 lines)
 - **Sites: registrable domain via the public suffix list** :4
@@ -567,7 +567,7 @@ Every section, function and route in degoog/wip/files with its line. Read the li
 
 ## setcss.js (12 lines)
 
-## custom.css (903 lines)
+## custom.css (904 lines)
 - Catppuccin Mocha colors :1
 - DESCRIPTION SIZE :22
 - v50 :24
@@ -581,80 +581,80 @@ Every section, function and route in degoog/wip/files with its line. Read the li
 - Broken or still-loading pictures :72
 - Images :84
 - Images tab :88
-- Cleaner web results :94
-- Titles :106
-- Visited titles :108
-- Descriptions :110
-- Tabs :113
-- Summary box :123
-- Wikipedia card :130
-- Never too long :134
-- Info panel :146
-- Phones :150
-- Hide the empty info-panel placeholders (results and AI summary still show loading) :206
-- Phones :209
-- ===== Tabs ====================================================== :226
-- Images :232
-- First result sits a bit closer to the tabs :239
-- Site icon that failed to load (degoog swaps in a letter) :246
-- Link line stays calm :248
-- Phones :253
-- Thumbnails :267
-- AI summary "Read more" :270
-- Science :273
-- Forums :283
-- News = Google/Apple News cards :295
-- Videos :358
-- ===== Interaction (beyond Google) ================================ :387
-- ===== Platform polish ============================================ :404
-- Mac :406
-- iPhone :412
-- AI summary :418
-- AI summary sources, Google AI Overview style :421
-- Show less :428
-- Key phrases :435
-- ===== Instant answers (define, time, weather, math, every ! command) ====== :442
-- Time :459
-- Weather :465
-- Math :481
-- Define (def / define word) :491
-- PC :506
-- Result menu :509
-- People also ask :523
-- Sitelinks, Discussions and forums, Videos, Top stories :544
-- Discussions :559
-- Videos and Top stories :566
-- Sitelinks :592
-- Narrow windows with a mouse :600
-- Tools :615
-- Tools lives with the search it changes :616
-- ⚑ Flag :628
-- Phone (touch) :658
-- ===== Answer card (local answers) :674
-- Featured snippet :688
-- ===== AI summary spot :699
-- The panel over the 3 lines :712
-- Opened with ⌄ (your tap) :720
-- CMU card details :728
-- Sports card :735
-- Knowledge panel (spec 3) :752
-- Wide screens :772
-- Same-shape results (spec 8) :786
-- "Only reddit :788
-- "Open archived copy" :791
-- Images row (spec 12) :795
-- Quick view :803
-- Meaning line :816
-- Site icons are back (user, 2026-11-23) :823
-- Menu lines are tap targets :826
-- ===== Vertical rhythm (one scale, by how things belong together) ===== :829
-- Line breaks that read well, for every piece of text :842
-- Phones :850
-- Image/video preview :856
-- Image AI :860
-- ===== M4 :864
-- CJK opening bracket first in a title or snippet :891
-- Product panel (M6) :894
+- Cleaner web results :95
+- Titles :107
+- Visited titles :109
+- Descriptions :111
+- Tabs :114
+- Summary box :124
+- Wikipedia card :131
+- Never too long :135
+- Info panel :147
+- Phones :151
+- Hide the empty info-panel placeholders (results and AI summary still show loading) :207
+- Phones :210
+- ===== Tabs ====================================================== :227
+- Images :233
+- First result sits a bit closer to the tabs :240
+- Site icon that failed to load (degoog swaps in a letter) :247
+- Link line stays calm :249
+- Phones :254
+- Thumbnails :268
+- AI summary "Read more" :271
+- Science :274
+- Forums :284
+- News = Google/Apple News cards :296
+- Videos :359
+- ===== Interaction (beyond Google) ================================ :388
+- ===== Platform polish ============================================ :405
+- Mac :407
+- iPhone :413
+- AI summary :419
+- AI summary sources, Google AI Overview style :422
+- Show less :429
+- Key phrases :436
+- ===== Instant answers (define, time, weather, math, every ! command) ====== :443
+- Time :460
+- Weather :466
+- Math :482
+- Define (def / define word) :492
+- PC :507
+- Result menu :510
+- People also ask :524
+- Sitelinks, Discussions and forums, Videos, Top stories :545
+- Discussions :560
+- Videos and Top stories :567
+- Sitelinks :593
+- Narrow windows with a mouse :601
+- Tools :616
+- Tools lives with the search it changes :617
+- ⚑ Flag :629
+- Phone (touch) :659
+- ===== Answer card (local answers) :675
+- Featured snippet :689
+- ===== AI summary spot :700
+- The panel over the 3 lines :713
+- Opened with ⌄ (your tap) :721
+- CMU card details :729
+- Sports card :736
+- Knowledge panel (spec 3) :753
+- Wide screens :773
+- Same-shape results (spec 8) :787
+- "Only reddit :789
+- "Open archived copy" :792
+- Images row (spec 12) :796
+- Quick view :804
+- Meaning line :817
+- Site icons are back (user, 2026-11-23) :824
+- Menu lines are tap targets :827
+- ===== Vertical rhythm (one scale, by how things belong together) ===== :830
+- Line breaks that read well, for every piece of text :843
+- Phones :851
+- Image/video preview :857
+- Image AI :861
+- ===== M4 :865
+- CJK opening bracket first in a title or snippet :892
+- Product panel (M6) :895
 
 ## other
 - ../autoupdate-job.ps1: the PC's hourly update job (Issue() puts update problems on the server for ⚑ Report)
