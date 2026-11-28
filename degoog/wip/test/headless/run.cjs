@@ -4,19 +4,23 @@
 // Run: node test/headless/run.cjs <outdir>   (CT_CHROME=/usr/bin/google-chrome CT_PW=<path to playwright-core> in the sandbox)
 // Without the private rec/ (Claude's sandbox): a stub page with degoog's element ids and 30 made-up results per
 // search, header and tabs drawn (no degoog base CSS, so layout shift there is indicative; pass ms are real).
-// Each row also lists the 5 slowest page passes on that search (ms, all observer runs added up) and the run count.
+// Each row also lists the 5 slowest page passes on that search (ms, all observer runs added up) and the run count;
+// then endless scroll's page 2 goes in: its 3 slowest passes (page2) and what above it went away (lost, must be 0).
 const fs = require("fs"), zlib = require("zlib"), path = require("path");
 const { chromium } = require(process.env.CT_PW || "playwright");
 const { render, ctx } = require("../render.js");
 const W = path.join(__dirname, "..", "..");
 const RECF = path.join(W, "rec/ct-recordings.json.gz"), STUB = !fs.existsSync(RECF);
+const STUB_T = ["what it is and how it works", "a beginner's tutorial", "common mistakes to avoid", "the official documentation", "examples from real projects", "frequently asked questions", "a deep dive for experts", "how it compares with the alternatives", "tips and tricks", "troubleshooting step by step"];
+const STUB_S = ["Start here if you are new.", "Written by the maintainers.", "Benchmarks on three machines.", "Answers from the community forum.", "Video walkthrough with a transcript.", "Updated for the latest release.", "Includes a printable cheat sheet.", "Ten pitfalls and how to spot them.", "A history of the project.", "Copy-paste snippets for every case.", "Opinionated, with sources.", "Compared side by side in a table."];
 const stubRec = (qs) => ({
   css: {},
   page: '<!doctype html><html><head><meta name="viewport" content="width=device-width"><style id="degoog-custom-css"></style></head><body><div id="results-page">' +
     '<div id="results-header"></div><div id="results-tabs"></div><div id="results-layout"><div id="results-main"><div id="at-a-glance"></div>' +
     '<div id="results-list"></div></div><div id="sidebar-col"><div id="results-sidebar"></div></div></div></div></body></html>',
-  searches: qs.map((q) => ({ q, results: Array.from({ length: 30 }, (_, i) => ({ title: `${q} explained, part ${i + 1} - Site ${i % 9}`,
-    url: `https://site${i % 9}.example.com/${q.replace(/\W+/g, "-")}/${i}`, snippet: `How ${q} works, with examples and the common mistakes. Updated guide number ${i + 1} covering ${q}.`,
+  // titles differ enough that they don't fold as copies of each other (the list then looks like a real page)
+  searches: qs.map((q) => ({ q, results: Array.from({ length: 30 }, (_, i) => ({ title: `${q}: ${STUB_T[i % STUB_T.length]}${i >= STUB_T.length ? ` (${["guide", "notes", "faq"][Math.floor(i / STUB_T.length) - 1]})` : ""} - Site ${i % 9}`,
+    url: `https://www.site${i % 9}-${["docs", "blog", "wiki"][i % 3]}.com/${q.replace(/\W+/g, "-")}-${STUB_T[i % STUB_T.length].replace(/\W+/g, "-")}-p${i}`, snippet: `${STUB_S[i % STUB_S.length]} ${STUB_S[(i * 7 + 3) % STUB_S.length]} (${q}, ${2000 + i}).`,
     publishedDate: i % 4 ? "" : "2026-10-0" + ((i % 9) + 1), sources: ["bing", "startpage"].slice(0, 1 + (i % 2)) })) })),
 });
 if (STUB) process.env.CT_HEADER = "1";
@@ -82,7 +86,9 @@ const page = (q) => {
       });
       await p.goto(`https://degoog.local/search?q=${encodeURIComponent(q)}`);
       const res = REC.searches.find((x) => x.q === q && !x.type).results;
-      const html = res.map((r, i) => render(TPL, ctx(r, i))).join("");
+      // The first 20 results come with the search; the rest arrive as endless scroll's page 2 (below)
+      const html = res.slice(0, 20).map((r, i) => render(TPL, ctx(r, i))).join("");
+      const html2 = res.slice(20).map((r, i) => render(TPL, ctx(r, i + 20))).join("");
       // Results view on (app.js would do this), then the one insert degoog makes
       // CT_HEADER=1: degoog's header (logo, search bar, gear) and tab row from its own templates, which app.js
       // would render (the recorded page has them empty), to check the header layout
@@ -127,6 +133,26 @@ const page = (q) => {
         if (sb) { const a = document.createElement("div"); a.className = "sidebar-accordion degoog-accordion open"; a.setAttribute("data-slot-order", "0"); a.innerHTML = '<div class="degoog-accordion-body"><div class="wiki-card"><div class="wiki-overview"><a class="wiki-title" href="#">Wiki</a><p class="wiki-desc">desc</p><p class="wiki-extract">Some long extract text that would take room.</p></div></div></div>'; sb.prepend(a); }
       });
       await p.waitForTimeout(1500);
+      // Endless scroll, the way degoog does it (infinite-scroll.tsx): its sentinel under the list shows a "more results"
+      // placeholder, then the next page goes in with one insertAdjacentHTML. Measured: the page passes for that page
+      // (ms), and anything above it that was taken away or hidden ("lost": must stay 0, everything on top stays)
+      const more = html2 ? await p.evaluate(async (html2) => {
+        const L = document.getElementById("results-list"), main = document.getElementById("results-page") || document.body;
+        const seen = (e) => e.getClientRects().length > 0;
+        const before = [...main.querySelectorAll("#results-tabs > *, #at-a-glance > *, #results-sidebar > *, #results-list > *")].filter(seen);
+        const pm0 = globalThis.__ctPass ? globalThis.__ctPass() : null;
+        const sen = document.createElement("div");
+        sen.className = "degoog-infinite degoog-infinite--loading";
+        sen.innerHTML = '<div class="degoog-infinite__skeleton"><div class="skeleton-results skeleton-results--more">' + '<div class="skeleton-card"><div class="skeleton-line"></div><div class="skeleton-line"></div></div>'.repeat(3) + "</div></div>";
+        L.after(sen);
+        await new Promise((r) => setTimeout(r, 300));
+        sen.querySelector(".degoog-infinite__skeleton").remove(); sen.classList.remove("degoog-infinite--loading");
+        L.insertAdjacentHTML("beforeend", html2);
+        await new Promise((r) => setTimeout(r, 300));
+        const pm1 = globalThis.__ctPass ? globalThis.__ctPass() : null;
+        const ms = pm0 && pm1 ? Object.entries(pm1.ms).map(([k, v]) => [k, v - (pm0.ms[k] || 0)]).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => `${k} ${v.toFixed(1)}`).join(", ") : "";
+        return { lost: before.filter((e) => !e.isConnected || !seen(e)).length, ms };
+      }, html2) : { lost: 0, ms: "" };
       await p.mouse.wheel(0, 2500); await p.waitForTimeout(800);
       await p.evaluate(() => window.scrollTo(0, 0)); await p.waitForTimeout(300);
       const r = await p.evaluate(() => ({ cls: window.__cls, shown: [...document.querySelectorAll("#results-list .result-item")].filter((e) => e.offsetParent).length, folds: document.querySelectorAll(".ct-fold").length, alts: document.querySelectorAll(".ct-alts").length, kp: (() => { const k = document.querySelector(".ct-kp"); if (!k || !k.offsetParent) return `none sw${document.documentElement.scrollWidth}`; const b = k.getBoundingClientRect(), f = document.querySelector("#results-list .result-item:not([style*=none])").getBoundingClientRect(); return `${Math.round(b.left)}-${Math.round(b.right)} top${Math.round(b.top - f.top)} vw${innerWidth} sw${document.documentElement.scrollWidth}`; })(), dates: document.querySelectorAll(".ct-date").length, shifts: window.__shifts }));
@@ -161,11 +187,11 @@ const page = (q) => {
       if (pm) { r.runs = pm.batches; r.slow = Object.entries(pm.ms).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([k, v]) => `${k} ${v.toFixed(1)}`).join(", "); }
       const file = path.join(out, `${width}-${q.replace(/\W+/g, "_")}.png`);
       await p.screenshot({ path: file, fullPage: false });
-      rows.push({ width, q, results: n, ...r, errors: errors.length ? errors.slice(0, 2) : 0 });
+      rows.push({ width, q, results: n, ...r, lost: more.lost, page2: more.ms, errors: errors.length ? errors.slice(0, 2) : 0 });
       await ctxB.close();
     }
   }
   await browser.close();
   console.table(rows);
-  process.exitCode = rows.every((r) => r.cls === 0 && !r.errors) ? 0 : 1;
+  process.exitCode = rows.every((r) => r.cls === 0 && !r.errors && !r.lost) ? 0 : 1;
 })();

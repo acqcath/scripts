@@ -5,21 +5,20 @@
 // The list arrives compiled as a tree string (reversed labels): "uk(co,org,...),jp(ac,...)", "!" = also a rule itself
 export const pslParse = (enc) => {
   const root = {}, stack = [];
-  let name = "", cur = root, last = null;
-  // Small hand parser: one pass, no regex backtracking
-  for (let i = 0; i <= enc.length; i++) {
-    const ch = enc[i];
-    if (ch === undefined || ch === "," || ch === "(" || ch === ")") {
-      if (name) {
-        const also = name.endsWith("!"), k = also ? name.slice(0, -1) : name;
-        const n = cur[k] || (cur[k] = {});
-        if (ch !== "(" || also) n.$ = 1;
-        last = n;
-        name = "";
-      }
-      if (ch === "(") { stack.push(cur); cur = last; }
-      else if (ch === ")") cur = stack.pop();
-    } else name += ch;
+  let cur = root, last = null, s = 0;
+  // Small hand parser: one pass over char codes, names cut with slice (no per-character string building, no regex)
+  for (let i = 0, n = enc.length; i <= n; i++) {
+    const c = i < n ? enc.charCodeAt(i) : 44; // 44 "," 40 "(" 41 ")" 33 "!"
+    if (c !== 44 && c !== 40 && c !== 41) continue;
+    if (i > s) {
+      const also = enc.charCodeAt(i - 1) === 33, k = enc.slice(s, also ? i - 1 : i);
+      const node = cur[k] || (cur[k] = {});
+      if (c !== 40 || also) node.$ = 1;
+      last = node;
+    }
+    if (c === 40) { stack.push(cur); cur = last; }
+    else if (c === 41) cur = stack.pop();
+    s = i + 1;
   }
   return root;
 };
