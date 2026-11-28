@@ -77,3 +77,19 @@ carries the brand, leads name/picture/specs; price range in the most common curr
 earliest releaseDate). Wide: right column (inside the info panel if shown). Phone: arrives late, so it goes in at
 the first result below the screen (zero shift). Release date only from releaseDate (no "earliest dated result"
 guess: a page date isn't a release date). Switch: the Knowledge panel setting. Self-check row "Product panel".
+
+### M7: notes match the code; clean, readable code; smoother page (user, 2026-11-28)
+User's words: every note must match the code (a stale note made Claude say updates install hourly; they install
+~1 min after a merge); optimize and smooth everything; no spaghetti: code Claude can read, change and understand.
+Each step is its own version; tests (`bun test`) stay green; behavior unchanged unless a step says so.
+1. Notes audit: QUICKSTART, HANDOFF, PLAN, SPEC, PREVIEW, BUDGET, MAP, code comments and the user's degoog memory
+   file, each claim checked against the code (grep the file:line), stale ones fixed or deleted. HANDOFF becomes
+   history only; QUICKSTART + MAP are the source of truth.
+2. script.js (2.7k lines) split by job into modules built by build.py (header/tabs, results rows, blocks/cards,
+   ⚑ report, Tools, layout/gap, init); one observer pass calls them in a fixed order; dead code removed (e.g.
+   tabsEdge's --ct-tabs-pr, unused since v82).
+3. index.js (2.4k lines) split the same way (rank hook, typo fixer, routes, flags, AI calls, net); one route table.
+4. Smoothness: measure layout shift and per-pass ms in the headless check (stub page when rec/ is absent), cut the
+   worst passes (batch DOM reads before writes, no repeated getComputedStyle in loops); install: batch the ~30 docker
+   calls before the restart.
+5. MAP.md rebuilt; QUICKSTART updated with the new file layout.
