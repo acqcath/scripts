@@ -1,5 +1,5 @@
-// clean-titles v75
-const CT_VER = "v75";
+// clean-titles v76
+const CT_VER = "v76";
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -2906,13 +2906,13 @@ const flagBox = (btn) => {
   let box = document.getElementById("ct-flagbox");
   // A floating card (popover under the ⚑ on PC, bottom sheet on phone): never pushes the results down
   const close = () => {
-    document.getElementById("ct-flagbox")?.remove(); document.getElementById("ct-flagscrim")?.remove();
+    document.getElementById("ct-flagbox")?.remove(); document.removeEventListener("click", outside, true);
     btn.setAttribute("aria-expanded", "false"); removeEventListener("keydown", esc); removeEventListener("resize", place);
     if (vv) { vv.removeEventListener("resize", place); vv.removeEventListener("scroll", place); }
-    document.documentElement.classList.remove("ct-sheet-open");
   };
   const esc = (e) => { if (e.key === "Escape") { close(); btn.focus(); } };
   const vv = window.visualViewport;
+  const outside = (e) => { const b = document.getElementById("ct-flagbox"); if (!b || b.contains(e.target) || btn.contains(e.target)) return; e.preventDefault(); e.stopPropagation(); close(); };
   const place = () => {
     const b = document.getElementById("ct-flagbox");
     if (!b) return;
@@ -2969,15 +2969,13 @@ const flagBox = (btn) => {
       setTimeout(() => { if (box.isConnected) close(); }, 1200);
     }).catch(() => { save.disabled = false; st.textContent = "Couldn't save. Try again."; });
   });
-  const scrim = mk("div", "", "");
-  scrim.id = "ct-flagscrim";
-  scrim.addEventListener("click", close);
-  document.body.append(scrim, box);
+  // No overlay: the results stay scrollable behind the box (a report is about them). A tap outside only closes the
+  // box; it doesn't also follow a link, so a half-typed note isn't lost by accident.
+  document.body.append(box);
+  setTimeout(() => document.addEventListener("click", outside, true));
   place();
   addEventListener("keydown", esc); addEventListener("resize", place);
   if (vv) { vv.addEventListener("resize", place); vv.addEventListener("scroll", place); }
-  // the page behind stays still while the sheet is open (no scrolling the results under it)
-  if (TOUCH.matches) document.documentElement.classList.add("ct-sheet-open");
   if (!TOUCH.matches) t.focus();
 };
 // ⚑ sits in the header right after the settings gear (same round button); its box still opens over the results

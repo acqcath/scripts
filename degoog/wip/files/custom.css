@@ -635,8 +635,6 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 @media (max-width: 767px) {
   #ct-flag { position: absolute; width: 2.5rem; height: 2.5rem; }
 }
-#ct-flagscrim { position: fixed; inset: 0; z-index: 400; background: transparent; touch-action: none; }
-html.ct-sheet-open, html.ct-sheet-open body { overflow: hidden; overscroll-behavior: none; }
 #ct-flagbox { overscroll-behavior: contain; }
 #ct-flagbox { position: absolute; z-index: 401; box-sizing: border-box; width: 440px; max-width: calc(100vw - 24px); display: grid; gap: 12px; padding: 14px 16px 16px; background: var(--bg); border: 1px solid var(--border-light); border-radius: 14px; box-shadow: 0 12px 32px rgba(0, 0, 0, .45); font-size: 13.5px; color: var(--text-secondary); }
 .ct-flag-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: -4px; }
@@ -659,7 +657,6 @@ html.ct-sheet-open, html.ct-sheet-open body { overflow: hidden; overscroll-behav
 #ct-flagbox .ct-flag-acts button:disabled { opacity: .6; cursor: default; }
 /* Phone (touch): bottom sheet; a narrow window with a mouse keeps the popover */
 @media (max-width: 767px) and (pointer: coarse) {
-  #ct-flagscrim { background: rgba(0, 0, 0, .5); }
   #ct-flagbox { position: fixed; left: 0; right: 0; bottom: var(--ct-vis-b, 0px); top: auto; width: auto; max-width: none; max-height: calc(var(--ct-vis-h, 100dvh) * .85); overflow-y: auto; border-radius: 18px 18px 0 0; border-width: 1px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); gap: 14px; }
   .ct-flag-cat { min-height: 36px; padding: 8px 14px; }
 }
