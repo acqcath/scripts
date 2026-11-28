@@ -2360,8 +2360,8 @@ export default {
 };
 '@)
 [IO.File]::WriteAllText("$t\script.js", @'
-// clean-titles v70
-const CT_VER = "v70";
+// clean-titles v71
+const CT_VER = "v71";
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -3918,9 +3918,11 @@ const fadeIn = (e) => { e.classList.add("ct-in"); e.addEventListener("animatione
 const tabsEdge = () => {
   const bar = document.getElementById("results-search-bar"), tabs = document.getElementById("results-tabs");
   if (!bar || !tabs) return;
-  const w = Math.round(bar.getBoundingClientRect().right - tabs.getBoundingClientRect().left + (parseFloat(getComputedStyle(tabs).paddingRight) || 0));
-  if (w > 200) tabs.style.setProperty("--ct-tabs-w", `${w}px`);
-  else tabs.style.removeProperty("--ct-tabs-w");
+  // as right padding, not a max-width: centered mode pins the row's width (max-width !important), and the divider
+  // stays edge to edge either way
+  const pr = Math.round(tabs.getBoundingClientRect().right - bar.getBoundingClientRect().right);
+  if (pr >= 0 && bar.getBoundingClientRect().width > 200) tabs.style.setProperty("--ct-tabs-pr", `${pr}px`);
+  else tabs.style.removeProperty("--ct-tabs-pr");
   if (!tabsEdge.ro && window.ResizeObserver) { tabsEdge.ro = new ResizeObserver(() => requestAnimationFrame(tabsEdge)); tabsEdge.ro.observe(bar); tabsEdge.ro.observe(tabs); }
 };
 const lineUp = () => {
@@ -6971,7 +6973,7 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 
 /* iPhone: text boxes at 16px so Safari doesn't zoom in when you tap the search bar */
 @media (max-width: 767px) {
-  :is(input[type="text"], input[type="search"], input:not([type]), textarea) { font-size: 16px !important; }
+  :is(input[type="text"], input[type="search"], input:not([type]), textarea:not(#ct-flagbox textarea)) { font-size: 16px !important; }
   .results-tab { padding-block: 12px !important; }
 }
 
@@ -7176,10 +7178,10 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 /* Tools lives with the search it changes: on wider screens the tab row ends where the search bar ends, and Tools
    sits at that edge, right under the bar's ✕ and → (one column: logo, bar, tabs, results). On phones it follows the
    last tab behind a thin divider, inside the scrolling tab row. Same size and baseline as the tabs. */
-#ct-tools { position: relative; align-self: stretch; display: flex; align-items: center; background: none; border: 0; border-bottom: 3px solid transparent; padding: 0 12px 0 16px; margin-left: 4px; font: inherit; font-size: 14px; color: var(--text-secondary); cursor: pointer; flex: none; }
+#ct-tools { position: relative; align-self: stretch; display: flex; align-items: center; background: none; border: 0; border-bottom: 3px solid transparent; padding: 0 12px 0 16px; margin-left: 4px; font: inherit; font-size: .8125rem; color: var(--text-secondary); cursor: pointer; flex: none; }
 #ct-tools::before { content: ""; position: absolute; left: 0; top: 50%; height: 16px; margin-top: -8px; width: 1px; background: var(--border-light); }
 @media (min-width: 768px) {
-  #results-tabs:has(#ct-tools) { max-width: var(--ct-tabs-w, none); box-sizing: border-box; }
+  #results-tabs:has(#ct-tools) { padding-right: var(--ct-tabs-pr, 0px) !important; }
   #results-tabs #ct-tools { margin-left: auto !important; padding: 0 14px; }
   #ct-tools::before { display: none; }
 }
@@ -7201,7 +7203,7 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .ct-flag-x { width: 32px; height: 32px; margin: -6px -8px -6px 0; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--text-secondary); font-size: 22px; line-height: 1; cursor: pointer; }
 .ct-flag-x:hover { background: var(--bg-light); color: var(--text-primary); }
 #ct-flagbox label { display: grid; }
-#ct-flagbox textarea { box-sizing: border-box; width: 100%; font: inherit; color: var(--text-primary); background: var(--bg-light); border: 1px solid var(--border-light); border-radius: 10px; padding: 8px 10px; outline: none; resize: vertical; min-height: 4.2em; }
+#ct-flagbox textarea { box-sizing: border-box; width: 100%; font: inherit; font-size: 13.5px; color: var(--text-primary); background: var(--bg-light); border: 1px solid var(--border-light); border-radius: 10px; padding: 8px 10px; outline: none; resize: vertical; min-height: 4.2em; }
 #ct-flagbox textarea::placeholder { color: var(--text-secondary); opacity: .8; }
 #ct-flagbox textarea:focus { border-color: var(--primary); }
 .ct-flag-cats { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -7863,7 +7865,7 @@ docker restart $c | Out-Null
 $null = docker exec $c sh -c 'for i in $(seq 1 40); do curl -fs -o /dev/null http://127.0.0.1:${DEGOOG_PORT:-4444}/readyz && exit 0; sleep 1; done'
 
 $ss = docker exec $c cat /app/data/server-settings.json | Out-String | ConvertFrom-Json
-"plugin code inside the page (should be v70): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
+"plugin code inside the page (should be v71): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
 "page files (should be a ct and a psl file): " + (docker exec $c sh -c 'ls /app/src/public/ct/')
 "progressive results off (should be False): $($ss.settings.streamingEnabled -eq $true)"
 "typo fixer word list (should be about 82800): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/words.txt')
