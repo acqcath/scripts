@@ -1,5 +1,5 @@
-// clean-titles v98
-const CT_VER = "v98";
+// clean-titles v99
+const CT_VER = "v99";
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -2887,6 +2887,62 @@ const flagCtx = () => {
   const passes = Object.fromEntries([...PASS_MS].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => [k, Math.round(v * 10) / 10]));
   return { ver: typeof CT_VER === "string" ? CT_VER : "", vw: innerWidth, vh: innerHeight, dpr: devicePixelRatio, phone: PHONE.matches, load, boxes, passes, batches: BATCHES };
 };
+// ===== Layout snapshot: what the screen showed, as text, and anything that looks broken (any device) =====
+// No picture (a page can't take one without asking each time, and iPhone can't at all). Instead: every visible
+// thing on screen with its place, size and text, and checks that name a problem outright: something sticking out
+// past the screen edge, text cut off, things overlapping, pictures that failed, placeholders still showing, recent
+// jumps (layout shift), page errors, and the focused box hidden by the keyboard. Taken when ⚑ is tapped (box closed)
+// and at Save (box open, keyboard as it is).
+const SNAP_ERR = [];
+addEventListener("error", (e) => { if (SNAP_ERR.length < 20) SNAP_ERR.push(`error: ${String(e.message || e.error || "").slice(0, 160)} @${String(e.filename || "").split("/").pop()}:${e.lineno || ""}`); });
+addEventListener("unhandledrejection", (e) => { if (SNAP_ERR.length < 20) SNAP_ERR.push(`rejection: ${String((e.reason && e.reason.message) || e.reason || "").slice(0, 160)}`); });
+const SNAP_SHIFT = [];
+try { new PerformanceObserver((l) => { for (const e of l.getEntries()) { if (e.hadRecentInput || e.value < 0.001) continue; SNAP_SHIFT.push({ t: e.startTime, v: e.value, src: (e.sources || []).slice(0, 3).map((x) => `${snapName(x.node)} y${Math.round(x.previousRect.y)}->${Math.round(x.currentRect.y)} h${Math.round(x.previousRect.height)}->${Math.round(x.currentRect.height)}`) }); if (SNAP_SHIFT.length > 30) SNAP_SHIFT.shift(); } }).observe({ type: "layout-shift", buffered: true }); } catch {}
+const snapName = (n) => {
+  if (!n || n.nodeType !== 1) return n && n.parentElement ? snapName(n.parentElement) : "?";
+  const c = typeof n.className === "string" ? n.className.trim().split(/\s+/).filter((x) => x && !/^(degoog|ct-in$)/.test(x)).slice(0, 2).join(".") : "";
+  return `${n.tagName.toLowerCase()}${n.id ? "#" + n.id : ""}${c ? "." + c : ""}`;
+};
+const snapTake = (state) => {
+  const out = [], bugs = [], W = innerWidth, H = innerHeight, vv = window.visualViewport;
+  const R = (r) => `${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)}`;
+  const own = (e) => [...e.childNodes].filter((n) => n.nodeType === 3).map((n) => n.data).join(" ").replace(/\s+/g, " ").trim();
+  const shown = [];
+  const all = document.body.querySelectorAll("*");
+  for (const e of all) {
+    if (e.closest("script, style, svg, template")) continue;
+    const r = e.getBoundingClientRect();
+    if (r.width < 1 || r.height < 1 || r.bottom < 0 || r.top > H || r.right < 0 || r.left > W) continue;
+    const cs = getComputedStyle(e);
+    if (cs.visibility === "hidden" || +cs.opacity === 0) continue;
+    const txt = own(e), media = /^(IMG|VIDEO|CANVAS|INPUT|TEXTAREA|BUTTON|SELECT)$/.test(e.tagName);
+    const boxy = cs.backgroundColor !== "rgba(0, 0, 0, 0)" || parseFloat(cs.borderTopWidth) > 0 || cs.position === "fixed" || cs.position === "sticky";
+    if (!txt && !media && !boxy) continue;
+    shown.push([e, r, cs, txt]);
+    // sticks out past the screen's right edge (and nothing above it scrolls or clips sideways)
+    if (r.right > W + 1) { let clip = false; for (let p = e.parentElement; p && p !== document.body; p = p.parentElement) { const o = getComputedStyle(p).overflowX; if (o !== "visible") { clip = true; break; } } if (!clip) bugs.push(`past the right edge by ${Math.round(r.right - W)}px: ${snapName(e)}`); }
+    // text cut off without an ellipsis meant for it
+    if (txt && (e.scrollWidth > e.clientWidth + 1 || e.scrollHeight > e.clientHeight + 2) && /hidden|clip/.test(cs.overflow) && cs.textOverflow !== "ellipsis" && !/-webkit-box/.test(cs.display)) bugs.push(`text cut off: ${snapName(e)} "${txt.slice(0, 40)}"`);
+    if (e.tagName === "IMG" && e.complete && !e.naturalWidth && e.getAttribute("src")) bugs.push(`picture failed: ${snapName(e)} ${String(e.getAttribute("src")).slice(0, 80)}`);
+  }
+  // text on top of other text (not one inside the other, not the report box or a note floating over the page)
+  const texty = shown.filter(([e, , cs, t]) => t && cs.position !== "fixed" && !e.closest("#ct-flagbox, #ct-fixed"));
+  for (let i = 0; i < texty.length && bugs.length < 40; i++) for (let j = i + 1; j < texty.length; j++) {
+    const [a, ra] = texty[i], [b, rb] = texty[j];
+    if (a.contains(b) || b.contains(a)) continue;
+    const ix = Math.min(ra.right, rb.right) - Math.max(ra.left, rb.left), iy = Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top);
+    if (ix > 4 && iy > 4 && ix * iy > 0.25 * Math.min(ra.width * ra.height, rb.width * rb.height)) bugs.push(`overlap: ${snapName(a)} "${texty[i][3].slice(0, 24)}" and ${snapName(b)} "${texty[j][3].slice(0, 24)}"`);
+  }
+  if (document.querySelector(".skeleton-card, .ct-skc, .ct-skimg, .skeleton-results") && performance.now() > 8000) bugs.push("loading placeholders still showing");
+  const f = document.activeElement;
+  if (f && f !== document.body && vv) { const r = f.getBoundingClientRect(); if (r.bottom > vv.offsetTop + vv.height + 1 || r.top < vv.offsetTop - 1) bugs.push(`focused ${snapName(f)} is outside the visible area (keyboard or bars): ${R(r)}, visible ${Math.round(vv.offsetTop)}..${Math.round(vv.offsetTop + vv.height)}`); }
+  const tabs = document.getElementById("results-tabs"), first = document.querySelector("#results-list .result-item .result-url-row, #results-list .image-card, .no-results");
+  const gap = tabs && first ? Math.round(first.getBoundingClientRect().top - tabs.getBoundingClientRect().bottom) : null;
+  const shifts = SNAP_SHIFT.filter((x) => performance.now() - x.t < 15000).map((x) => `${x.v.toFixed(3)} ${x.src.join(" | ")}`);
+  const lines = shown.slice(0, 160).map(([e, r, cs, t]) => `${snapName(e)} ${R(r)}${cs.position === "fixed" || cs.position === "sticky" ? " " + cs.position : ""}${t ? ` "${t.slice(0, 50)}"` : ""}`);
+  return { state, at: Math.round(performance.now()), view: `${W}x${H}${vv ? ` visible ${Math.round(vv.width)}x${Math.round(vv.height)}+${Math.round(vv.offsetTop)}` : ""} scroll ${Math.round(scrollY)} dpr ${devicePixelRatio}`,
+    ua: navigator.userAgent.slice(0, 160), gap, bugs: [...new Set(bugs)].slice(0, 30), errors: SNAP_ERR.slice(-10), shifts: shifts.slice(-8), items: lines };
+};
 const curType = () => { try { return new URL(location.href).searchParams.get("type") || tabNow || "web"; } catch { return tabNow || "web"; } };
 const flagBox = (btn) => {
   let box = document.getElementById("ct-flagbox");
@@ -2918,6 +2974,7 @@ const flagBox = (btn) => {
     b.style.left = `${Math.round(Math.max(12, Math.min(r.right - w, innerWidth - w - 12)) + scrollX)}px`;
   };
   if (box) { close(); return; }
+  let snap0 = null; try { snap0 = snapTake("closed"); } catch {}
   btn.setAttribute("aria-expanded", "true");
   box = document.createElement("form");
   box.id = "ct-flagbox";
@@ -2952,7 +3009,8 @@ const flagBox = (btn) => {
     e.preventDefault(); e.stopPropagation();
     save.disabled = true; st.textContent = "";
     const cats = [...chips.querySelectorAll('[aria-pressed="true"]')].map((c) => c.dataset.cat);
-    bridge("flag", {}, JSON.stringify({ q: curQ(), type: curType(), cats, note: t.value.trim(), ctx: flagCtx(), top: flagTop() })).then((j) => {
+    let snap1 = null; try { snap1 = snapTake("open"); } catch {}
+    bridge("flag", {}, JSON.stringify({ q: curQ(), type: curType(), cats, note: t.value.trim(), ctx: flagCtx(), top: flagTop(), snap: [snap0, snap1].filter(Boolean) })).then((j) => {
       save.disabled = false;
       if (!j) { st.textContent = "Couldn't save. Try again."; return; }
       t.value = ""; chips.querySelectorAll(".ct-flag-cat").forEach((c) => c.setAttribute("aria-pressed", "false")); st.textContent = "Saved.";

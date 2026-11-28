@@ -5,7 +5,7 @@ import { flagPrompt, FLAG_CATS as SC, flagCats as sCats, flagCtxClean as sCtx } 
 const mkF = (i) => ({ t: 0, q: `q${i}`, type: "web", note: "n", top: Array.from({ length: 10 }, () => ({ title: "t".repeat(150), url: "https://a.com/" + "p".repeat(100), snippet: "s".repeat(300) })) });
 
 test("flag: prompt fits Claude's link, dropping snippets then older reports, never the current one", () => {
-  const s = flagPrompt(Array.from({ length: 30 }, (_, i) => mkF(i)), "2 FAIL");
+  const s = flagPrompt(Array.from({ length: 30 }, (_, i) => mkF(i)), "2 FAIL", 12000);
   expect(s.length).toBeLessThanOrEqual(12000);
   expect(s).toContain("QUICKSTART");
   expect(s).not.toContain("degoog-flags");
@@ -159,4 +159,17 @@ test("flag: a fixed report shows one small note at the bottom (told once by the 
   expect(n.textContent).toContain("porn under kalimba");
   expect(asked).toBe(1);
   await win.happyDOM.close();
+});
+
+import { flagSnapClean } from "../files/index.js";
+test("flag: layout snapshots ride along, clipped; the newest report keeps its full item list", () => {
+  const snap = flagSnapClean([{ state: "closed", view: "390x844", gap: 15.6, bugs: ["past the right edge by 8px: div.ct-row"], items: Array.from({ length: 300 }, (_, i) => `div ${i}`) }, { state: "open", bugs: [] }, { x: 1 }]);
+  expect(snap.length).toBe(2);
+  expect(snap[0].items.length).toBe(160);
+  expect(snap[0].gap).toBe(16);
+  const f = (i) => ({ id: i, t: i, q: `q${i}`, type: "web", note: "", top: [], snap });
+  const p = flagPrompt([f(1), f(2)], "");
+  const j = JSON.parse(p.slice(p.indexOf("{")));
+  expect(j.flags[1].snap[0].items.length).toBe(160);
+  expect(j.flags[1].snap[0].bugs[0]).toContain("past the right edge");
 });
