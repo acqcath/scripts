@@ -1428,7 +1428,18 @@ const vis = async (path, body, ms) => {
   try {
     const r = await fetch(VIS + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(ms) });
     return r.ok ? await r.json() : null;
-  } catch (e) { if (!(e && e.name === "TimeoutError")) visDownUntil = Date.now() + 60000; return null; }
+  } catch (e) { if (!(e && e.name === "TimeoutError")) visDown(); return null; }
+};
+// ct-vision not answering (e.g. still loading after a restart): skip it, and check its /health every 3 s so the AI is
+// back the moment it is up (was a blind 60 s pause, which kept the AI off for up to a minute after every start)
+let visPoll = null;
+const visDown = () => {
+  visDownUntil = Date.now() + 3600000;
+  if (visPoll) return;
+  visPoll = setInterval(async () => {
+    try { const r = await fetch(VIS + "/health", { signal: AbortSignal.timeout(2000) }); if (r.ok) { visDownUntil = 0; clearInterval(visPoll); visPoll = null; } } catch {}
+  }, 3000);
+  if (visPoll.unref) visPoll.unref();
 };
 const jsonOut = (o) => new Response(JSON.stringify(o), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
 
@@ -1753,7 +1764,7 @@ const RANK_WAIT_MS = 1600, RANK_RUN_MS = 6000;
 // Search time (measured): the last 50 reranker run times and the time this hook added to each search. When the
 // reranker's median run is over the wait, waiting is wasted (it'd time out anyway): the search goes on at once and
 // the scores are kept for the next request.
-const SPEED = { rank: [], hook: [] };
+const SPEED = { rank: [], hook: [], gpu: [], queue: [] };
 const speedAdd = (a, ms) => { a.push(ms); if (a.length > 50) a.shift(); };
 export const median = (a) => { if (!a.length) return null; const b = [...a].sort((x, y) => x - y), m = b.length >> 1; return b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2; };
 export const rankWait = (runs) => { const m = median(runs); return m != null && runs.length >= 5 && m > RANK_WAIT_MS ? 0 : RANK_WAIT_MS; };
@@ -1784,7 +1795,7 @@ const rankPart = async (result, q, rs, type) => {
       run = (async () => {
         const r0 = Date.now();
         const j = await vis("/rank", { q, docs: docs.concat(sents.map(([, x]) => x)) }, RANK_RUN_MS);
-        if (j) speedAdd(SPEED.rank, Date.now() - r0);
+        if (j) { speedAdd(SPEED.rank, Date.now() - r0); if (typeof j.gpu === "number") { speedAdd(SPEED.gpu, j.gpu); speedAdd(SPEED.queue, j.wait); } }
         if (!j || !Array.isArray(j.s)) return null;
         const g = { rel: j.s.slice(0, docs.length), best: {} };
         sents.forEach(([i, x], k) => { const v = j.s[docs.length + k]; if (typeof v === "number" && (!g.best[i] || v > g.best[i].p)) g.best[i] = { s: x, p: v }; });
@@ -1865,7 +1876,7 @@ export const routes = [
       let ai = false;
       try { const r = await fetch(VIS + "/health", { signal: AbortSignal.timeout(1500) }); ai = r.ok; } catch {}
       const i = flagIssue();
-      return jsonOut({ ver, pageMissing: PAGE_MISSING, ai, aiMs: Date.now() - t0, flags: flagOpen().length, issue: i ? i.text.split("\n").slice(0, 3).join(" | ").slice(0, 300) : "", up: Math.round(process.uptime()), speed: { hook: median(SPEED.hook), rank: median(SPEED.rank), n: SPEED.hook.length } });
+      return jsonOut({ ver, pageMissing: PAGE_MISSING, ai, aiMs: Date.now() - t0, flags: flagOpen().length, issue: i ? i.text.split("\n").slice(0, 3).join(" | ").slice(0, 300) : "", up: Math.round(process.uptime()), speed: { hook: median(SPEED.hook), rank: median(SPEED.rank), gpu: median(SPEED.gpu), queue: median(SPEED.queue), n: SPEED.hook.length } });
     },
   },
   {
@@ -1900,7 +1911,7 @@ export const routes = [
     // Search time (self-check): median ms the hook added per search, the reranker's median run, the wait in use
     method: "get",
     path: "/speed",
-    async handler() { return jsonOut({ hook: median(SPEED.hook), rank: median(SPEED.rank), n: SPEED.hook.length, wait: rankWait(SPEED.rank) }); },
+    async handler() { return jsonOut({ hook: median(SPEED.hook), rank: median(SPEED.rank), gpu: median(SPEED.gpu), queue: median(SPEED.queue), n: SPEED.hook.length, wait: rankWait(SPEED.rank) }); },
   },
   {
     // First-screen cutoff sample from the page: {w: worth of the last result on its first screen} -> {cut: median}
@@ -1915,7 +1926,7 @@ export const routes = [
     async handler(req) {
       let b = {};
       try { b = await req.json(); } catch {}
-      const j = await vis("/rank", { q: String(b.q || "").slice(0, 300), docs: Array.isArray(b.d) ? b.d.slice(0, 64).map(String) : [] }, 3000);
+      const j = await vis("/rank", { q: String(b.q || "").slice(0, 300), docs: Array.isArray(b.d) ? b.d.slice(0, 96).map(String) : [] }, 3000);
       return jsonOut(j && Array.isArray(j.s) ? { s: j.s } : { s: null });
     },
   },
@@ -2206,7 +2217,9 @@ export default {
     if (ctx && ctx.dir) DIR = ctx.dir;
     if (ctx && typeof ctx.signProxyUrl === "function") _sign = ctx.signProxyUrl;
     if (ctx && typeof ctx.fetch === "function") _fetch = ctx.fetch;
-    if (!process.env.CT_NO_TIMERS) { aiSchedule(); fxSchedule(); trendSchedule(); const t = setTimeout(() => ensureData(), 90000); if (t.unref) t.unref(); }
+    if (!process.env.CT_NO_TIMERS) { aiSchedule(); fxSchedule(); trendSchedule(); const t = setTimeout(() => ensureData(), 90000); if (t.unref) t.unref();
+      // First search after a restart: read the typo fixer's word lists now (off the request path) instead of on it
+      const p = setTimeout(() => { try { load(); } catch {} }, 500); if (p.unref) p.unref(); }
   },
 
   // Bridge: the page reaches the routes above through degoog's command address (/api/command),

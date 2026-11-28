@@ -15,8 +15,14 @@ MODEL = os.environ.get("CT_VISION_MODEL", "google/siglip2-so400m-patch14-384")  
 dev = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float16 if dev == "cuda" else torch.float32
 torch.set_num_threads(max(1, min(4, os.cpu_count() or 1)))
-model = AutoModel.from_pretrained(MODEL, torch_dtype=dtype).to(dev).eval()
-proc = AutoProcessor.from_pretrained(MODEL)
+T_BOOT = time.time()
+# Start fast after a restart: load from the local model cache with no network calls (the network may not be up yet at
+# boot, and the hub check costs seconds); download only when the cache doesn't have the model yet
+def load(fn, name, **kw):
+    try: return fn(name, local_files_only=True, **kw)
+    except Exception: return fn(name, **kw)
+model = load(AutoModel.from_pretrained, MODEL, torch_dtype=dtype, low_cpu_mem_usage=True).to(dev).eval()
+proc = load(AutoProcessor.from_pretrained, MODEL)
 scale = model.logit_scale.exp().item()
 bias = model.logit_bias.item()
 gpu = torch.cuda.get_device_name(0) if dev == "cuda" else ""
@@ -24,26 +30,37 @@ gpu = torch.cuda.get_device_name(0) if dev == "cuda" else ""
 # (probability of "yes"): what relevance, the featured snippet and "People also ask" need
 RERANK = os.environ.get("CT_RERANK_MODEL", "Qwen/Qwen3-Reranker-0.6B")
 from transformers import AutoModelForCausalLM
-rtok = AutoTokenizer.from_pretrained(RERANK, padding_side="left")
-rmodel = AutoModelForCausalLM.from_pretrained(RERANK, torch_dtype=dtype).to(dev).eval()
+rtok = load(AutoTokenizer.from_pretrained, RERANK, padding_side="left")
+rmodel = load(AutoModelForCausalLM.from_pretrained, RERANK, torch_dtype=dtype, low_cpu_mem_usage=True).to(dev).eval()
+LOAD_S = round(time.time() - T_BOOT, 1)
 R_YES, R_NO = rtok.convert_tokens_to_ids("yes"), rtok.convert_tokens_to_ids("no")
 R_PRE = rtok.encode('<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the Instruct provided. Note that the answer can only be "yes" or "no".<|im_end|>\n<|im_start|>user\n', add_special_tokens=False)
 R_SUF = rtok.encode("<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n", add_special_tokens=False)
 R_TASK = "Given a web search query, retrieve relevant passages that answer the query"
 R_MAX = 512
+R_TOK = int(os.environ.get("CT_RERANK_TOKENS", "24576"))  # padded tokens per GPU pass (0.6B fp16: well inside 16 GB)
 
 @torch.inference_mode()
 def rerank(q, docs, tasks=None):
     # tasks: one instruction per doc (None = the default retrieval task), so many different questions share one pass
-    out = []
-    for i in range(0, len(docs), 16):
-        pairs = [f"<Instruct>: {(tasks[i + k] if tasks and tasks[i + k] else R_TASK)}\n<Query>: {q}\n<Document>: {d}" for k, d in enumerate(docs[i:i + 16])]
-        enc = rtok(pairs, padding=False, truncation="longest_first", return_attention_mask=False, max_length=R_MAX - len(R_PRE) - len(R_SUF), add_special_tokens=False)
-        enc["input_ids"] = [R_PRE + ids + R_SUF for ids in enc["input_ids"]]
-        x = rtok.pad(enc, padding=True, return_tensors="pt").to(dev)
-        logits = rmodel(**x).logits[:, -1, :]
+    # Tokenize everything once, sort by length and cut into batches of at most R_TOK padded tokens: a search's 60-90
+    # passages take 1-3 GPU passes instead of 4-6, with almost no padding. Only the last position's logits are kept.
+    pairs = [f"<Instruct>: {(tasks[k] if tasks and tasks[k] else R_TASK)}\n<Query>: {q}\n<Document>: {d}" for k, d in enumerate(docs)]
+    ids = rtok(pairs, padding=False, truncation="longest_first", return_attention_mask=False, max_length=R_MAX - len(R_PRE) - len(R_SUF), add_special_tokens=False)["input_ids"]
+    ids = [R_PRE + x + R_SUF for x in ids]
+    order = sorted(range(len(ids)), key=lambda k: len(ids[k]))
+    out = [0.0] * len(ids)
+    i = 0
+    while i < len(order):
+        j = i + 1
+        while j < len(order) and len(ids[order[j]]) * (j + 1 - i) <= R_TOK: j += 1
+        grp = order[i:j]
+        x = rtok.pad({"input_ids": [ids[k] for k in grp]}, padding=True, return_tensors="pt").to(dev)
+        h = rmodel.model(**x).last_hidden_state[:, -1, :]
+        logits = rmodel.lm_head(h)
         two = torch.stack([logits[:, R_NO], logits[:, R_YES]], dim=1).float()
-        out += torch.nn.functional.softmax(two, dim=1)[:, 1].cpu().tolist()
+        for k, p in zip(grp, torch.nn.functional.softmax(two, dim=1)[:, 1].cpu().tolist()): out[k] = p
+        i = j
     return out
 
 class LRU(OrderedDict):
@@ -58,7 +75,8 @@ class LRU(OrderedDict):
 
 IMG = LRU(40000)   # url -> unit embedding (cpu fp16), or False when the image can't be read
 TXT = LRU(4000)    # query -> unit embedding
-lock = asyncio.Lock()
+lock = asyncio.Lock()   # image model
+rlock = asyncio.Lock()  # reranker
 http = httpx.AsyncClient(timeout=httpx.Timeout(2.5, connect=1.5), follow_redirects=True, limits=httpx.Limits(max_connections=48),
                          headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36", "Accept": "image/avif,image/webp,image/*,*/*;q=0.8"})
 app = FastAPI()
@@ -111,14 +129,17 @@ async def ensure(urls, budget):
 async def warm():
     # First GPU calls compile kernels and take seconds; do that now, not on the first search
     try:
+        async with rlock:
+            await asyncio.to_thread(rerank, "warm up", ["warm up passage about a warm up query " * (3 + k) for k in range(48)])
         async with lock:
-            await asyncio.to_thread(rerank, "warm up", ["warm up passage about a warm up query " * 12] * 16)
+            await asyncio.to_thread(embed_images, [Image.new("RGB", (384, 384))] * 4)
+            await asyncio.to_thread(embed_text, "warm up")
     except Exception:
         pass
 
 @app.get("/health")
 async def health():
-    return {"ok": True, "device": dev, "gpu": gpu, "model": MODEL, "rerank": RERANK, "cached": len(IMG)}
+    return {"ok": True, "device": dev, "gpu": gpu, "model": MODEL, "rerank": RERANK, "cached": len(IMG), "load_s": LOAD_S, "up_s": round(time.time() - T_BOOT)}
 
 @app.post("/score")
 async def score(body: dict):
@@ -152,14 +173,17 @@ async def near(body: dict):
 async def rank(body: dict):
     t0 = time.perf_counter()
     q = str(body.get("q") or "")[:300]
-    docs = [str(d)[:1500] for d in (body.get("docs") or [])][:64]
+    docs = [str(d)[:1500] for d in (body.get("docs") or [])][:96]
     tasks = body.get("tasks")
     tasks = [str(t or "")[:300] for t in tasks][:len(docs)] if isinstance(tasks, list) else None
     if tasks is not None: tasks += [""] * (len(docs) - len(tasks))
     if not q or not docs: return {"s": [], "ms": 0}
-    async with lock:
+    async with rlock:
+        t1 = time.perf_counter()
         s = await asyncio.to_thread(rerank, q, docs, tasks)
-    return {"s": [round(x, 4) for x in s], "ms": round((time.perf_counter() - t0) * 1000)}
+    t2 = time.perf_counter()
+    # ms = whole call; wait = time queued behind other reranker calls; gpu = the model's own time
+    return {"s": [round(x, 4) for x in s], "ms": round((t2 - t0) * 1000), "wait": round((t1 - t0) * 1000), "gpu": round((t2 - t1) * 1000)}
 
 @app.exception_handler(Exception)
 async def err(_, e):

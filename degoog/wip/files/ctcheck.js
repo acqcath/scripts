@@ -67,7 +67,7 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
     const sd = await bridge("sides", {}, JSON.stringify({ q: "is coffee bad for your heart", r: cof })), d = sd.j && sd.j.d;
     row("Contested check (ai-summary's model)", !sd.j ? false : !d ? "SKIP" : typeof d.split === "boolean", d ? `split: ${d.split}, ${sd.ms} ms` : "no answer (ai-summary's model off or busy)");
     const sp = await bridge("speed", {}), v = sp.j || {};
-    row("Search time added by clean-titles", !!sp.j, v.n ? `median ${v.hook} ms over ${v.n} searches; reranker ${v.rank ?? "-"} ms, wait ${v.wait} ms` : "no searches yet");
+    row("Search time added by clean-titles", !!sp.j, v.n ? `median ${v.hook} ms over ${v.n} searches; reranker ${v.rank ?? "-"} ms (GPU ${v.gpu ?? "-"}, queued ${v.queue ?? "-"}), wait ${v.wait} ms` : "no searches yet");
     const se = await bridge("seen", { q: "", k: "web" });
     row("Learning log (unsolved searches)", !!(se.j && "ok" in se.j), se.j ? "" : "no answer from /seen");
     const cu = await bridge("cut", {});
@@ -170,7 +170,7 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
     try { h = await (await fetch(`${V}/health`, { signal: AbortSignal.timeout(5000) })).json(); } catch {}
     if (!h) rows.push(["Image AI (ct-vision)", "INFO", "not answering yet: the first build downloads PyTorch + the model (a few GB, ~10 min) in the background"]);
     else {
-      rows.push(["Image AI (ct-vision)", h.device === "cuda" ? "PASS" : "INFO", h.device === "cuda" ? `GPU: ${h.gpu}` : "running on the CPU (GPU not available to Docker): slower"]);
+      rows.push(["Image AI (ct-vision)", h.device === "cuda" ? "PASS" : "INFO", (h.device === "cuda" ? `GPU: ${h.gpu}` : "running on the CPU (GPU not available to Docker): slower") + (h.load_s != null ? `; models loaded in ${h.load_s} s at start` : "")]);
       try {
         const j = await (await fetch(`http://127.0.0.1:${PORT}/api/search?q=kalimba&type=images`, { signal: AbortSignal.timeout(20000) })).json();
         const res = (j.results || []).filter((x) => x && x.thumbnail).slice(0, 60);

@@ -84,3 +84,22 @@ test("⚑ categories and context: server and page agree, junk dropped", () => {
   expect(s).toContain('"cats":["order"]');
   expect(s).toContain('"vw":390');
 });
+
+// CJK: a title/snippet starting with 「 is pulled back by the bracket's blank half (screenshot 2026-11-28, zhihu)
+test("page: CJK opening bracket at the start of a title and snippet hangs", async () => {
+  const win = new Window({ url: "https://degoog.local/search?q=kmfgvfxv" });
+  const { document } = win;
+  document.body.innerHTML = '<div id="results-tabs"><div class="results-tab active" data-type="web">All</div></div><div id="results-list"><div class="result-item" data-result-url="https://www.zhihu.com/question/1"><a class="result-title" href="https://www.zhihu.com/question/1">「ji、qi、xi」跟「gi、ki、hi」是否为尖团对立？ - 知乎</a><p class="result-snippet">「ji、qi、xi」跟「gi、ki、hi」</p></div><div class="result-item" data-result-url="https://a.com/"><a class="result-title" href="https://a.com/">KEEMO Fashion</a><p class="result-snippet">Find the latest</p></div></div>';
+  win.fetch = async () => new win.Response(JSON.stringify({ html: "{}" }), { status: 200, headers: { "Content-Type": "application/json" } });
+  class MO { constructor() {} observe() {} disconnect() {} takeRecords() { return []; } }
+  const scope = new Proxy(win, { has: () => true, get: (t, k) => { if (k === "MutationObserver") return MO; if (k === Symbol.unscopables) return undefined; if (!(k in t)) return globalThis[k]; const v = Reflect.get(t, k); return typeof v === "function" && typeof k === "string" && /^[a-z]/.test(k) ? v.bind(t) : v; }, set: (t, k, v) => { t[k] = v; return true; } });
+  globalThis.__ctAIW = win.__ctAIW = new Map(); globalThis.__ctPUBW = win.__ctPUBW = new Map();
+  new Function("scope", `with (scope) {\nconst __PLUGIN_ID__="clean-titles";\n${fs.readFileSync(new URL("../files/ct-page.js", import.meta.url), "utf8")}\n}`)(scope);
+  await new Promise((r) => setTimeout(r, 30));
+  const [z, k] = document.querySelectorAll(".result-item");
+  const zt = z.querySelector("a.result-title");
+  expect(zt.firstElementChild && zt.firstElementChild.className).toBe("ct-hang");
+  expect(zt.textContent.startsWith("「ji")).toBe(true);
+  expect(z.querySelector(".result-snippet .ct-hang")).toBeTruthy();
+  expect(k.querySelector(".ct-hang")).toBeNull();
+});

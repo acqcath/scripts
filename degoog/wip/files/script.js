@@ -461,6 +461,21 @@ const picKey = (src) => {
     return inner.hostname + inner.pathname.replace(/\/rs:[^/]*\//, "/") + inner.search;
   } catch { return ""; }
 };
+// CJK opening brackets (「『（【《…) carry half a character of blank space before the mark, so a title or snippet
+// that starts with one looks indented next to the others: pull that first mark back by its blank half (every browser;
+// CSS text-spacing-trim isn't in Firefox/Zen)
+const HANG = /^[\u3008\u300A\u300C\u300E\u3010\u3014\u3016\u3018\u301A\u301D\uFF08\uFF3B\uFF5B\uFF5F]/;
+const hang = (box) => {
+  if (!box || [...box.children].some((c) => c.classList.contains("ct-hang"))) return;
+  let n = box.firstChild;
+  while (n && n.nodeType === 3 && !n.data.trim()) n = n.nextSibling;
+  if (!n || n.nodeType !== 3) return;
+  n.data = n.data.replace(/^\s+/, "");
+  if (!HANG.test(n.data)) return;
+  const sp = mk("span", "ct-hang", n.data[0]);
+  n.data = n.data.slice(1);
+  box.insertBefore(sp, n);
+};
 const row = (el) => {
   const a = el.querySelector("a.result-title");
   if (!a) return;
@@ -489,6 +504,7 @@ const row = (el) => {
     if (sp) for (const n of sp.childNodes) if (n.nodeType === 3) n.data = n.data.replace(/\s*Archived post\.\s*New comments (cannot be posted|\.\.\.)[^.]*\.?(\s*and votes cannot be cast\.?)?/gi, " ").replace(/\s{2,}/g, " ");
   }
   if (cite && site && cite.textContent.trim() !== site) { cite.title = cite.textContent.trim(); cite.textContent = site; }
+  hang(a);
   // Snippet: a leading date ("Feb 1, 2022 ... text", "3 days ago —") and junk ellipses go (core cleanSnippet);
   // the date (degoog's own first, else the one from the text) moves to the source line, after the site name
   const p0 = el.querySelector(".result-snippet");
@@ -504,6 +520,7 @@ const row = (el) => {
     p0.querySelectorAll("b, strong, em").forEach((b) => { const x = b.firstChild; if (x && x.nodeType === 3) x.data = CT.tidyText(x.data); });
     const label = dRaw ? CT.dateLabel(dRaw) : "";
     if (label && cite) { const d = mk("span", "ct-date", label); d.dataset.raw = dRaw; cite.after(d); }
+    hang(p0);
   }
   // "Paywall": a word on the source line, drawn with the result (core PAYWALL_SITES)
   if (cite && u && SHOW.pw !== false && CT.paywalled(u.hostname, PSL())) { const t = mk("span", "ct-paywall", "Paywall"); (el.querySelector(".result-url-row .ct-date") || cite).after(t); }

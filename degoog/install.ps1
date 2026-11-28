@@ -1431,7 +1431,18 @@ const vis = async (path, body, ms) => {
   try {
     const r = await fetch(VIS + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(ms) });
     return r.ok ? await r.json() : null;
-  } catch (e) { if (!(e && e.name === "TimeoutError")) visDownUntil = Date.now() + 60000; return null; }
+  } catch (e) { if (!(e && e.name === "TimeoutError")) visDown(); return null; }
+};
+// ct-vision not answering (e.g. still loading after a restart): skip it, and check its /health every 3 s so the AI is
+// back the moment it is up (was a blind 60 s pause, which kept the AI off for up to a minute after every start)
+let visPoll = null;
+const visDown = () => {
+  visDownUntil = Date.now() + 3600000;
+  if (visPoll) return;
+  visPoll = setInterval(async () => {
+    try { const r = await fetch(VIS + "/health", { signal: AbortSignal.timeout(2000) }); if (r.ok) { visDownUntil = 0; clearInterval(visPoll); visPoll = null; } } catch {}
+  }, 3000);
+  if (visPoll.unref) visPoll.unref();
 };
 const jsonOut = (o) => new Response(JSON.stringify(o), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
 
@@ -1756,7 +1767,7 @@ const RANK_WAIT_MS = 1600, RANK_RUN_MS = 6000;
 // Search time (measured): the last 50 reranker run times and the time this hook added to each search. When the
 // reranker's median run is over the wait, waiting is wasted (it'd time out anyway): the search goes on at once and
 // the scores are kept for the next request.
-const SPEED = { rank: [], hook: [] };
+const SPEED = { rank: [], hook: [], gpu: [], queue: [] };
 const speedAdd = (a, ms) => { a.push(ms); if (a.length > 50) a.shift(); };
 export const median = (a) => { if (!a.length) return null; const b = [...a].sort((x, y) => x - y), m = b.length >> 1; return b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2; };
 export const rankWait = (runs) => { const m = median(runs); return m != null && runs.length >= 5 && m > RANK_WAIT_MS ? 0 : RANK_WAIT_MS; };
@@ -1787,7 +1798,7 @@ const rankPart = async (result, q, rs, type) => {
       run = (async () => {
         const r0 = Date.now();
         const j = await vis("/rank", { q, docs: docs.concat(sents.map(([, x]) => x)) }, RANK_RUN_MS);
-        if (j) speedAdd(SPEED.rank, Date.now() - r0);
+        if (j) { speedAdd(SPEED.rank, Date.now() - r0); if (typeof j.gpu === "number") { speedAdd(SPEED.gpu, j.gpu); speedAdd(SPEED.queue, j.wait); } }
         if (!j || !Array.isArray(j.s)) return null;
         const g = { rel: j.s.slice(0, docs.length), best: {} };
         sents.forEach(([i, x], k) => { const v = j.s[docs.length + k]; if (typeof v === "number" && (!g.best[i] || v > g.best[i].p)) g.best[i] = { s: x, p: v }; });
@@ -1868,7 +1879,7 @@ export const routes = [
       let ai = false;
       try { const r = await fetch(VIS + "/health", { signal: AbortSignal.timeout(1500) }); ai = r.ok; } catch {}
       const i = flagIssue();
-      return jsonOut({ ver, pageMissing: PAGE_MISSING, ai, aiMs: Date.now() - t0, flags: flagOpen().length, issue: i ? i.text.split("\n").slice(0, 3).join(" | ").slice(0, 300) : "", up: Math.round(process.uptime()), speed: { hook: median(SPEED.hook), rank: median(SPEED.rank), n: SPEED.hook.length } });
+      return jsonOut({ ver, pageMissing: PAGE_MISSING, ai, aiMs: Date.now() - t0, flags: flagOpen().length, issue: i ? i.text.split("\n").slice(0, 3).join(" | ").slice(0, 300) : "", up: Math.round(process.uptime()), speed: { hook: median(SPEED.hook), rank: median(SPEED.rank), gpu: median(SPEED.gpu), queue: median(SPEED.queue), n: SPEED.hook.length } });
     },
   },
   {
@@ -1903,7 +1914,7 @@ export const routes = [
     // Search time (self-check): median ms the hook added per search, the reranker's median run, the wait in use
     method: "get",
     path: "/speed",
-    async handler() { return jsonOut({ hook: median(SPEED.hook), rank: median(SPEED.rank), n: SPEED.hook.length, wait: rankWait(SPEED.rank) }); },
+    async handler() { return jsonOut({ hook: median(SPEED.hook), rank: median(SPEED.rank), gpu: median(SPEED.gpu), queue: median(SPEED.queue), n: SPEED.hook.length, wait: rankWait(SPEED.rank) }); },
   },
   {
     // First-screen cutoff sample from the page: {w: worth of the last result on its first screen} -> {cut: median}
@@ -1918,7 +1929,7 @@ export const routes = [
     async handler(req) {
       let b = {};
       try { b = await req.json(); } catch {}
-      const j = await vis("/rank", { q: String(b.q || "").slice(0, 300), docs: Array.isArray(b.d) ? b.d.slice(0, 64).map(String) : [] }, 3000);
+      const j = await vis("/rank", { q: String(b.q || "").slice(0, 300), docs: Array.isArray(b.d) ? b.d.slice(0, 96).map(String) : [] }, 3000);
       return jsonOut(j && Array.isArray(j.s) ? { s: j.s } : { s: null });
     },
   },
@@ -2209,7 +2220,9 @@ export default {
     if (ctx && ctx.dir) DIR = ctx.dir;
     if (ctx && typeof ctx.signProxyUrl === "function") _sign = ctx.signProxyUrl;
     if (ctx && typeof ctx.fetch === "function") _fetch = ctx.fetch;
-    if (!process.env.CT_NO_TIMERS) { aiSchedule(); fxSchedule(); trendSchedule(); const t = setTimeout(() => ensureData(), 90000); if (t.unref) t.unref(); }
+    if (!process.env.CT_NO_TIMERS) { aiSchedule(); fxSchedule(); trendSchedule(); const t = setTimeout(() => ensureData(), 90000); if (t.unref) t.unref();
+      // First search after a restart: read the typo fixer's word lists now (off the request path) instead of on it
+      const p = setTimeout(() => { try { load(); } catch {} }, 500); if (p.unref) p.unref(); }
   },
 
   // Bridge: the page reaches the routes above through degoog's command address (/api/command),
@@ -2234,8 +2247,8 @@ export default {
 };
 '@)
 [IO.File]::WriteAllText("$t\script.js", @'
-// clean-titles v68
-const CT_VER = "v68";
+// clean-titles v69
+const CT_VER = "v69";
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -4176,6 +4189,21 @@ const picKey = (src) => {
     return inner.hostname + inner.pathname.replace(/\/rs:[^/]*\//, "/") + inner.search;
   } catch { return ""; }
 };
+// CJK opening brackets (「『（【《…) carry half a character of blank space before the mark, so a title or snippet
+// that starts with one looks indented next to the others: pull that first mark back by its blank half (every browser;
+// CSS text-spacing-trim isn't in Firefox/Zen)
+const HANG = /^[\u3008\u300A\u300C\u300E\u3010\u3014\u3016\u3018\u301A\u301D\uFF08\uFF3B\uFF5B\uFF5F]/;
+const hang = (box) => {
+  if (!box || [...box.children].some((c) => c.classList.contains("ct-hang"))) return;
+  let n = box.firstChild;
+  while (n && n.nodeType === 3 && !n.data.trim()) n = n.nextSibling;
+  if (!n || n.nodeType !== 3) return;
+  n.data = n.data.replace(/^\s+/, "");
+  if (!HANG.test(n.data)) return;
+  const sp = mk("span", "ct-hang", n.data[0]);
+  n.data = n.data.slice(1);
+  box.insertBefore(sp, n);
+};
 const row = (el) => {
   const a = el.querySelector("a.result-title");
   if (!a) return;
@@ -4204,6 +4232,7 @@ const row = (el) => {
     if (sp) for (const n of sp.childNodes) if (n.nodeType === 3) n.data = n.data.replace(/\s*Archived post\.\s*New comments (cannot be posted|\.\.\.)[^.]*\.?(\s*and votes cannot be cast\.?)?/gi, " ").replace(/\s{2,}/g, " ");
   }
   if (cite && site && cite.textContent.trim() !== site) { cite.title = cite.textContent.trim(); cite.textContent = site; }
+  hang(a);
   // Snippet: a leading date ("Feb 1, 2022 ... text", "3 days ago —") and junk ellipses go (core cleanSnippet);
   // the date (degoog's own first, else the one from the text) moves to the source line, after the site name
   const p0 = el.querySelector(".result-snippet");
@@ -4219,6 +4248,7 @@ const row = (el) => {
     p0.querySelectorAll("b, strong, em").forEach((b) => { const x = b.firstChild; if (x && x.nodeType === 3) x.data = CT.tidyText(x.data); });
     const label = dRaw ? CT.dateLabel(dRaw) : "";
     if (label && cite) { const d = mk("span", "ct-date", label); d.dataset.raw = dRaw; cite.after(d); }
+    hang(p0);
   }
   // "Paywall": a word on the source line, drawn with the result (core PAYWALL_SITES)
   if (cite && u && SHOW.pw !== false && CT.paywalled(u.hostname, PSL())) { const t = mk("span", "ct-paywall", "Paywall"); (el.querySelector(".result-url-row .ct-date") || cite).after(t); }
@@ -7234,6 +7264,9 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .ct-sides-claim { font-size: 15px; line-height: 22px; color: var(--text-primary); }
 @media (max-width: 767px) { .ct-sides-cols { grid-template-columns: 1fr; gap: 12px; } }
 
+/* CJK opening bracket first in a title or snippet: pulled back by its built-in blank half (script.js hang) */
+.ct-hang { margin-left: -0.5em; }
+
 '@)
 [IO.File]::WriteAllText("$t\setcss.js", @'
 const fs = require("fs");
@@ -7416,8 +7449,14 @@ MODEL = os.environ.get("CT_VISION_MODEL", "google/siglip2-so400m-patch14-384")  
 dev = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float16 if dev == "cuda" else torch.float32
 torch.set_num_threads(max(1, min(4, os.cpu_count() or 1)))
-model = AutoModel.from_pretrained(MODEL, torch_dtype=dtype).to(dev).eval()
-proc = AutoProcessor.from_pretrained(MODEL)
+T_BOOT = time.time()
+# Start fast after a restart: load from the local model cache with no network calls (the network may not be up yet at
+# boot, and the hub check costs seconds); download only when the cache doesn't have the model yet
+def load(fn, name, **kw):
+    try: return fn(name, local_files_only=True, **kw)
+    except Exception: return fn(name, **kw)
+model = load(AutoModel.from_pretrained, MODEL, torch_dtype=dtype, low_cpu_mem_usage=True).to(dev).eval()
+proc = load(AutoProcessor.from_pretrained, MODEL)
 scale = model.logit_scale.exp().item()
 bias = model.logit_bias.item()
 gpu = torch.cuda.get_device_name(0) if dev == "cuda" else ""
@@ -7425,26 +7464,37 @@ gpu = torch.cuda.get_device_name(0) if dev == "cuda" else ""
 # (probability of "yes"): what relevance, the featured snippet and "People also ask" need
 RERANK = os.environ.get("CT_RERANK_MODEL", "Qwen/Qwen3-Reranker-0.6B")
 from transformers import AutoModelForCausalLM
-rtok = AutoTokenizer.from_pretrained(RERANK, padding_side="left")
-rmodel = AutoModelForCausalLM.from_pretrained(RERANK, torch_dtype=dtype).to(dev).eval()
+rtok = load(AutoTokenizer.from_pretrained, RERANK, padding_side="left")
+rmodel = load(AutoModelForCausalLM.from_pretrained, RERANK, torch_dtype=dtype, low_cpu_mem_usage=True).to(dev).eval()
+LOAD_S = round(time.time() - T_BOOT, 1)
 R_YES, R_NO = rtok.convert_tokens_to_ids("yes"), rtok.convert_tokens_to_ids("no")
 R_PRE = rtok.encode('<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the Instruct provided. Note that the answer can only be "yes" or "no".<|im_end|>\n<|im_start|>user\n', add_special_tokens=False)
 R_SUF = rtok.encode("<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n", add_special_tokens=False)
 R_TASK = "Given a web search query, retrieve relevant passages that answer the query"
 R_MAX = 512
+R_TOK = int(os.environ.get("CT_RERANK_TOKENS", "24576"))  # padded tokens per GPU pass (0.6B fp16: well inside 16 GB)
 
 @torch.inference_mode()
 def rerank(q, docs, tasks=None):
     # tasks: one instruction per doc (None = the default retrieval task), so many different questions share one pass
-    out = []
-    for i in range(0, len(docs), 16):
-        pairs = [f"<Instruct>: {(tasks[i + k] if tasks and tasks[i + k] else R_TASK)}\n<Query>: {q}\n<Document>: {d}" for k, d in enumerate(docs[i:i + 16])]
-        enc = rtok(pairs, padding=False, truncation="longest_first", return_attention_mask=False, max_length=R_MAX - len(R_PRE) - len(R_SUF), add_special_tokens=False)
-        enc["input_ids"] = [R_PRE + ids + R_SUF for ids in enc["input_ids"]]
-        x = rtok.pad(enc, padding=True, return_tensors="pt").to(dev)
-        logits = rmodel(**x).logits[:, -1, :]
+    # Tokenize everything once, sort by length and cut into batches of at most R_TOK padded tokens: a search's 60-90
+    # passages take 1-3 GPU passes instead of 4-6, with almost no padding. Only the last position's logits are kept.
+    pairs = [f"<Instruct>: {(tasks[k] if tasks and tasks[k] else R_TASK)}\n<Query>: {q}\n<Document>: {d}" for k, d in enumerate(docs)]
+    ids = rtok(pairs, padding=False, truncation="longest_first", return_attention_mask=False, max_length=R_MAX - len(R_PRE) - len(R_SUF), add_special_tokens=False)["input_ids"]
+    ids = [R_PRE + x + R_SUF for x in ids]
+    order = sorted(range(len(ids)), key=lambda k: len(ids[k]))
+    out = [0.0] * len(ids)
+    i = 0
+    while i < len(order):
+        j = i + 1
+        while j < len(order) and len(ids[order[j]]) * (j + 1 - i) <= R_TOK: j += 1
+        grp = order[i:j]
+        x = rtok.pad({"input_ids": [ids[k] for k in grp]}, padding=True, return_tensors="pt").to(dev)
+        h = rmodel.model(**x).last_hidden_state[:, -1, :]
+        logits = rmodel.lm_head(h)
         two = torch.stack([logits[:, R_NO], logits[:, R_YES]], dim=1).float()
-        out += torch.nn.functional.softmax(two, dim=1)[:, 1].cpu().tolist()
+        for k, p in zip(grp, torch.nn.functional.softmax(two, dim=1)[:, 1].cpu().tolist()): out[k] = p
+        i = j
     return out
 
 class LRU(OrderedDict):
@@ -7459,7 +7509,8 @@ class LRU(OrderedDict):
 
 IMG = LRU(40000)   # url -> unit embedding (cpu fp16), or False when the image can't be read
 TXT = LRU(4000)    # query -> unit embedding
-lock = asyncio.Lock()
+lock = asyncio.Lock()   # image model
+rlock = asyncio.Lock()  # reranker
 http = httpx.AsyncClient(timeout=httpx.Timeout(2.5, connect=1.5), follow_redirects=True, limits=httpx.Limits(max_connections=48),
                          headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36", "Accept": "image/avif,image/webp,image/*,*/*;q=0.8"})
 app = FastAPI()
@@ -7512,14 +7563,17 @@ async def ensure(urls, budget):
 async def warm():
     # First GPU calls compile kernels and take seconds; do that now, not on the first search
     try:
+        async with rlock:
+            await asyncio.to_thread(rerank, "warm up", ["warm up passage about a warm up query " * (3 + k) for k in range(48)])
         async with lock:
-            await asyncio.to_thread(rerank, "warm up", ["warm up passage about a warm up query " * 12] * 16)
+            await asyncio.to_thread(embed_images, [Image.new("RGB", (384, 384))] * 4)
+            await asyncio.to_thread(embed_text, "warm up")
     except Exception:
         pass
 
 @app.get("/health")
 async def health():
-    return {"ok": True, "device": dev, "gpu": gpu, "model": MODEL, "rerank": RERANK, "cached": len(IMG)}
+    return {"ok": True, "device": dev, "gpu": gpu, "model": MODEL, "rerank": RERANK, "cached": len(IMG), "load_s": LOAD_S, "up_s": round(time.time() - T_BOOT)}
 
 @app.post("/score")
 async def score(body: dict):
@@ -7553,14 +7607,17 @@ async def near(body: dict):
 async def rank(body: dict):
     t0 = time.perf_counter()
     q = str(body.get("q") or "")[:300]
-    docs = [str(d)[:1500] for d in (body.get("docs") or [])][:64]
+    docs = [str(d)[:1500] for d in (body.get("docs") or [])][:96]
     tasks = body.get("tasks")
     tasks = [str(t or "")[:300] for t in tasks][:len(docs)] if isinstance(tasks, list) else None
     if tasks is not None: tasks += [""] * (len(docs) - len(tasks))
     if not q or not docs: return {"s": [], "ms": 0}
-    async with lock:
+    async with rlock:
+        t1 = time.perf_counter()
         s = await asyncio.to_thread(rerank, q, docs, tasks)
-    return {"s": [round(x, 4) for x in s], "ms": round((time.perf_counter() - t0) * 1000)}
+    t2 = time.perf_counter()
+    # ms = whole call; wait = time queued behind other reranker calls; gpu = the model's own time
+    return {"s": [round(x, 4) for x in s], "ms": round((t2 - t0) * 1000), "wait": round((t1 - t0) * 1000), "gpu": round((t2 - t1) * 1000)}
 
 @app.exception_handler(Exception)
 async def err(_, e):
@@ -7587,7 +7644,20 @@ for i in $(docker images ct-vision --format '{{.Repository}}:{{.Tag}}'); do [ "$
 echo "ct-vision ready: $TAG"
 
 '@).Replace("`r", ""))
-[IO.File]::WriteAllText("$vd\tag", "7b97592efbd5")
+[IO.File]::WriteAllText("$vd\tag", "fc5aa733e07a")
+# Faster start after a restart: Docker Desktop (and so degoog) starts as soon as you sign in to Windows. Same switch as
+# Docker Desktop's "Start Docker Desktop when you sign in" (its settings file + the Windows sign-in entry it makes).
+try {
+  $dd = Join-Path $env:ProgramFiles 'Docker\Docker\Docker Desktop.exe'
+  $sf = Join-Path $env:APPDATA 'Docker\settings-store.json'
+  $run = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+  if ((Test-Path $dd) -and (Test-Path $sf)) {
+    $js = Get-Content $sf -Raw | ConvertFrom-Json
+    if ($js.AutoStart -ne $true) { $js | Add-Member -NotePropertyName AutoStart -NotePropertyValue $true -Force; [IO.File]::WriteAllText($sf, ($js | ConvertTo-Json -Depth 20)) }
+    if (-not (Get-ItemProperty $run -Name 'Docker Desktop' -ErrorAction SilentlyContinue)) { New-ItemProperty $run -Name 'Docker Desktop' -Value ('"' + $dd + '"') -PropertyType String -Force | Out-Null }
+    Write-Host 'Docker Desktop starts when you sign in: yes'
+  }
+} catch { Write-Host ('Docker Desktop start at sign-in: could not check (' + $_.Exception.Message + ')') }
 docker network inspect ct-net 2>&1 | Out-Null; if ($LASTEXITCODE -ne 0) { docker network create ct-net | Out-Null }
 docker network connect ct-net $c 2>&1 | Out-Null
 docker rm -f ct-vision-setup 2>&1 | Out-Null
@@ -7599,7 +7669,7 @@ docker restart $c | Out-Null
 $null = docker exec $c sh -c 'for i in $(seq 1 40); do curl -fs -o /dev/null http://127.0.0.1:${DEGOOG_PORT:-4444}/readyz && exit 0; sleep 1; done'
 
 $ss = docker exec $c cat /app/data/server-settings.json | Out-String | ConvertFrom-Json
-"plugin code inside the page (should be v68): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
+"plugin code inside the page (should be v69): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
 "page files (should be a ct and a psl file): " + (docker exec $c sh -c 'ls /app/src/public/ct/')
 "progressive results off (should be False): $($ss.settings.streamingEnabled -eq $true)"
 "typo fixer word list (should be about 82800): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/words.txt')
@@ -7678,7 +7748,7 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
     const sd = await bridge("sides", {}, JSON.stringify({ q: "is coffee bad for your heart", r: cof })), d = sd.j && sd.j.d;
     row("Contested check (ai-summary's model)", !sd.j ? false : !d ? "SKIP" : typeof d.split === "boolean", d ? `split: ${d.split}, ${sd.ms} ms` : "no answer (ai-summary's model off or busy)");
     const sp = await bridge("speed", {}), v = sp.j || {};
-    row("Search time added by clean-titles", !!sp.j, v.n ? `median ${v.hook} ms over ${v.n} searches; reranker ${v.rank ?? "-"} ms, wait ${v.wait} ms` : "no searches yet");
+    row("Search time added by clean-titles", !!sp.j, v.n ? `median ${v.hook} ms over ${v.n} searches; reranker ${v.rank ?? "-"} ms (GPU ${v.gpu ?? "-"}, queued ${v.queue ?? "-"}), wait ${v.wait} ms` : "no searches yet");
     const se = await bridge("seen", { q: "", k: "web" });
     row("Learning log (unsolved searches)", !!(se.j && "ok" in se.j), se.j ? "" : "no answer from /seen");
     const cu = await bridge("cut", {});
@@ -7781,7 +7851,7 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
     try { h = await (await fetch(`${V}/health`, { signal: AbortSignal.timeout(5000) })).json(); } catch {}
     if (!h) rows.push(["Image AI (ct-vision)", "INFO", "not answering yet: the first build downloads PyTorch + the model (a few GB, ~10 min) in the background"]);
     else {
-      rows.push(["Image AI (ct-vision)", h.device === "cuda" ? "PASS" : "INFO", h.device === "cuda" ? `GPU: ${h.gpu}` : "running on the CPU (GPU not available to Docker): slower"]);
+      rows.push(["Image AI (ct-vision)", h.device === "cuda" ? "PASS" : "INFO", (h.device === "cuda" ? `GPU: ${h.gpu}` : "running on the CPU (GPU not available to Docker): slower") + (h.load_s != null ? `; models loaded in ${h.load_s} s at start` : "")]);
       try {
         const j = await (await fetch(`http://127.0.0.1:${PORT}/api/search?q=kalimba&type=images`, { signal: AbortSignal.timeout(20000) })).json();
         const res = (j.results || []).filter((x) => x && x.thumbnail).slice(0, 60);
