@@ -12,6 +12,8 @@ the local model says they're worth it; the server marks them sent. The job insta
 create one; add_repo for a new repo is refused): a Report session gets every flag in its prompt.
 1. Fix each flag at the code level (core.js / files/page / files/server modules, see below: ranking, relevance, junk rules, or the ⚑ box itself),
    add a test from the flag where possible (no searches from flags in this public repo), release, merge.
+   If the problem can happen elsewhere too (phone and PC, other tabs, other browsers), fix it there as well, not only
+   where it was reported (the user, 2026-11-28).
 2. `updateIssue` = the installer's self-check output after the auto-update: fix the FAIL rows like any other bug.
 3. Live look at the server (degoog.tigon-cat.ts.net, built-in browser): the pane treats it as high-risk, so EVERY
    action (each load, each JS call) needs its own approval and "site" access is never saved. Read the code first. If a
