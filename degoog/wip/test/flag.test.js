@@ -20,7 +20,7 @@ import { Window } from "happy-dom";
 test("flag: ⚑ box saves; no count, no send link", async () => {
   const win = new Window({ url: "https://degoog.local/search?q=nike%20shoes" });
   const { document } = win;
-  document.body.innerHTML = '<div id="results-tabs"><div class="results-tab active" data-type="web">All</div></div><div id="results-list"><div class="result-item" data-result-url="https://www.nike.com/"><a class="result-title" href="https://www.nike.com/">Nike</a><p class="result-snippet">Just do it</p></div></div>';
+  document.body.innerHTML = '<div id="results-header"><div id="results-search-bar"></div><a id="nav-settings-results" href="/settings"></a></div><div id="results-tabs"><div class="results-tab active" data-type="web">All</div></div><div id="results-list"><div class="result-item" data-result-url="https://www.nike.com/"><a class="result-title" href="https://www.nike.com/">Nike</a><p class="result-snippet">Just do it</p></div></div>';
   const calls = [], saved = [];
   win.fetch = async (url, init) => {
     const q = init && init.body ? JSON.parse(init.body).query || "" : "";
@@ -37,7 +37,7 @@ test("flag: ⚑ box saves; no count, no send link", async () => {
   new Function("scope", `with (scope) {\nconst __PLUGIN_ID__="clean-titles";\n${fs.readFileSync(new URL("../files/ct-page.js", import.meta.url), "utf8")}\n}`)(scope);
   await new Promise((r) => setTimeout(r, 30));
   const flag = document.getElementById("ct-flag");
-  expect(document.getElementById("results-tabs").lastElementChild.id).toBe("ct-flag"); // right end
+  expect(document.getElementById("nav-settings-results").nextElementSibling.id).toBe("ct-flag"); // right after the gear
   expect(flag.textContent).toBe("⚑"); // no waiting count (user asked)
   flag.click();
   const box = document.getElementById("ct-flagbox");

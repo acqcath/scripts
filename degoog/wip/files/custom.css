@@ -88,6 +88,7 @@ html:root { --ct-desc-pc: 15px; --ct-desc-phone: 13.5px; }
 /* Images tab: no side panel, full width */
 #results-layout.media-mode #sidebar-col,
 #results-layout.media-mode #image-filters-bar { display: none !important; }
+#results-layout:not(.media-mode) { margin-top: var(--ct-top, 0px) !important; }
 #results-layout.media-mode #results-main { max-width: none !important; }
 
 /* Cleaner web results */
@@ -624,14 +625,15 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 }
 #ct-tools:hover { color: var(--text-primary); }
 #ct-tools[aria-expanded="true"] { color: var(--text-primary); }
-/* ⚑ Flag: the tab row's last item, same height and baseline as the tabs. PC: right after Tools at the search bar's
-   edge. Phone: stays at the right edge while the tab row scrolls under it. Its box opens under the tabs like Tools'. */
-#ct-flag { position: relative; align-self: stretch; display: flex; align-items: center; background: none; border: 0; border-bottom: 3px solid transparent; padding: 0 4px 0 10px; font: inherit; font-size: 15px; line-height: 1; color: var(--text-secondary); cursor: pointer; flex: none; }
-#ct-flag:hover, #ct-flag[aria-expanded="true"] { color: var(--text-primary); }
-#ct-flag { font-variant-numeric: tabular-nums; white-space: nowrap; }
-#results-tabs:not(:has(#ct-tools)) #ct-flag { margin-left: auto; }
+/* ⚑ Flag: right after the settings gear, the same round button (PC: in the header row; phone: pinned just left of the
+   gear, placed by script.js flagPlace). Its box opens over the results under it. */
+#ct-flag { display: flex; align-items: center; justify-content: center; flex: none; box-sizing: border-box; height: 2.75rem; width: 2.75rem; margin: 0; padding: 0; border: 0; border-radius: 999px; background: none; font: inherit; font-size: 1.15rem; line-height: 1; color: var(--text-secondary); cursor: pointer; }
+#ct-flag:hover, #ct-flag[aria-expanded="true"] { background: var(--bg-hover); color: var(--text-primary); }
+@media (min-width: 768px) {
+  #results-header #ct-flag { margin-left: -.75rem; } /* the header's 1rem gap minus .25rem: as close to the gear as the gear is to the bar */
+}
 @media (max-width: 767px) {
-  #ct-flag { position: sticky; right: 0; z-index: 1; padding: 0 16px 0 12px; background: var(--bg); box-shadow: -10px 0 10px -4px var(--bg); }
+  #ct-flag { position: absolute; width: 2.5rem; height: 2.5rem; }
 }
 #ct-flagscrim { position: fixed; inset: 0; z-index: 400; background: transparent; }
 #ct-flagbox { position: absolute; z-index: 401; box-sizing: border-box; width: 440px; max-width: calc(100vw - 24px); display: grid; gap: 12px; padding: 14px 16px 16px; background: var(--bg); border: 1px solid var(--border-light); border-radius: 14px; box-shadow: 0 12px 32px rgba(0, 0, 0, .45); font-size: 13.5px; color: var(--text-secondary); }
