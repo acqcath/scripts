@@ -2361,8 +2361,8 @@ export default {
 };
 '@)
 [IO.File]::WriteAllText("$t\script.js", @'
-// clean-titles v71
-const CT_VER = "v71";
+// clean-titles v72
+const CT_VER = "v72";
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -5328,9 +5328,17 @@ const flagBox = (btn) => {
   addEventListener("keydown", esc); addEventListener("resize", place);
   if (!PHONE.matches) t.focus();
 };
+// ⚑ sits in the header right after the settings gear (same round button); its box still opens over the results
+const flagPlace = () => {
+  const f = document.getElementById("ct-flag"), g = document.getElementById("nav-settings-results");
+  if (!f || !g) return;
+  // phone: the gear is pinned to the header's top right, so ⚑ is pinned just left of it at the same height
+  if (PHONE.matches) { f.style.top = `${g.offsetTop}px`; f.style.right = `${g.offsetParent ? g.offsetParent.clientWidth - g.offsetLeft : 0}px`; f.style.height = `${g.offsetHeight}px`; }
+  else f.style.top = f.style.right = f.style.height = "";
+};
 const flagBtn = () => {
-  const tabs = document.getElementById("results-tabs");
-  if (!tabs || !tabs.firstElementChild || document.getElementById("ct-flag") || !curQ()) return;
+  const g = document.getElementById("nav-settings-results");
+  if (!g || document.getElementById("ct-flag") || !curQ()) return;
   const f = document.createElement("button");
   f.type = "button";
   f.id = "ct-flag";
@@ -5339,8 +5347,25 @@ const flagBtn = () => {
   f.setAttribute("aria-expanded", "false");
   f.addEventListener("click", () => flagBox(f));
   f.textContent = "⚑";
-  tabs.append(f);
-  tabsEdge();
+  g.after(f);
+  flagPlace();
+  if (!flagPlace.on) { flagPlace.on = 1; PHONE.addEventListener("change", flagPlace); addEventListener("resize", flagPlace); }
+};
+// Gap from the tab row to the first thing under it (answer card, info panel or the first result's source line):
+// measured, so empty or hidden blocks above the results can't add to it; the same on every tab and screen size
+const topGap = () => {
+  const tabs = document.getElementById("results-tabs"), lay = document.getElementById("results-layout");
+  if (!tabs || !lay || lay.classList.contains("media-mode")) { lay?.style.removeProperty("--ct-top"); return; }
+  let top = Infinity;
+  for (const e of lay.querySelectorAll("#ct-fix, #at-a-glance > *, #sidebar-col > *, .result-item .result-url-row, .skeleton-card, .command-result")) {
+    const r = e.getBoundingClientRect();
+    if (r.height > 0 && r.top < top) top = r.top;
+  }
+  if (top === Infinity) return;
+  const cur = parseFloat(lay.style.getPropertyValue("--ct-top")) || 0;
+  const want = PHONE.matches ? 16 : 20;
+  const next = Math.round(cur + want - (top - tabs.getBoundingClientRect().bottom));
+  if (Math.abs(next - cur) >= 1) lay.style.setProperty("--ct-top", `${next}px`);
 };
 
 // Image loading skeleton: degoog always draws 4 columns; match the real grid's 3/4/5/6 by width
@@ -6393,7 +6418,7 @@ const init = () => {
   safe("rel", relPass);
   safe("scan", () => scan(document.body));
   safe("skeleton", () => skel(document.body));
-  safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("flag", flagBtn); safe("tabkeep", tabKeep);
+  safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("flag", flagBtn); safe("gap", topGap); safe("tabkeep", tabKeep);
   safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass); safe("sides", sidesPass); safe("prod", productPass);
   safe("drawn", markDrawn);
   // Runs right after degoog inserts results and before the screen updates; only looks inside what was added
@@ -6405,7 +6430,7 @@ const init = () => {
     safe("tabs", tabPass);
     safe("rel", relPass);
     for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { safe("scan", () => scan(n)); safe("skeleton", () => skel(n)); safe("usage", () => noUsage(n)); }
-    safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("flag", flagBtn); safe("tabkeep", tabKeep); safe("card", glance);
+    safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("flag", flagBtn); safe("gap", topGap); safe("tabkeep", tabKeep); safe("card", glance);
     safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass); safe("preview", previewPass); safe("sides", sidesPass); safe("prod", productPass);
     safe("drawn", markDrawn);
     safe("ai", () => { const g = document.getElementById("at-a-glance"); if (g) aiPass(g, searchId(location.href)); });
@@ -6652,6 +6677,7 @@ html:root { --ct-desc-pc: 15px; --ct-desc-phone: 13.5px; }
 /* Images tab: no side panel, full width */
 #results-layout.media-mode #sidebar-col,
 #results-layout.media-mode #image-filters-bar { display: none !important; }
+#results-layout:not(.media-mode) { margin-top: var(--ct-top, 0px) !important; }
 #results-layout.media-mode #results-main { max-width: none !important; }
 
 /* Cleaner web results */
@@ -7188,14 +7214,15 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 }
 #ct-tools:hover { color: var(--text-primary); }
 #ct-tools[aria-expanded="true"] { color: var(--text-primary); }
-/* ⚑ Flag: the tab row's last item, same height and baseline as the tabs. PC: right after Tools at the search bar's
-   edge. Phone: stays at the right edge while the tab row scrolls under it. Its box opens under the tabs like Tools'. */
-#ct-flag { position: relative; align-self: stretch; display: flex; align-items: center; background: none; border: 0; border-bottom: 3px solid transparent; padding: 0 4px 0 10px; font: inherit; font-size: 15px; line-height: 1; color: var(--text-secondary); cursor: pointer; flex: none; }
-#ct-flag:hover, #ct-flag[aria-expanded="true"] { color: var(--text-primary); }
-#ct-flag { font-variant-numeric: tabular-nums; white-space: nowrap; }
-#results-tabs:not(:has(#ct-tools)) #ct-flag { margin-left: auto; }
+/* ⚑ Flag: right after the settings gear, the same round button (PC: in the header row; phone: pinned just left of the
+   gear, placed by script.js flagPlace). Its box opens over the results under it. */
+#ct-flag { display: flex; align-items: center; justify-content: center; flex: none; box-sizing: border-box; height: 2.75rem; width: 2.75rem; margin: 0; padding: 0; border: 0; border-radius: 999px; background: none; font: inherit; font-size: 1.15rem; line-height: 1; color: var(--text-secondary); cursor: pointer; }
+#ct-flag:hover, #ct-flag[aria-expanded="true"] { background: var(--bg-hover); color: var(--text-primary); }
+@media (min-width: 768px) {
+  #results-header #ct-flag { margin-left: -.75rem; } /* the header's 1rem gap minus .25rem: as close to the gear as the gear is to the bar */
+}
 @media (max-width: 767px) {
-  #ct-flag { position: sticky; right: 0; z-index: 1; padding: 0 16px 0 12px; background: var(--bg); box-shadow: -10px 0 10px -4px var(--bg); }
+  #ct-flag { position: absolute; width: 2.5rem; height: 2.5rem; }
 }
 #ct-flagscrim { position: fixed; inset: 0; z-index: 400; background: transparent; }
 #ct-flagbox { position: absolute; z-index: 401; box-sizing: border-box; width: 440px; max-width: calc(100vw - 24px); display: grid; gap: 12px; padding: 14px 16px 16px; background: var(--bg); border: 1px solid var(--border-light); border-radius: 14px; box-shadow: 0 12px 32px rgba(0, 0, 0, .45); font-size: 13.5px; color: var(--text-secondary); }
@@ -7869,7 +7896,7 @@ $null = docker exec $c sh -c 'for i in $(seq 1 40); do curl -fs -o /dev/null htt
 $ctT['ready'] = $ctSw.Elapsed.TotalSeconds
 
 $ss = docker exec $c cat /app/data/server-settings.json | Out-String | ConvertFrom-Json
-"plugin code inside the page (should be v71): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
+"plugin code inside the page (should be v72): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
 "page files (should be a ct and a psl file): " + (docker exec $c sh -c 'ls /app/src/public/ct/')
 "progressive results off (should be False): $($ss.settings.streamingEnabled -eq $true)"
 "typo fixer word list (should be about 82800): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/words.txt')

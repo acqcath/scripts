@@ -1,5 +1,5 @@
-// clean-titles v71
-const CT_VER = "v71";
+// clean-titles v72
+const CT_VER = "v72";
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -2965,9 +2965,17 @@ const flagBox = (btn) => {
   addEventListener("keydown", esc); addEventListener("resize", place);
   if (!PHONE.matches) t.focus();
 };
+// ⚑ sits in the header right after the settings gear (same round button); its box still opens over the results
+const flagPlace = () => {
+  const f = document.getElementById("ct-flag"), g = document.getElementById("nav-settings-results");
+  if (!f || !g) return;
+  // phone: the gear is pinned to the header's top right, so ⚑ is pinned just left of it at the same height
+  if (PHONE.matches) { f.style.top = `${g.offsetTop}px`; f.style.right = `${g.offsetParent ? g.offsetParent.clientWidth - g.offsetLeft : 0}px`; f.style.height = `${g.offsetHeight}px`; }
+  else f.style.top = f.style.right = f.style.height = "";
+};
 const flagBtn = () => {
-  const tabs = document.getElementById("results-tabs");
-  if (!tabs || !tabs.firstElementChild || document.getElementById("ct-flag") || !curQ()) return;
+  const g = document.getElementById("nav-settings-results");
+  if (!g || document.getElementById("ct-flag") || !curQ()) return;
   const f = document.createElement("button");
   f.type = "button";
   f.id = "ct-flag";
@@ -2976,8 +2984,25 @@ const flagBtn = () => {
   f.setAttribute("aria-expanded", "false");
   f.addEventListener("click", () => flagBox(f));
   f.textContent = "⚑";
-  tabs.append(f);
-  tabsEdge();
+  g.after(f);
+  flagPlace();
+  if (!flagPlace.on) { flagPlace.on = 1; PHONE.addEventListener("change", flagPlace); addEventListener("resize", flagPlace); }
+};
+// Gap from the tab row to the first thing under it (answer card, info panel or the first result's source line):
+// measured, so empty or hidden blocks above the results can't add to it; the same on every tab and screen size
+const topGap = () => {
+  const tabs = document.getElementById("results-tabs"), lay = document.getElementById("results-layout");
+  if (!tabs || !lay || lay.classList.contains("media-mode")) { lay?.style.removeProperty("--ct-top"); return; }
+  let top = Infinity;
+  for (const e of lay.querySelectorAll("#ct-fix, #at-a-glance > *, #sidebar-col > *, .result-item .result-url-row, .skeleton-card, .command-result")) {
+    const r = e.getBoundingClientRect();
+    if (r.height > 0 && r.top < top) top = r.top;
+  }
+  if (top === Infinity) return;
+  const cur = parseFloat(lay.style.getPropertyValue("--ct-top")) || 0;
+  const want = PHONE.matches ? 16 : 20;
+  const next = Math.round(cur + want - (top - tabs.getBoundingClientRect().bottom));
+  if (Math.abs(next - cur) >= 1) lay.style.setProperty("--ct-top", `${next}px`);
 };
 
 // Image loading skeleton: degoog always draws 4 columns; match the real grid's 3/4/5/6 by width
@@ -4030,7 +4055,7 @@ const init = () => {
   safe("rel", relPass);
   safe("scan", () => scan(document.body));
   safe("skeleton", () => skel(document.body));
-  safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("flag", flagBtn); safe("tabkeep", tabKeep);
+  safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("flag", flagBtn); safe("gap", topGap); safe("tabkeep", tabKeep);
   safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass); safe("sides", sidesPass); safe("prod", productPass);
   safe("drawn", markDrawn);
   // Runs right after degoog inserts results and before the screen updates; only looks inside what was added
@@ -4042,7 +4067,7 @@ const init = () => {
     safe("tabs", tabPass);
     safe("rel", relPass);
     for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { safe("scan", () => scan(n)); safe("skeleton", () => skel(n)); safe("usage", () => noUsage(n)); }
-    safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("flag", flagBtn); safe("tabkeep", tabKeep); safe("card", glance);
+    safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("flag", flagBtn); safe("gap", topGap); safe("tabkeep", tabKeep); safe("card", glance);
     safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass); safe("preview", previewPass); safe("sides", sidesPass); safe("prod", productPass);
     safe("drawn", markDrawn);
     safe("ai", () => { const g = document.getElementById("at-a-glance"); if (g) aiPass(g, searchId(location.href)); });
