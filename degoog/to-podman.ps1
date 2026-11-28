@@ -86,7 +86,7 @@ try {
     $nmode = [string]$x.HostConfig.NetworkMode
     if ($nmode -like 'container:*') { $ref = $nmode.Substring(10); if ($names[$ref]) { $ref = $names[$ref] }; $a += @('--network', "container:$ref") }
     elseif ($nmode -eq 'host') { $a += @('--network', 'host') }
-    elseif ($nmode -notin '', 'default', 'bridge', 'ct-net') {
+    elseif ($nmode -notin '', 'default', 'bridge') {
       & podman.exe network exists $nmode 2>$null; if ($LASTEXITCODE -ne 0) { Native podman.exe @('network', 'create', $nmode) | Out-Null }
       $a += @('--network', $nmode)
     }
