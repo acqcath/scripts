@@ -63,7 +63,11 @@ const flagBox = (btn) => {
     // the browser's bars or iOS scrolling the page for the focused box never leave a gap or hide part of it
     if (TOUCH.matches) {
       b.style.top = b.style.left = "";
-      if (vv) { b.style.setProperty("--ct-vis-h", `${Math.round(vv.height)}px`); b.style.setProperty("--ct-vis-b", `${Math.max(0, Math.round(innerHeight - vv.height - vv.offsetTop))}px`); }
+      if (vv) {
+        b.style.setProperty("--ct-vis-h", `${Math.round(vv.height)}px`); b.style.setProperty("--ct-vis-b", `${Math.max(0, Math.round(innerHeight - vv.height - vv.offsetTop))}px`);
+        // keyboard open: the sheet sits right on it (the home-bar spacing under it left a strip of page showing)
+        b.classList.toggle("ct-kb", vv.height < innerHeight * 0.8);
+      }
       return;
     }
     const r = btn.getBoundingClientRect(), w = b.offsetWidth || 440;

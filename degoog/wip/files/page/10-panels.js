@@ -243,8 +243,10 @@ const productPass = () => {
     if (nd === undefined || !list.querySelector(".result-item")) return;
     PD.asked = true;
     let pg = 1; try { pg = Number(new URL(key).searchParams.get("page") || 1); } catch {}
-    const share = nd ? CT.blockShare(CT.fmtShares(nd.f), nd.b, "product") : null;
-    if (pg > 1 || !CT.blockGo(share, nd && nd.cut)) { PD.done = true; return; }
+    // Asked on every first page (v98, the user: "any time I put the name of a product in"): whether there is a product
+    // is decided by the real signal, product data on the top pages (CT.prodShow), not by the AI's block share, which
+    // judged "yamaha dbr10 release" not worth a panel
+    if (pg > 1 || shaped()) { PD.done = true; return; }
     const rs = topRes(6);
     bridge("product", { q: curQ(), u: rs.map((r) => r.u).join("|") }).then((j) => {
       if (PD.key !== key) return;
