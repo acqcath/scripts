@@ -1,5 +1,5 @@
-// clean-titles v97
-const CT_VER = "v97";
+// clean-titles v98
+const CT_VER = "v98";
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -2906,7 +2906,11 @@ const flagBox = (btn) => {
     // the browser's bars or iOS scrolling the page for the focused box never leave a gap or hide part of it
     if (TOUCH.matches) {
       b.style.top = b.style.left = "";
-      if (vv) { b.style.setProperty("--ct-vis-h", `${Math.round(vv.height)}px`); b.style.setProperty("--ct-vis-b", `${Math.max(0, Math.round(innerHeight - vv.height - vv.offsetTop))}px`); }
+      if (vv) {
+        b.style.setProperty("--ct-vis-h", `${Math.round(vv.height)}px`); b.style.setProperty("--ct-vis-b", `${Math.max(0, Math.round(innerHeight - vv.height - vv.offsetTop))}px`);
+        // keyboard open: the sheet sits right on it (the home-bar spacing under it left a strip of page showing)
+        b.classList.toggle("ct-kb", vv.height < innerHeight * 0.8);
+      }
       return;
     }
     const r = btn.getBoundingClientRect(), w = b.offsetWidth || 440;
@@ -3028,7 +3032,20 @@ const topGap = () => {
   for (const c of lay.querySelectorAll(".image-column")) first(c.querySelectorAll(".image-card"));
   first(lay.querySelectorAll(".image-grid > .image-card"));
   first(lay.querySelectorAll(".video-card"));
-  for (const e of [...lay.querySelectorAll("#ct-fix, #at-a-glance > *, #sidebar-col > *, .skeleton-card, .ct-skc, .ct-skimg, .command-result"), ...firsts]) {
+  // "No results" is the same on every tab: its text starts where the tab labels' text starts, at the same gap under
+  // the tabs (on Images it sat flush with the screen edge on phones and wasn't measured for the gap)
+  const nr = lay.querySelector(".no-results");
+  if (nr) {
+    const lab = [...tabs.querySelectorAll(".results-tab")].find((t) => t.getClientRects().length);
+    const tn = lab && [...lab.childNodes].find((n) => n.nodeType === 3 && n.data.trim());
+    const tx = (() => { const n = [...nr.childNodes].find((x) => x.nodeType === 3 && x.data.trim()) || nr.firstChild; if (!n) return null; const r = document.createRange(); r.selectNodeContents(n); return r.getClientRects()[0] || null; })();
+    if (tn && tx) {
+      const r = document.createRange(); r.selectNodeContents(tn);
+      const want = r.getClientRects()[0], pad = parseFloat(nr.style.paddingLeft) || 0;
+      if (want) { const next = Math.max(0, Math.round(pad + want.left - tx.left)); if (Math.abs(next - pad) >= 1) nr.style.paddingLeft = `${next}px`; }
+    }
+  }
+  for (const e of [...lay.querySelectorAll("#ct-fix, #at-a-glance > *, #sidebar-col > *, .skeleton-card, .ct-skc, .ct-skimg, .command-result, .no-results"), ...firsts]) {
     const r = e.getBoundingClientRect();
     if (!(r.height > 0) || r.top >= top) continue; // a box's text never starts above its top: no style read needed
     // a line of text starts where its letters start, not where its line spacing starts; a measured placeholder row
@@ -3038,7 +3055,7 @@ const topGap = () => {
   }
   if (top === Infinity) { gapEl = null; return; }
   const cur = parseFloat(lay.style.getPropertyValue("--ct-top")) || 0;
-  const want = TOUCH.matches ? 12 : 16;
+  const want = TOUCH.matches ? 16 : 20; // v98: the user found 12/16 too tight ("bump it ever so slightly")
   // measured from whatever sits right above the results: the tab row, or the open Tools fields under it (measuring from
   // the tabs alone pulled the results up under the open fields)
   const adv = document.getElementById("ct-adv"), above = Math.max(tabs.getBoundingClientRect().bottom, adv ? adv.getBoundingClientRect().bottom : 0);
@@ -4174,8 +4191,10 @@ const productPass = () => {
     if (nd === undefined || !list.querySelector(".result-item")) return;
     PD.asked = true;
     let pg = 1; try { pg = Number(new URL(key).searchParams.get("page") || 1); } catch {}
-    const share = nd ? CT.blockShare(CT.fmtShares(nd.f), nd.b, "product") : null;
-    if (pg > 1 || !CT.blockGo(share, nd && nd.cut)) { PD.done = true; return; }
+    // Asked on every first page (v98, the user: "any time I put the name of a product in"): whether there is a product
+    // is decided by the real signal, product data on the top pages (CT.prodShow), not by the AI's block share, which
+    // judged "yamaha dbr10 release" not worth a panel
+    if (pg > 1 || shaped()) { PD.done = true; return; }
     const rs = topRes(6);
     bridge("product", { q: curQ(), u: rs.map((r) => r.u).join("|") }).then((j) => {
       if (PD.key !== key) return;

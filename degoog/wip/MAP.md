@@ -357,30 +357,30 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
   - `advParse` :258
   - `tools` :270
 
-## page/06-flag.js (167 lines)
+## page/06-flag.js (171 lines)
   - `flagTop` :5
   - `flagCtx` :20
   - `curType` :47
   - `flagBox` :48
-  - `flagPlace` :125
-  - `flagBtn` :132
-- **"Fixed" note: the first time degoog is opened anywhere after a release fixed your report** :149
-  - `fixedNote` :152
+  - `flagPlace` :129
+  - `flagBtn` :136
+- **"Fixed" note: the first time degoog is opened anywhere after a release fixed your report** :153
+  - `fixedNote` :156
 
-## page/07-layout.js (212 lines)
+## page/07-layout.js (225 lines)
   - `topGap` :5
-  - `gapSkip` :43
-- **Loading skeletons in the shape of what comes** :58
-  - `skelGet` :65
-  - `skelPut` :66
-  - `skelKey` :67
-  - `textTop` :70
-  - `skelBlock` :74
-  - `skelShape` :76
-  - `skelLearn` :105
-  - `skel` :136
-  - `picLoad` :190
-  - `noUsage` :204
+  - `gapSkip` :56
+- **Loading skeletons in the shape of what comes** :71
+  - `skelGet` :78
+  - `skelPut` :79
+  - `skelKey` :80
+  - `textTop` :83
+  - `skelBlock` :87
+  - `skelShape` :89
+  - `skelLearn` :118
+  - `skel` :149
+  - `picLoad` :203
+  - `noUsage` :217
 
 ## page/08-blocks.js (366 lines)
 - **Sitelinks, Discussions and forums, Videos, Top stories** :3
@@ -426,7 +426,7 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
   - `ansCopy` :310
   - `onlyPass` :324
 
-## page/10-panels.js (279 lines)
+## page/10-panels.js (281 lines)
 - **Quick view (spec 11): your tap opens it under the result (it grows: your action), tap again to close** :2
   - `qvBox` :4
   - `qvs` :70
@@ -634,7 +634,7 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
   - `sock` :31
   - `listen` :43
 
-## custom.css (926 lines)
+## custom.css (927 lines)
 - Catppuccin Mocha colors :1
 - DESCRIPTION SIZE :22
 - v50 :24
@@ -696,33 +696,33 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
 - Tools :616
 - ⚑ Flag :623
 - Phone (touch) :653
-- ===== Answer card (local answers) :669
-- Featured snippet :683
-- ===== AI summary spot :694
-- The panel over the 3 lines :707
-- Opened with ⌄ (your tap) :715
-- CMU card details :723
-- Sports card :730
-- Knowledge panel (spec 3) :747
-- Wide screens :767
-- Same-shape results (spec 8) :781
-- "Only reddit :783
-- "Open archived copy" :786
-- Images row (spec 12) :790
-- Quick view :798
-- Meaning line :811
-- Site icons are back (user, 2026-11-23) :818
-- Menu lines are tap targets :821
-- ===== Vertical rhythm (one scale, by how things belong together) ===== :824
-- Line breaks that read well, for every piece of text :837
-- Phones :845
-- Image/video preview :851
-- Image AI :855
-- ===== M4 :859
-- CJK opening bracket first in a title or snippet :886
-- Product panel (M6) :889
-- Loading placeholders in the shape of what comes (script :899
-- "Fixed" note (page/06 fixedNote) :918
+- ===== Answer card (local answers) :670
+- Featured snippet :684
+- ===== AI summary spot :695
+- The panel over the 3 lines :708
+- Opened with ⌄ (your tap) :716
+- CMU card details :724
+- Sports card :731
+- Knowledge panel (spec 3) :748
+- Wide screens :768
+- Same-shape results (spec 8) :782
+- "Only reddit :784
+- "Open archived copy" :787
+- Images row (spec 12) :791
+- Quick view :799
+- Meaning line :812
+- Site icons are back (user, 2026-11-23) :819
+- Menu lines are tap targets :822
+- ===== Vertical rhythm (one scale, by how things belong together) ===== :825
+- Line breaks that read well, for every piece of text :838
+- Phones :846
+- Image/video preview :852
+- Image AI :856
+- ===== M4 :860
+- CJK opening bracket first in a title or snippet :887
+- Product panel (M6) :890
+- Loading placeholders in the shape of what comes (script :900
+- "Fixed" note (page/06 fixedNote) :919
 
 ## vision/app.py (191 lines)
   - `load` :21

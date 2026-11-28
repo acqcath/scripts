@@ -19,7 +19,20 @@ const topGap = () => {
   for (const c of lay.querySelectorAll(".image-column")) first(c.querySelectorAll(".image-card"));
   first(lay.querySelectorAll(".image-grid > .image-card"));
   first(lay.querySelectorAll(".video-card"));
-  for (const e of [...lay.querySelectorAll("#ct-fix, #at-a-glance > *, #sidebar-col > *, .skeleton-card, .ct-skc, .ct-skimg, .command-result"), ...firsts]) {
+  // "No results" is the same on every tab: its text starts where the tab labels' text starts, at the same gap under
+  // the tabs (on Images it sat flush with the screen edge on phones and wasn't measured for the gap)
+  const nr = lay.querySelector(".no-results");
+  if (nr) {
+    const lab = [...tabs.querySelectorAll(".results-tab")].find((t) => t.getClientRects().length);
+    const tn = lab && [...lab.childNodes].find((n) => n.nodeType === 3 && n.data.trim());
+    const tx = (() => { const n = [...nr.childNodes].find((x) => x.nodeType === 3 && x.data.trim()) || nr.firstChild; if (!n) return null; const r = document.createRange(); r.selectNodeContents(n); return r.getClientRects()[0] || null; })();
+    if (tn && tx) {
+      const r = document.createRange(); r.selectNodeContents(tn);
+      const want = r.getClientRects()[0], pad = parseFloat(nr.style.paddingLeft) || 0;
+      if (want) { const next = Math.max(0, Math.round(pad + want.left - tx.left)); if (Math.abs(next - pad) >= 1) nr.style.paddingLeft = `${next}px`; }
+    }
+  }
+  for (const e of [...lay.querySelectorAll("#ct-fix, #at-a-glance > *, #sidebar-col > *, .skeleton-card, .ct-skc, .ct-skimg, .command-result, .no-results"), ...firsts]) {
     const r = e.getBoundingClientRect();
     if (!(r.height > 0) || r.top >= top) continue; // a box's text never starts above its top: no style read needed
     // a line of text starts where its letters start, not where its line spacing starts; a measured placeholder row
@@ -29,7 +42,7 @@ const topGap = () => {
   }
   if (top === Infinity) { gapEl = null; return; }
   const cur = parseFloat(lay.style.getPropertyValue("--ct-top")) || 0;
-  const want = TOUCH.matches ? 12 : 16;
+  const want = TOUCH.matches ? 16 : 20; // v98: the user found 12/16 too tight ("bump it ever so slightly")
   // measured from whatever sits right above the results: the tab row, or the open Tools fields under it (measuring from
   // the tabs alone pulled the results up under the open fields)
   const adv = document.getElementById("ct-adv"), above = Math.max(tabs.getBoundingClientRect().bottom, adv ? adv.getBoundingClientRect().bottom : 0);
