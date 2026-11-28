@@ -339,7 +339,10 @@ function NextRun($when) { Set-Content -Path $nextF -Value ([datetime]$when).AddS
 function Setup-Watcher {
   try {
     $wf = Join-Path $dir 'watcher.ps1'
-    if (-not (Test-Path $wf) -or ([IO.File]::ReadAllText($wf)) -ne $watcher) { [IO.File]::WriteAllText($wf, $watcher, (New-Object Text.UTF8Encoding $true)) }
+    $changed = -not (Test-Path $wf) -or ([IO.File]::ReadAllText($wf)) -ne $watcher
+    if ($changed) { [IO.File]::WriteAllText($wf, $watcher, (New-Object Text.UTF8Encoding $true)) }
+    # run from setup or to-podman (not by the watcher): an older running copy is ended, so the new one starts below
+    if ($changed -and -not $env:CT_WATCHER) { Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -match 'clean-titles\\watcher\.ps1' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; Start-Sleep -Seconds 1 }
     $old = Get-ScheduledTask -TaskName 'degoog clean-titles update' -ErrorAction SilentlyContinue
     $hk = Join-Path $dir 'headless-ok.txt'
     if ($old -and ($old.Actions | Select-Object -First 1).Execute -match 'conhost') { Set-Content -Path $hk -Value ok }
