@@ -83,6 +83,7 @@ Code is split by job into modules that build.py concatenates in NN order into ON
   The old every-minute scheduled task is removed by the job (or, if made from an admin terminal, emptied and the user
   is notified once to rerun ../setup-autoupdate.ps1 as admin).
 - The shell can't reach crossref/wikimedia/espn (403 CONNECT); WebFetch can reach some. No pwsh, no degoog container: live checks = the installer's self-check on the user's server.
+- Engine: Docker or Podman. ../to-podman.ps1 (one-time move) writes %LOCALAPPDATA%\clean-titles\engine-podman.txt; then install.ps1 and autoupdate-job.ps1 route every `docker` call to podman.exe (a shim function at their top, `$ctPodman`). Podman-only parts in install.ps1: sign-in start (podman-start.ps1 via the Run key: machine start, CDI refresh, start containers with a restart policy) and ct-vision (setup.sh runs inside the machine via `podman machine ssh`, docker->podman shim maps `--gpus all` to CDI `--device nvidia.com/gpu=all`, tag localhost/ct-vision). Keep new docker calls shim-compatible (plain CLI, no Docker-Desktop-only paths).
 - Installer docker calls (v87): all embedded files go in with ONE `docker cp $t\. :/tmp/ct-inst`, then one root exec (plugin
   files, inline.js) and one default-user exec (setcss, aittl, safeoff); add new embedded files to those, not new calls.
 - Never read install.ps1 or HANDOFF.md whole (540 KB / 72 KB): grep, or read the sources in files/.

@@ -1,4 +1,7 @@
 & {
+# Container engine: Podman once degoog/to-podman.ps1 moved this PC (its marker file), else Docker; every docker call below goes through this
+$ctPodman = (Test-Path (Join-Path $env:LOCALAPPDATA 'clean-titles\engine-podman.txt')) -and [bool](Get-Command podman.exe -ErrorAction SilentlyContinue)
+if ($ctPodman) { function docker { & podman.exe @args } }
 $ctSw = [Diagnostics.Stopwatch]::StartNew(); $ctT = [ordered]@{}
 $t = "$env:TEMP\ct-new"; Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $t; New-Item -ItemType Directory -Force $t | Out-Null
 [IO.File]::WriteAllText("$t\index.js", @'
@@ -8170,6 +8173,29 @@ echo "ct-vision ready: $TAG"
 
 '@).Replace("`r", ""))
 [IO.File]::WriteAllText("$vd\tag", "fc5aa733e07a")
+if ($ctPodman) {
+# Faster start after a restart: at sign-in the podman machine starts, the GPU list for containers is refreshed (driver
+# updates), and every container with a restart policy starts again (podman has no always-on daemon to do it)
+try {
+  $ps1 = Join-Path $env:LOCALAPPDATA 'clean-titles\podman-start.ps1'
+  [IO.File]::WriteAllText($ps1, @'
+$l = Join-Path $env:LOCALAPPDATA 'clean-titles\podman-start.txt'
+& podman.exe machine start 2>&1 | Out-Null
+& podman.exe machine ssh 'sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml' 2>&1 | Out-Null
+$bad = @()
+foreach ($i in @(& podman.exe ps -aq --filter status=exited --filter status=created)) {
+  $p = & podman.exe inspect $i --format '{{.HostConfig.RestartPolicy.Name}}'
+  if ($p -in 'always', 'unless-stopped', 'on-failure') { & podman.exe start $i 2>&1 | Out-Null; if ($LASTEXITCODE -ne 0) { $bad += $i } }
+}
+"$(Get-Date -Format s) started; failed: $($bad -join ',')" | Set-Content $l
+if ($bad) { try { [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null; $x = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02); $tx = $x.GetElementsByTagName('text'); $tx.Item(0).AppendChild($x.CreateTextNode('degoog (podman)')) | Out-Null; $tx.Item(1).AppendChild($x.CreateTextNode('some containers did not start at sign-in: ' + ($bad -join ', '))) | Out-Null; [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe').Show([Windows.UI.Notifications.ToastNotification]::new($x)) } catch {} }
+'@)
+  $run = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+  $v = 'conhost.exe --headless powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $ps1 + '"'
+  if ((Get-ItemProperty $run -Name 'degoog podman' -ErrorAction SilentlyContinue).'degoog podman' -ne $v) { New-ItemProperty $run -Name 'degoog podman' -Value $v -PropertyType String -Force | Out-Null }
+  Write-Host 'Podman (and so degoog) starts when you sign in: yes'
+} catch { Write-Host ('Podman start at sign-in: could not check (' + $_.Exception.Message + ')') }
+} else {
 # Faster start after a restart: Docker Desktop (and so degoog) starts as soon as you sign in to Windows. Same switch as
 # Docker Desktop's "Start Docker Desktop when you sign in" (its settings file + the Windows sign-in entry it makes).
 try {
@@ -8183,11 +8209,37 @@ try {
     Write-Host 'Docker Desktop starts when you sign in: yes'
   }
 } catch { Write-Host ('Docker Desktop start at sign-in: could not check (' + $_.Exception.Message + ')') }
+}
 docker network inspect ct-net 2>&1 | Out-Null; if ($LASTEXITCODE -ne 0) { docker network create ct-net | Out-Null }
 docker network connect ct-net $c 2>&1 | Out-Null
+if ($ctPodman) {
+  # Podman: setup.sh runs in the background inside the podman machine (as root = the same engine as here), unchanged,
+  # with a docker -> podman shim (GPU through CDI) and podman's localhost/ name for local builds
+  $vs = Join-Path $env:ProgramData 'ct-vision-src'; Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $vs; Copy-Item -Recurse $vd $vs
+  [IO.File]::WriteAllText("$vs\run.sh", (@'
+rm -rf /tmp/ct-src && cp -r "$1" /tmp/ct-src && cd /tmp/ct-src || exit 1
+sed -i -e 's#^cd /src$#cd /tmp/ct-src#' -e 's#^TAG="ct-vision:#TAG="localhost/ct-vision:#' setup.sh
+mkdir -p /tmp/ct-bin
+cat > /tmp/ct-bin/docker <<'SH'
+#!/bin/sh
+g=
+for a; do
+  shift
+  if [ "$g" = 1 ]; then g=; set -- "$@" nvidia.com/gpu=all; continue; fi
+  if [ "$a" = "--gpus" ]; then g=1; set -- "$@" --device; else set -- "$@" "$a"; fi
+done
+exec podman "$@"
+SH
+chmod +x /tmp/ct-bin/docker
+PATH=/tmp/ct-bin:$PATH setsid nohup sh setup.sh > /tmp/ct-vision-setup.log 2>&1 < /dev/null &
+'@).Replace("`r", ""))
+  $vm = '/mnt/' + $vs.Substring(0, 1).ToLower() + ($vs.Substring(2) -replace '\\', '/')
+  & podman.exe machine ssh sudo sh "$vm/run.sh" $vm 2>&1 | Out-Null
+} else {
 docker rm -f ct-vision-setup 2>&1 | Out-Null
 docker create --name ct-vision-setup -v /var/run/docker.sock:/var/run/docker.sock docker:27-cli sh /src/setup.sh | Out-Null
 docker cp "$vd\." ct-vision-setup:/src | Out-Null; docker start ct-vision-setup | Out-Null
+}
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $vd
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $t
 $ctT['files'] = $ctSw.Elapsed.TotalSeconds

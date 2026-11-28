@@ -5,6 +5,9 @@
 $dir = Join-Path $env:LOCALAPPDATA 'clean-titles'
 $mark = Join-Path $dir 'installed.txt'
 $log = Join-Path $dir 'last-run.txt'
+# Container engine: Podman once degoog/to-podman.ps1 moved this PC (its marker file), else Docker; every docker call below goes through this
+$ctPodman = (Test-Path (Join-Path $env:LOCALAPPDATA 'clean-titles\engine-podman.txt')) -and [bool](Get-Command podman.exe -ErrorAction SilentlyContinue)
+if ($ctPodman) { function docker { & podman.exe @args } }
 function Notify($text) {
   try {
     [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
@@ -196,6 +199,8 @@ $watcher = @'
 # confirmed with git), a ⚑ was saved, or the job asked to run again at a set time. Installs wait until degoog has had
 # 15 s without a search and no game or other full-screen app is running. Log: watcher.txt next to this file.
 $d = Join-Path $env:LOCALAPPDATA 'clean-titles'; $j = Join-Path $d 'job.ps1'; $wjs = Join-Path $d 'ct-wait.js'
+# Podman once degoog/to-podman.ps1 moved this PC (its marker file): every docker call below goes to podman.exe
+if ((Test-Path (Join-Path $d 'engine-podman.txt')) -and (Get-Command podman.exe -ErrorAction SilentlyContinue)) { function docker { & podman.exe @args } }
 try { (Get-Process -Id $PID).PriorityClass = 'BelowNormal' } catch {}
 $mx = New-Object Threading.Mutex($false, 'Local\degoog-clean-titles-watcher')
 try { if (-not $mx.WaitOne(20000)) { exit } } catch [Threading.AbandonedMutexException] {}
