@@ -44,3 +44,5 @@ only those lines (`sed -n A,Bp files/x.js`).
 - Never read installer.ps1 or HANDOFF.md whole (540 KB / 72 KB): grep, or read the sources in files/.
 - A clone with `-b <branch>` is single-branch: fetch main as `git fetch --depth=10 origin main:refs/remotes/origin/main`; cherry-picking WIP onto main needs depth past the shared parent (else every file conflicts as "both added").
 - Name a release from main's newest version (`git log -3 origin/main`), not from the plan: a side PR can take the next number.
+- Python/torch: `pip install --break-system-packages torch transformers` works from PyPI (download.pytorch.org and huggingface.co are blocked), so vision/app.py logic can be checked on a tiny random-config model: test/rerank_equiv.py.
+- Reranker cost: never call the whole causal LM (`rmodel(**x).logits`): that's a vocab-sized row per token (GBs per pass). Use `rmodel.model(...).last_hidden_state[:, -1]` + `lm_head` (v69). /rank returns `gpu` and `wait` ms; status/speed show their medians.
