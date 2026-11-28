@@ -135,7 +135,7 @@ process.stdout.write(String(j.html || "").replace(/&lt;/g, "<").replace(/&gt;/g,
     if (-not (Test-Path (Join-Path $repo '.git'))) { git clone -q --depth 1 --filter=blob:none --sparse https://github.com/acqcath/scripts $repo 2>&1 | Out-Null; git -C $repo sparse-checkout set degoog 2>&1 | Out-Null }
     git -C $repo pull -q --ff-only 2>&1 | Out-Null
     $id = if (Test-Path $sessF) { (Get-Content $sessF -Raw).Trim() } else { '' }
-    if ($id -notmatch "^$sessRe$") { $id = New-ReportsSession $repo; if (-not $id) { return } }
+    if ($id -notmatch "^$sessRe$") { $id = New-ReportsSession $repo; if (-not $id) { Log "$(Get-Date -Format s) $($w.n) report(s) waiting: no reports session yet (claude $((Get-Command claude -ErrorAction SilentlyContinue).Source))"; return } }
     $r = Send-ToSession $id $w.prompt
     # archived or deleted session: start a new standing one and send there
     if (-not $r.ok -and $r.text -match 'not found|archived') { Remove-Item $sessF -ErrorAction SilentlyContinue; $id = New-ReportsSession $repo; if ($id) { $r = Send-ToSession $id $w.prompt } }
@@ -160,10 +160,12 @@ process.stdout.write(String(j.html || "").replace(/&lt;/g, "<").replace(/&gt;/g,
   }
 }
 # Log that never grows without end
+# The job's own lines (reports sent or not, sign-in, failures) go to job.txt: last-run.txt is rewritten by each install
+$jlog = Join-Path $dir 'job.txt'
 function Log($line) {
   try {
-    Add-Content -Path $log -Value $line
-    if ((Get-Item $log).Length -gt 200KB) { $k = Get-Content $log -Tail 200; Set-Content -Path $log -Value $k -Encoding UTF8 }
+    Add-Content -Path $jlog -Value $line
+    if ((Get-Item $jlog).Length -gt 200KB) { $k = Get-Content $jlog -Tail 200; Set-Content -Path $jlog -Value $k -Encoding UTF8 }
   } catch {}
 }
 # Files come from raw.githubusercontent.com, not GitHub's API: the API allows 60 requests an hour per internet
@@ -294,7 +296,8 @@ while ($true) {
     if (-not $c) { Wait-Container; continue }
     if (-not (Test-Path $wjs)) { Get-Files $sha; if (-not (Test-Path $wjs)) { Start-Sleep -Seconds 60; continue } }
     docker cp $wjs "${c}:/tmp/ct-wait.js" 2>$null | Out-Null
-    if ($null -eq $handled) { $handled = Rev $c; if ($null -eq $handled) { $handled = '' } }
+    # nothing counts as handled when the watcher starts: reports still waiting from before are sent (one try per start)
+    if ($null -eq $handled) { $handled = '' }
     $h = if ($handled) { $handled } else { '-' }; $s = if ($since) { $since } else { '-' }
     $t0 = Get-Date
     $line = First-Line $ENG "exec $c bun /tmp/ct-wait.js $DIRC $TOPIC $s $h $(Ms-Until-Timer) $mode"

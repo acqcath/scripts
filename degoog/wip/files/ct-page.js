@@ -1,5 +1,5 @@
-// clean-titles v96
-const CT_VER = "v96";
+// clean-titles v97
+const CT_VER = "v97";
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
