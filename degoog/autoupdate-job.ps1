@@ -200,7 +200,9 @@ $watcher = @'
 # 15 s without a search and no game or other full-screen app is running. Log: watcher.txt next to this file.
 $d = Join-Path $env:LOCALAPPDATA 'clean-titles'; $j = Join-Path $d 'job.ps1'; $wjs = Join-Path $d 'ct-wait.js'
 # Podman once degoog/to-podman.ps1 moved this PC (its marker file): every docker call below goes to podman.exe
-if ((Test-Path (Join-Path $d 'engine-podman.txt')) -and (Get-Command podman.exe -ErrorAction SilentlyContinue)) { function docker { & podman.exe @args } }
+# ($ENG too: First-Line starts the program itself, which a PowerShell function can't redirect)
+$ENG = 'docker'
+if ((Test-Path (Join-Path $d 'engine-podman.txt')) -and (Get-Command podman.exe -ErrorAction SilentlyContinue)) { $ENG = 'podman.exe'; function docker { & podman.exe @args } }
 try { (Get-Process -Id $PID).PriorityClass = 'BelowNormal' } catch {}
 $mx = New-Object Threading.Mutex($false, 'Local\degoog-clean-titles-watcher')
 try { if (-not $mx.WaitOne(20000)) { exit } } catch [Threading.AbandonedMutexException] {}
@@ -272,7 +274,7 @@ function First-Line($exe, $argline) {
 }
 # degoog isn't running: sleep until docker reports a container start (if docker itself isn't up yet, it comes up
 # with Windows: look again in 30 s)
-function Wait-Container { if ($null -eq (First-Line 'docker' 'events --filter type=container --filter event=start')) { Start-Sleep -Seconds 30 } }
+function Wait-Container { if ($null -eq (First-Line $ENG 'events --filter type=container --filter event=start')) { Start-Sleep -Seconds 30 } }
 # What's waiting to be sent right now (pc.json rev; "" = nothing); $null when it can't be read
 function Rev($c) { try { $t = docker exec $c cat "$DIRC/pc.json" 2>$null | Out-String; if ($t.Trim()) { return [string](($t | ConvertFrom-Json).rev) }; return '' } catch {}; $null }
 function Ms-Until-Timer {
@@ -295,7 +297,7 @@ while ($true) {
     if ($null -eq $handled) { $handled = Rev $c; if ($null -eq $handled) { $handled = '' } }
     $h = if ($handled) { $handled } else { '-' }; $s = if ($since) { $since } else { '-' }
     $t0 = Get-Date
-    $line = First-Line 'docker' "exec $c bun /tmp/ct-wait.js $DIRC $TOPIC $s $h $(Ms-Until-Timer) $mode"
+    $line = First-Line $ENG "exec $c bun /tmp/ct-wait.js $DIRC $TOPIC $s $h $(Ms-Until-Timer) $mode"
     $ev = $null; try { $ev = $line | ConvertFrom-Json } catch {}
     if (-not $ev) {
       # degoog restarted (an install) or the exec failed: look again; a quick failure waits a little first

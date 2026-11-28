@@ -139,6 +139,13 @@ Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $mv
 Say 'switched to podman. installing clean-titles into it now (degoog restarts for a few seconds)...'
 $o = & ([scriptblock]::Create((Invoke-RestMethod https://api.github.com/repos/acqcath/scripts/contents/degoog/install.ps1 -Headers @{Accept = 'application/vnd.github.raw'}))) 2>&1 | Out-String -Width 200
 $o
+# the job writes this version's watcher (an older copy on disk would still call docker.exe) and starts it
+try {
+  $jf = Join-Path $dir 'job.ps1'
+  [IO.File]::WriteAllText($jf, (Invoke-RestMethod https://api.github.com/repos/acqcath/scripts/contents/degoog/autoupdate-job.ps1 -Headers @{Accept = 'application/vnd.github.raw'}), (New-Object Text.UTF8Encoding $true))
+  Get-ChildItem $dir -Filter 'job.ps1.sha' -ErrorAction SilentlyContinue | Remove-Item -Force
+  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $jf | Out-Null
+} catch { Say ('watcher update failed: ' + $_.Exception.Message) }
 Resume
 ("to-podman: moved " + ($moved -join ', ') + "`n" + $o) | Set-Clipboard
 Say 'done. the installer output is on your clipboard: paste it to Claude'
