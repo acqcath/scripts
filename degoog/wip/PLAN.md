@@ -78,7 +78,7 @@ earliest releaseDate). Wide: right column (inside the info panel if shown). Phon
 the first result below the screen (zero shift). Release date only from releaseDate (no "earliest dated result"
 guess: a page date isn't a release date). Switch: the Knowledge panel setting. Self-check row "Product panel".
 
-### M7: notes match the code; clean, readable code; smoother page (user, 2026-11-28) [1-3 done: v85 notes + dead code, v86 module split]
+### M7: notes match the code; clean, readable code; smoother page (user, 2026-11-28) [1-3 done (v85, v86); 4: v87 install batching, v88 pass timing in ⚑ ctx + headless stub (worst: list ~25 ms, gap ~15 ms, flag up to 24 ms per search); next: cut list/gap/flag passes, then 5]
 User's words: every note must match the code (a stale note made Claude say updates install hourly; they install
 ~1 min after a merge); optimize and smooth everything; no spaghetti: code Claude can read, change and understand.
 Each step is its own version; tests (`bun test`) stay green; behavior unchanged unless a step says so.

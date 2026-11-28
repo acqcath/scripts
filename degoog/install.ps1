@@ -1615,14 +1615,17 @@ const flagOpen = () => readFlags().list.filter((f) => !f.handed);
 export const FLAG_CATS = [["offtopic", "Off-topic"], ["spam", "Spam / junk"], ["missing", "Missing what I wanted"], ["outdated", "Outdated"],
   ["order", "Wrong order"], ["layout", "Layout looks off"], ["broken", "Something's broken or slow"]];
 export const flagCats = (a) => { const ok = new Set(FLAG_CATS.map((c) => c[0])); return [...new Set((Array.isArray(a) ? a : []).map(String))].filter((c) => ok.has(c)); };
-// Context sent with each flag, clipped to sane sizes: {vw, vh, dpr, phone, load: {name: ms}, boxes: [{box, n}]}
+// Context sent with each flag, clipped to sane sizes: {vw, vh, dpr, phone, load: {name: ms}, boxes: [{box, n}],
+// passes: {page pass: ms on this search}, batches: observer runs}
 export const flagCtxClean = (c) => {
   if (!c || typeof c !== "object") return null;
   const num = (v, max = 1e6) => (Number.isFinite(+v) ? Math.max(0, Math.min(max, Math.round(+v))) : null);
   const load = {};
   for (const [k, v] of Object.entries(c.load && typeof c.load === "object" ? c.load : {}).slice(0, 12)) { const n = num(v, 600000); if (n !== null) load[String(k).slice(0, 40)] = n; }
   const boxes = (Array.isArray(c.boxes) ? c.boxes : []).slice(0, 30).map((b) => ({ box: String((b && b.box) || "").slice(0, 60), n: num(b && b.n, 999) || 1 })).filter((b) => b.box);
-  return { ver: String(c.ver || "").slice(0, 20), vw: num(c.vw, 10000), vh: num(c.vh, 10000), dpr: Number.isFinite(+c.dpr) ? Math.round(+c.dpr * 100) / 100 : null, phone: !!c.phone, load, boxes };
+  const passes = {};
+  for (const [k, v] of Object.entries(c.passes && typeof c.passes === "object" ? c.passes : {}).slice(0, 8)) { const n = num(v, 600000); if (n !== null) passes[String(k).slice(0, 20)] = n; }
+  return { ver: String(c.ver || "").slice(0, 20), vw: num(c.vw, 10000), vh: num(c.vh, 10000), dpr: Number.isFinite(+c.dpr) ? Math.round(+c.dpr * 100) / 100 : null, phone: !!c.phone, load, boxes, passes, batches: num(c.batches, 1e6) };
 };
 
 // The prompt the PC job sends into the reports session (its link fits about 14,000 characters: snippets are dropped
@@ -2378,8 +2381,8 @@ export default {
 };
 '@)
 [IO.File]::WriteAllText("$t\script.js", @'
-// clean-titles v87
-const CT_VER = "v87";
+// clean-titles v88
+const CT_VER = "v88";
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -5260,7 +5263,9 @@ const flagCtx = () => {
       if (last && last.box === k) last.n++; else boxes.push({ box: k, n: 1 });
     }
   }
-  return { ver: typeof CT_VER === "string" ? CT_VER : "", vw: innerWidth, vh: innerHeight, dpr: devicePixelRatio, phone: PHONE.matches, load, boxes };
+  // the 8 passes that took longest on this search (ms, all runs added up) and how many observer runs it took
+  const passes = Object.fromEntries([...PASS_MS].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => [k, Math.round(v * 10) / 10]));
+  return { ver: typeof CT_VER === "string" ? CT_VER : "", vw: innerWidth, vh: innerHeight, dpr: devicePixelRatio, phone: PHONE.matches, load, boxes, passes, batches: BATCHES };
 };
 const curType = () => { try { return new URL(location.href).searchParams.get("type") || tabNow || "web"; } catch { return tabNow || "web"; } };
 const flagBox = (btn) => {
@@ -5375,7 +5380,7 @@ const topGap = () => {
   let top = Infinity;
   for (const e of lay.querySelectorAll("#ct-fix, #at-a-glance > *, #sidebar-col > *, .result-item .result-url-row, .skeleton-card, .ct-skc, .ct-skimg, .command-result, .image-card, .video-card")) {
     const r = e.getBoundingClientRect();
-    if (!(r.height > 0)) continue;
+    if (!(r.height > 0) || r.top >= top) continue; // a box's text never starts above its top: no style read needed
     // a line of text starts where its letters start, not where its line spacing starts; a measured placeholder row
     // where its result's link line will start
     const t = e.dataset.ut != null ? r.top + +e.dataset.ut : textTop(e, r);
@@ -6548,7 +6553,13 @@ const tabKeep = () => {
   if (tl && tl.parentElement === row && tl.nextElementSibling && tl.nextElementSibling !== fl) row.append(tl);
   if (fl && fl.parentElement === row && fl.nextElementSibling) row.append(fl);
 };
-const safe = (name, fn) => { try { fn(); } catch (e) { console.error(`clean-titles ${name}:`, e); } };
+// Every pass runs through safe(): an error in one never stops the others, and its time is added up per search
+// (PASS_MS: name -> ms, BATCHES: observer runs), so each ⚑ says which passes cost the most on that device
+const PASS_MS = new Map();
+let passFor = "", BATCHES = 0;
+const passReset = () => { const id = searchId(); if (id !== passFor) { passFor = id; PASS_MS.clear(); BATCHES = 0; } BATCHES++; };
+globalThis.__ctPass = () => ({ batches: BATCHES, ms: Object.fromEntries(PASS_MS) }); // read by test/headless/run.cjs
+const safe = (name, fn) => { const t = performance.now(); try { fn(); } catch (e) { console.error(`clean-titles ${name}:`, e); } PASS_MS.set(name, (PASS_MS.get(name) || 0) + performance.now() - t); };
 // A tab tapped while degoog's first search is still starting is ignored by degoog (it has no current search yet), so the
 // page seemed stuck until it finished loading. The tap is kept and repeated until degoog takes it (its tab turns
 // active); degoog then drops the search that was loading and opens the tab. A later tap on another tab cancels it.
@@ -6591,6 +6602,7 @@ const init = () => {
   safe("drawn", markDrawn);
   // Runs right after degoog inserts results and before the screen updates; only looks inside what was added
   new MutationObserver((muts) => {
+    passReset();
     safe("query", readQuery);
     safe("early", earlyStart);
     safe("answer", ansPass);
@@ -8075,7 +8087,7 @@ $null = docker exec $c sh -c 'for i in $(seq 1 200); do curl -fs -o /dev/null ht
 $ctT['ready'] = $ctSw.Elapsed.TotalSeconds
 
 $ss = docker exec $c cat /app/data/server-settings.json | Out-String | ConvertFrom-Json
-"plugin code inside the page (should be v87): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
+"plugin code inside the page (should be v88): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
 "page files (should be a ct and a psl file): " + (docker exec $c sh -c 'ls /app/src/public/ct/')
 "progressive results off (should be False): $($ss.settings.streamingEnabled -eq $true)"
 "typo fixer word list (should be about 82800): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/words.txt')

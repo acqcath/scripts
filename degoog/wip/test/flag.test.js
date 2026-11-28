@@ -50,7 +50,7 @@ test("flag: ⚑ box saves; no count, no send link", async () => {
   box.dispatchEvent(new win.Event("submit", { cancelable: true }));
   await new Promise((r) => setTimeout(r, 30));
   expect(saved[0].q).toBe("nike shoes"); expect(saved[0].note).toBe("nike.com should be first"); expect(saved[0].cats).toEqual(["order"]);
-  expect(saved[0].ctx && typeof saved[0].ctx.vw).toBe("number"); expect(Array.isArray(saved[0].ctx.boxes)).toBe(true); expect(saved[0].ctx.load).toBeTruthy();
+  expect(saved[0].ctx && typeof saved[0].ctx.vw).toBe("number"); expect(Array.isArray(saved[0].ctx.boxes)).toBe(true); expect(saved[0].ctx.load).toBeTruthy(); expect(typeof saved[0].ctx.passes).toBe("object");
   expect(box.querySelector('[aria-pressed="true"]')).toBe(null); // chips reset after Save expect(saved[0].top[0].url).toBe("https://www.nike.com/");
   expect(box.querySelector("a")).toBe(null); // no manual send link: the PC job sends by itself
   expect(box.textContent).toContain("Saved.");
@@ -71,7 +71,8 @@ test("⚑ categories and context: server and page agree, junk dropped", () => {
   expect(sCats(["order", "x", "order", "spam"])).toEqual(["order", "spam"]);
   expect(sCats(null)).toEqual([]);
   const raw = { vw: 390.4, vh: 844, dpr: 3, phone: 1, load: { page: 812.6, results: "1500", bad: "x" }, boxes: [{ box: "results-list > result-item", n: 10 }, { box: "" }] };
-  const want = { ver: "", vw: 390, vh: 844, dpr: 3, phone: true, load: { page: 813, results: 1500 }, boxes: [{ box: "results-list > result-item", n: 10 }] };
+  const want = { ver: "", vw: 390, vh: 844, dpr: 3, phone: true, load: { page: 813, results: 1500 }, boxes: [{ box: "results-list > result-item", n: 10 }], passes: { list: 12 }, batches: 4 };
+  raw.passes = { list: 12.4, bad: "x" }; raw.batches = 4;
   const s = flagPrompt([{ t: 0, q: "a", type: "web", cats: ["order"], note: "", ctx: want, top: [] }], "");
   expect(s).toContain('"cats":["order"]');
   expect(s).toContain('"vw":390');

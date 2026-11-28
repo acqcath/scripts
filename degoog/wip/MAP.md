@@ -176,7 +176,7 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
   - `doiAsk` :49
   - `doiNames` :56
 
-## server/09-flags.js (100 lines)
+## server/09-flags.js (103 lines)
 - **⚑ Flags: "what's wrong with these results?" from the ⚑ in the tab row** :2
   - `flagsFile` :6
   - `installTiming` :8
@@ -185,14 +185,14 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
   - `flagIssue` :12
   - `flagOpen` :13
   - `flagCats` :17
-  - `flagCtxClean` :19
-  - `flagPrompt` :30
-  - `aiAsk` :44
-  - `judgeParse` :79
-  - `flagHost` :84
-  - `flagJudge` :86
-  - `judgeNow` :97
-  - `flagCount` :98
+  - `flagCtxClean` :20
+  - `flagPrompt` :33
+  - `aiAsk` :47
+  - `judgeParse` :82
+  - `flagHost` :87
+  - `flagJudge` :89
+  - `judgeNow` :100
+  - `flagCount` :101
 
 ## server/10-needs.js (130 lines)
   - `needsParse` :22
@@ -354,13 +354,13 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
   - `advParse` :258
   - `tools` :270
 
-## page/06-flag.js (145 lines)
+## page/06-flag.js (147 lines)
   - `flagTop` :5
   - `flagCtx` :20
-  - `curType` :45
-  - `flagBox` :46
-  - `flagPlace` :123
-  - `flagBtn` :130
+  - `curType` :47
+  - `flagBox` :48
+  - `flagPlace` :125
+  - `flagBtn` :132
 
 ## page/07-layout.js (184 lines)
   - `topGap` :4
@@ -435,13 +435,15 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
   - `prodCard` :213
   - `productPass` :237
 
-## page/11-init.js (129 lines)
+## page/11-init.js (136 lines)
   - `tabKind` :2
   - `tabKeep` :3
-  - `safe` :27
-  - `tabRescue` :32
-  - `init` :47
-- **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :85
+  - `passReset` :31
+  - `globalThis.__ctPass` :32
+  - `safe` :33
+  - `tabRescue` :38
+  - `init` :53
+- **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :92
 
 ## core.js (612 lines)
 - **Sites: registrable domain via the public suffix list** :4

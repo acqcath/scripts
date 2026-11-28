@@ -11,7 +11,7 @@ const topGap = () => {
   let top = Infinity;
   for (const e of lay.querySelectorAll("#ct-fix, #at-a-glance > *, #sidebar-col > *, .result-item .result-url-row, .skeleton-card, .ct-skc, .ct-skimg, .command-result, .image-card, .video-card")) {
     const r = e.getBoundingClientRect();
-    if (!(r.height > 0)) continue;
+    if (!(r.height > 0) || r.top >= top) continue; // a box's text never starts above its top: no style read needed
     // a line of text starts where its letters start, not where its line spacing starts; a measured placeholder row
     // where its result's link line will start
     const t = e.dataset.ut != null ? r.top + +e.dataset.ut : textTop(e, r);
