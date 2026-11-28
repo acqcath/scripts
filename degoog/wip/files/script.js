@@ -1426,12 +1426,22 @@ const flagBox = (btn) => {
   const close = () => {
     document.getElementById("ct-flagbox")?.remove(); document.getElementById("ct-flagscrim")?.remove();
     btn.setAttribute("aria-expanded", "false"); removeEventListener("keydown", esc); removeEventListener("resize", place);
+    if (vv) { vv.removeEventListener("resize", place); vv.removeEventListener("scroll", place); }
+    document.documentElement.classList.remove("ct-sheet-open");
   };
   const esc = (e) => { if (e.key === "Escape") { close(); btn.focus(); } };
+  const vv = window.visualViewport;
   const place = () => {
     const b = document.getElementById("ct-flagbox");
     if (!b) return;
-    if (TOUCH.matches) { b.style.top = b.style.left = ""; return; }
+    // Phone sheet: pinned to the part of the screen that's actually visible (visualViewport), so an open keyboard,
+    // the browser's bars or iOS scrolling the page for the focused box never leave a gap or hide part of it
+    if (TOUCH.matches) {
+      b.style.top = b.style.left = "";
+      if (vv) { b.style.bottom = `${Math.max(0, Math.round(innerHeight - vv.height - vv.offsetTop))}px`; b.style.maxHeight = `${Math.round(vv.height - 8)}px`; }
+      return;
+    }
+    b.style.bottom = b.style.maxHeight = "";
     const r = btn.getBoundingClientRect(), w = b.offsetWidth || 440;
     b.style.top = `${Math.round(r.bottom + scrollY + 6)}px`;
     b.style.left = `${Math.round(Math.max(12, Math.min(r.right - w, innerWidth - w - 12)) + scrollX)}px`;
@@ -1484,6 +1494,9 @@ const flagBox = (btn) => {
   document.body.append(scrim, box);
   place();
   addEventListener("keydown", esc); addEventListener("resize", place);
+  if (vv) { vv.addEventListener("resize", place); vv.addEventListener("scroll", place); }
+  // the page behind stays still while the sheet is open (no scrolling the results under it)
+  if (TOUCH.matches) document.documentElement.classList.add("ct-sheet-open");
   if (!TOUCH.matches) t.focus();
 };
 // ⚑ sits in the header right after the settings gear (same round button); its box still opens over the results
