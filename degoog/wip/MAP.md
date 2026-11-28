@@ -176,23 +176,24 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
   - `doiAsk` :49
   - `doiNames` :56
 
-## server/09-flags.js (103 lines)
-- **⚑ Flags: "what's wrong with these results?" from the ⚑ in the tab row** :2
-  - `flagsFile` :6
-  - `installTiming` :8
-  - `readFlags` :10
-  - `saveFlags` :11
-  - `flagIssue` :12
-  - `flagOpen` :13
-  - `flagCats` :17
-  - `flagCtxClean` :20
-  - `flagPrompt` :33
-  - `aiAsk` :47
-  - `judgeParse` :82
-  - `flagHost` :87
-  - `flagJudge` :89
-  - `judgeNow` :100
-  - `flagCount` :101
+## server/09-flags.js (108 lines)
+- **⚑ Flags: "what's wrong with these results?" from the ⚑ in the tab row** :3
+  - `flagsFile` :7
+  - `installTiming` :9
+  - `readFlags` :11
+  - `saveFlags` :12
+  - `flagIssue` :13
+  - `flagOpen` :14
+  - `flagCats` :18
+  - `flagCtxClean` :21
+  - `flagPrompt` :34
+  - `aiAsk` :49
+  - `flagCount` :76
+- **Sending soon, "fixed" once, and what the PC's job reads** :77
+  - `flagDue` :80
+  - `fixedNews` :83
+  - `pcWrite` :96
+  - `searchSeen` :103
 
 ## server/10-needs.js (130 lines)
   - `needsParse` :22
@@ -219,7 +220,7 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
   - `_learnReset` :111
   - `needsFor` :112
 
-## server/11-rank.js (111 lines)
+## server/11-rank.js (112 lines)
 - **M4: the answer card's shape and the contested check, both written by ai-summary's model (aiAsk)** :2
   - `cell` :12
   - `shapeParse` :13
@@ -233,43 +234,44 @@ Server = files/server/NN-*.js (built into files/index.js), page = files/page/NN-
   - `median` :64
   - `rankWait` :65
   - `globalThis.__ctResults` :66
-  - `ctResults` :70
-  - `rankPart` :80
+  - `ctResults` :71
+  - `rankPart` :81
 
-## server/12-routes.js (440 lines)
+## server/12-routes.js (451 lines)
   - route `/flag` :6
-  - route `/flags` :24
-  - route `/vis` :44
-  - route `/status` :57
-  - route `/needs` :71
-  - route `/seen` :81
-  - route `/shape` :87
-  - route `/sides` :93
-  - route `/speed` :99
-  - route `/cut` :105
-  - route `/rank` :111
-  - route `/near` :122
-  - route `/fix` :132
-  - route `/qs` :152
-  - route `/relay` :163
-  - route `/sites` :183
-  - route `/why` :201
-  - route `/wd` :206
-  - route `/product` :215
-  - route `/qv` :225
-  - route `/qvs` :233
-  - route `/arch` :242
-  - route `/kp` :250
-  - route `/sports` :258
-  - route `/cmu` :266
-  - route `/eol` :274
-  - route `/aiimg` :284
-  - route `/seo` :294
-  - route `/prefs` :304
-  - route `/perf` :310
-  - route `/learn` :326
-  - route `/yt` :339
-  - route `/hd` :349
+  - route `/flags` :23
+  - route `/fixednews` :43
+  - route `/vis` :53
+  - route `/status` :66
+  - route `/needs` :80
+  - route `/seen` :90
+  - route `/shape` :96
+  - route `/sides` :102
+  - route `/speed` :108
+  - route `/cut` :114
+  - route `/rank` :120
+  - route `/near` :131
+  - route `/fix` :141
+  - route `/qs` :161
+  - route `/relay` :172
+  - route `/sites` :192
+  - route `/why` :210
+  - route `/wd` :215
+  - route `/product` :224
+  - route `/qv` :234
+  - route `/qvs` :242
+  - route `/arch` :251
+  - route `/kp` :259
+  - route `/sports` :267
+  - route `/cmu` :275
+  - route `/eol` :283
+  - route `/aiimg` :293
+  - route `/seo` :303
+  - route `/prefs` :313
+  - route `/perf` :319
+  - route `/learn` :335
+  - route `/yt` :348
+  - route `/hd` :358
 
 ## page/01-base.js (207 lines)
   - `bridge` :3

@@ -13,8 +13,7 @@ export const routes = [
       F.list.push({ id: now, t: now, q, type: String(b.type || "web").slice(0, 40), cats: flagCats(b.cats), note: String(b.note || "").trim().slice(0, 1000), ctx: flagCtxClean(b.ctx),
         top: (Array.isArray(b.top) ? b.top : []).slice(0, 10).map((r) => ({ ai: r && Number.isFinite(+r.ai) && r.ai !== null ? Math.max(0, Math.min(1, +r.ai)) : null, title: String((r && r.title) || "").slice(0, 200), url: String((r && r.url) || "").slice(0, 500), snippet: String((r && r.snippet) || "").slice(0, 300) })).filter((r) => /^https?:\/\//.test(r.url)) });
       if (F.list.length > 500) F.list = F.list.slice(-500);
-      saveFlags();
-      flagJudge().catch(() => {});
+      saveFlags(); pcWrite();
       return jsonOut({ n: flagCount() });
     },
   },
@@ -28,14 +27,24 @@ export const routes = [
         const F = readFlags(), now = Date.now();
         for (const f of open) f.handed = now;
         if (i) F.issueAt = i.t;
-        saveFlags();
+        saveFlags(); pcWrite();
         return jsonOut({ flags: [], issue: "" });
       }
-      // The PC's hourly job (../autoupdate-job.ps1 SendReports): the prompt itself, with no " or \ in it, because
+      // The PC's job (../autoupdate-job.ps1 SendReports): the prompt itself, with no " or \ in it, because
       // Windows PowerShell mangles those in arguments to programs
-      const jd = open.length ? await flagJudge().catch(() => null) : null;
-      if (new URL(req.url).searchParams.get("prompt") === "1") return jsonOut({ n: open.length + (i ? 1 : 0), issue: !!i, send: !!i || !!(jd && jd.send), why: jd ? jd.why : "", prompt: (flagPrompt(open, i ? i.text : "") + (installTiming() ? "\nLast install " + installTiming() : "")).replace(/["\\]/g, "'") });
-      return jsonOut({ flags: open, issue: i ? i.text : "", send: !!(jd && jd.send), why: jd ? jd.why : "" });
+      const send = flagDue(open, i);
+      if (new URL(req.url).searchParams.get("prompt") === "1") return jsonOut({ n: open.length + (i ? 1 : 0), issue: !!i, send, prompt: (flagPrompt(open, i ? i.text : "") + (installTiming() ? "\nLast install " + installTiming() : "")).replace(/["\\]/g, "'") });
+      return jsonOut({ flags: open, issue: i ? i.text : "", send });
+    },
+  },
+  {
+    // "Fixed" note: reports the installed version fixed, told once (whichever device asks first) -> {items: [{ver, what}]}
+    method: "post",
+    path: "/fixednews",
+    async handler() {
+      const F = readFlags(), items = fixedNews(F.list, CT_FIXED);
+      if (items.length) saveFlags();
+      return jsonOut({ items });
     },
   },
   {
@@ -192,7 +201,7 @@ export const routes = [
       }
       const sites = sitesFromLists(block, score);
       mirrorTo(sites);
-      return new Response(JSON.stringify({ sites, auto: autoList().filter((d) => sites[d] === "lower"), seo: SEO_ON, ai: aiStatus(data), flags: flagCount(), flagDue: !!flagIssue() || !!(judgeNow() && judgeNow().send), fx: readFx().rates ? { date: FX.date, rates: FX.rates } : null }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+      return new Response(JSON.stringify({ sites, auto: autoList().filter((d) => sites[d] === "lower"), seo: SEO_ON, ai: aiStatus(data), flags: flagCount(), flagDue: flagDue(flagOpen(), flagIssue()), fx: readFx().rates ? { date: FX.date, rates: FX.rates } : null }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
     },
   },
   {
@@ -415,7 +424,9 @@ export default {
     if (ctx && typeof ctx.fetch === "function") _fetch = ctx.fetch;
     if (!process.env.CT_NO_TIMERS) { aiSchedule(); fxSchedule(); trendSchedule(); const t = setTimeout(() => ensureData(), 90000); if (t.unref) t.unref();
       // First search after a restart: read the typo fixer's word lists now (off the request path) instead of on it
-      const p = setTimeout(() => { try { load(); } catch {} }, 500); if (p.unref) p.unref(); }
+      const p = setTimeout(() => { try { load(); } catch {} }, 500); if (p.unref) p.unref();
+      // pc.json at start, so reports waiting from before a restart are sent
+      const w = setTimeout(() => { try { pcWrite(); } catch {} }, 1000); if (w.unref) w.unref(); }
   },
 
   // Bridge: the page reaches the routes above through degoog's command address (/api/command),

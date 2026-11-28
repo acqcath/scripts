@@ -1,8 +1,9 @@
 // ----- server/09-flags.js: ⚑ flags: storage, prompt, the local model's send verdict -----
+// The reports a release fixed, {flag id: version}: files/fixed.json, built in by build.py (CT_FIXED)
 // ===== ⚑ Flags: "what's wrong with these results?" from the ⚑ in the tab row =====
 // Save in the ⚑ box keeps each flag (the search, the tab, your note, its top 10 results) in flags.json on this
-// server only. The local model (flagJudge) decides when what's waiting is worth a Claude session; the PC's hourly job
-// then sends it all in one (flagPrompt), plus the updater's last problem (update-issue.txt, sent at once).
+// server only. The PC's job sends what's waiting about 90 s after the last ⚑ (flagDue: a few in a row go together),
+// in one prompt (flagPrompt), plus the updater's last problem (update-issue.txt, sent at once).
 const flagsFile = () => `${DIR}/flags.json`, issueFile = () => `${DIR}/update-issue.txt`;
 // The installer's last "install timing (s)" line (written by ../install.ps1 after its self-check), shown in status and reports
 const installTiming = () => { try { return fs.readFileSync(`${DIR}/install-timing.txt`, "utf8").trim().slice(0, 300); } catch { return ""; } };
@@ -33,8 +34,9 @@ export const flagCtxClean = (c) => {
 export const flagPrompt = (flags, issue, max = 12000) => {
   const head = "degoog clean-titles: fix what my degoog reported. Read degoog/wip/QUICKSTART.md in acqcath/scripts first and follow its \"Flags\" steps: " +
     "fix the code so the searches below come out right, add tests, release and merge. " +
+    "Put the id of every report the release fixes in degoog/wip/files/fixed.json (id: version), so my degoog tells me once it is in. " +
     "Keep my searches out of the public repo.\n";
-  const body = (fl, snip) => JSON.stringify({ flags: fl.map((f) => ({ at: new Date(f.t).toISOString(), q: f.q, tab: f.type, cats: f.cats || [], note: f.note, ctx: f.ctx || null, top: (f.top || []).map((r) => (snip ? { ai: r.ai ?? null, title: r.title, url: r.url, snippet: r.snippet } : { ai: r.ai ?? null, title: r.title, url: r.url })) })), updateIssue: issue || null });
+  const body = (fl, snip) => JSON.stringify({ flags: fl.map((f) => ({ id: f.id, at: new Date(f.t).toISOString(), q: f.q, tab: f.type, cats: f.cats || [], note: f.note, ctx: f.ctx || null, top: (f.top || []).map((r) => (snip ? { ai: r.ai ?? null, title: r.title, url: r.url, snippet: r.snippet } : { ai: r.ai ?? null, title: r.title, url: r.url })) })), updateIssue: issue || null });
   let fl = (flags || []).slice(-20);
   for (;;) {
     for (const snip of [true, false]) { const s = head + body(fl, snip); if (s.length <= max || fl.length <= 1) { if (s.length <= max || !snip) return s.slice(0, max); } }
@@ -71,32 +73,35 @@ const aiAsk = async (messages, maxTokens = 1500) => {
   } catch { return null; } finally { clearTimeout(t); }
   return out;
 };
-// Is what's waiting worth a Claude session (which uses the user's weekly Claude usage)? The local model decides once
-// per new set of reports; the PC's hourly job sends only on yes (or at once for an update breakage).
-const JUDGE_SYS = "You decide whether a batch of user reports about their self-hosted search engine is worth sending to an expensive " +
-  "coding assistant now, which uses up the user's limited weekly usage. Say send when the reports show real problems a code " +
-  "change would fix (wrong, junk, missing or badly ordered results; a broken feature) and together they are enough work to " +
-  "justify one session: several reports, or one serious or clearly systematic problem. Say wait when they are few and minor, " +
-  "vague, or about one-off content no rule could fix, so more reports can join the batch. Reply with JSON only: " +
-  '{"send": true or false, "why": "one short plain sentence for the user"}.';
-export const judgeParse = (txt) => {
-  const m = /\{[\s\S]*\}/.exec(String(txt || ""));
-  if (!m) return null;
-  try { const j = JSON.parse(m[0]); return typeof j.send === "boolean" ? { send: j.send, why: String(j.why || "").replace(/\s+/g, " ").trim().slice(0, 200) } : null; } catch { return null; }
-};
-const flagHost = (u) => { try { return new URL(u).hostname.toLowerCase().replace(/^www\./, ""); } catch { return ""; } };
-let _judging = null;
-const flagJudge = () => (_judging ||= (async () => {
-  const F = readFlags(), open = flagOpen();
-  const key = open.map((f) => f.id).join(",");
-  if (!open.length) return { send: false, why: "" };
-  if (F.judge && F.judge.key === key) return F.judge;
-  const list = open.map((f, i) => `${i + 1}. [${f.type}] "${f.q}"${(f.cats || []).length ? ` problems: ${f.cats.join(", ")}` : ""}${f.note ? ` note: ${f.note}` : " (no note)"}; top results: ${f.top.slice(0, 3).map((r) => `${flagHost(r.url)}: ${r.title}`).join(" | ")}`).join("\n");
-  const v = judgeParse(await aiAsk([{ role: "system", content: JUDGE_SYS }, { role: "user", content: `Waiting reports (${open.length}):\n${list}` }]));
-  F.judge = { key, send: v ? v.send : false, why: v ? v.why : "No local model answered (ai-summary's model), so these wait.", at: Date.now() };
-  saveFlags();
-  return F.judge;
-})().finally(() => { _judging = null; }));
-const judgeNow = () => { const F = readFlags(), key = flagOpen().map((f) => f.id).join(","); return F.judge && F.judge.key === key ? F.judge : null; };
 const flagCount = () => flagOpen().length + (flagIssue() ? 1 : 0);
-
+// ===== Sending soon, "fixed" once, and what the PC's job reads =====
+export const FLAG_WAIT_MS = 90000;
+// Sent when the updater has a problem, or 90 s after the newest waiting ⚑ (more ⚑ in a row join the same session)
+export const flagDue = (open, issue, now = Date.now()) => !!issue || (open.length > 0 && now - Math.max(...open.map((f) => f.t)) >= FLAG_WAIT_MS);
+// Reports fixed by the installed version that haven't been told yet: told once, on whichever device opens degoog
+// first (the server marks them, so the phone seeing it means the PC doesn't). -> [{ver, what}]
+export const fixedNews = (list, fixed, now = Date.now()) => {
+  const out = [];
+  for (const f of list || []) {
+    const ver = fixed && fixed[String(f.id)];
+    if (!ver || f.told) continue;
+    f.told = now; f.fixed = ver; f.handed = f.handed || now;
+    out.push({ ver, what: (f.note || `"${f.q}"`).replace(/\s+/g, " ").trim().slice(0, 140) });
+  }
+  return out;
+};
+// pc.json for the PC's job (../autoupdate-job.ps1 reads it with one docker exec cat): when the waiting reports are due
+// (epoch ms, 0 = nothing waiting) and when the last search ran, so an update never restarts degoog mid-search
+let LAST_SEARCH = 0, _pcT = null, _pcAt = 0;
+const pcWrite = () => {
+  const open = flagOpen(), i = flagIssue();
+  const due = i ? 1 : open.length ? Math.max(...open.map((f) => f.t)) + FLAG_WAIT_MS : 0;
+  try { fs.writeFileSync(`${DIR}/pc.json.tmp`, JSON.stringify({ due, last: LAST_SEARCH })); fs.renameSync(`${DIR}/pc.json.tmp`, `${DIR}/pc.json`); } catch {}
+  _pcAt = Date.now();
+};
+// Each search: written at most every 10 s, the last one always (a trailing write)
+const searchSeen = () => {
+  LAST_SEARCH = Date.now();
+  if (Date.now() - _pcAt >= 10000) return pcWrite();
+  if (!_pcT) { _pcT = setTimeout(() => { _pcT = null; pcWrite(); }, 10000); if (_pcT.unref) _pcT.unref(); }
+};

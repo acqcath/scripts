@@ -65,6 +65,7 @@ export const median = (a) => { if (!a.length) return null; const b = [...a].sort
 export const rankWait = (runs) => { const m = median(runs); return m != null && runs.length >= 5 && m > RANK_WAIT_MS ? 0 : RANK_WAIT_MS; };
 globalThis.__ctResults = async (result, query, params) => {
   const t0 = Date.now();
+  try { searchSeen(); } catch {}
   try { await ctResults(result, query, params); } finally { speedAdd(SPEED.hook, Date.now() - t0); }
 };
 const ctResults = async (result, query, params) => {

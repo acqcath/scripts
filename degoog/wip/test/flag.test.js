@@ -59,11 +59,22 @@ test("flag: ⚑ box saves; no count, no send link", async () => {
   await win.happyDOM.close();
 });
 
-import { judgeParse } from "../files/index.js";
-test("flag: the local model's verdict is read safely", () => {
-  expect(judgeParse('ok {"send": true, "why": "3 junk-ranking reports"}')).toEqual({ send: true, why: "3 junk-ranking reports" });
-  expect(judgeParse('{"send": "yes"}')).toBe(null);
-  expect(judgeParse("no idea")).toBe(null);
+import { flagDue, fixedNews, FLAG_WAIT_MS } from "../files/index.js";
+test("flag: sent 90 s after the newest ⚑ (a few in a row go together), an update problem at once", () => {
+  const now = 1e12;
+  expect(flagDue([], null, now)).toBe(false);
+  expect(flagDue([], { t: 1, text: "x" }, now)).toBe(true);
+  expect(flagDue([{ t: now - FLAG_WAIT_MS - 1 }, { t: now - 10 }], null, now)).toBe(false); // a new one keeps the batch open
+  expect(flagDue([{ t: now - FLAG_WAIT_MS - 1 }, { t: now - FLAG_WAIT_MS }], null, now)).toBe(true);
+});
+test("flag: a fixed report is told once, wherever degoog is opened first", () => {
+  const list = [{ id: 11, t: 11, q: "kalimba tabs", note: "porn in the results" }, { id: 12, t: 12, q: "rust book", note: "" }, { id: 13, t: 13, q: "x", note: "" }];
+  const fixed = { 11: "v93", 12: "v94" };
+  expect(fixedNews(list, fixed, 5)).toEqual([{ ver: "v93", what: "porn in the results" }, { ver: "v94", what: '"rust book"' }]);
+  expect(list[0].told).toBe(5);
+  expect(list[0].handed).toBe(5); // fixed = no longer waiting to be sent
+  expect(fixedNews(list, fixed, 6)).toEqual([]); // the second device gets nothing
+  expect(list[2].told).toBe(undefined);
 });
 
 test("⚑ categories and context: server and page agree, junk dropped", () => {
