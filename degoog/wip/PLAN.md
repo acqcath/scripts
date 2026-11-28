@@ -63,10 +63,17 @@ each group's total kept (index.js nudgeNeeds). Settings switch "Learn the layout
 ## Test budget
 Unit tests + jsdom replay every milestone; headless layout-shift + screenshots at 390/1280 only at M1 and M5; the
 self-check row is the live GPU check (the sandbox can't run the model).
-### M6 = next: product panel (from ⚑ 2026-11-28, "yamaha dbr10 release")
+### M6 = v70: product panel (from ⚑ 2026-11-28, "yamaha dbr10 release") [done]
 User: a product info section whenever the search names a product, with all the needed info.
 Plan: needs call gains a "product" fit; when it wins, read schema.org Product JSON-LD (+ og: tags) from the
 top results already fetched for Quick view (maker page first, then retailers): name, picture, brand, price range
 across sellers, rating, key specs (additionalProperty), release date (releaseDate / earliest dated result).
 Placed by worth like the info panel; zero layout shift (reserved spot like the answer card).
 Self-check row "Product panel" on a fixed product search.
+Built: needs b gained `product`; page productPass asks /product (top 6 result addresses) once the results are drawn,
+when core blockGo(blockShare(product), cut). Server productFrom (JSON-LD Product/ProductGroup + og:/product: meta),
+productMerge (AI-best name leads the match; same product = same gtin/mpn or word-subset names; maker page = host
+carries the brand, leads name/picture/specs; price range in the most common currency; rating with most reviews;
+earliest releaseDate). Wide: right column (inside the info panel if shown). Phone: arrives late, so it goes in at
+the first result below the screen (zero shift). Release date only from releaseDate (no "earliest dated result"
+guess: a page date isn't a release date). Switch: the Knowledge panel setting. Self-check row "Product panel".

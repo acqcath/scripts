@@ -103,3 +103,34 @@ test("page: CJK opening bracket at the start of a title and snippet hangs", asyn
   expect(z.querySelector(".result-snippet .ct-hang")).toBeTruthy();
   expect(k.querySelector(".ct-hang")).toBeNull();
 });
+
+// M6: product panel asked after the results when the needs call rates it over the cutoff; wide screens: right column
+test("page: product panel in the right column", async () => {
+  const win = new Window({ url: "https://degoog.local/search?q=yamaha%20dbr10%20release", width: 1400, height: 900 });
+  const { document } = win;
+  document.body.innerHTML = '<div id="results-tabs"><div class="results-tab active" data-type="web">All</div></div><div id="results-list"><div class="result-item" data-result-url="https://usa.yamaha.com/dbr10"><a class="result-title" href="https://usa.yamaha.com/dbr10">DBR10</a><p class="result-snippet">Powered speaker</p></div></div>';
+  const asked = [];
+  win.fetch = async (url, init) => {
+    const q = init && init.body ? JSON.parse(init.body).query || "" : "";
+    asked.push(q);
+    let out = {};
+    if (/bridge needs /.test(q)) out = { n: { f: { video: 0.1, image: 0.1, text: 0.8 }, n: {}, b: { web: 0.5, product: 0.9, info: 0.2 }, s: {}, cut: 0.2 } };
+    if (/bridge product /.test(q)) out = { v: { name: "DBR10", brand: "Yamaha", img: "", url: "https://usa.yamaha.com/dbr10", price: { lo: 299, hi: 349, cur: "USD", sellers: 3 }, rating: null, specs: [], rel: "Jan 21, 2016", from: ["usa.yamaha.com"] } };
+    return new win.Response(JSON.stringify({ html: JSON.stringify(out).replace(/&/g, "&amp;").replace(/</g, "&lt;") }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  win.matchMedia = (m) => ({ matches: /min-width: 1180px/.test(m), addEventListener() {}, removeEventListener() {} });
+  const mos = [];
+  class MO { constructor(cb) { mos.push(cb); } observe() {} disconnect() {} takeRecords() { return []; } }
+  const scope = new Proxy(win, { has: () => true, get: (t, k) => { if (k === "MutationObserver") return MO; if (k === Symbol.unscopables) return undefined; if (!(k in t)) return globalThis[k]; const v = Reflect.get(t, k); return typeof v === "function" && typeof k === "string" && /^[a-z]/.test(k) ? v.bind(t) : v; }, set: (t, k, v) => { t[k] = v; return true; } });
+  globalThis.__ctAIW = win.__ctAIW = new Map(); globalThis.__ctPUBW = win.__ctPUBW = new Map();
+  new Function("scope", `with (scope) {\nconst __PLUGIN_ID__="clean-titles";\n${fs.readFileSync(new URL("../files/ct-page.js", import.meta.url), "utf8")}\n}`)(scope);
+  for (let i = 0; i < 10 && !document.querySelector(".ct-prod"); i++) {
+    await new Promise((r) => setTimeout(r, 30));
+    mos.forEach((cb) => cb([])); // stands in for degoog's redraws
+  }
+  const card = document.querySelector(".ct-kp-wide .ct-prod");
+  expect(asked.some((q) => /bridge product /.test(q))).toBe(true);
+  expect(card).toBeTruthy();
+  expect(card.textContent).toContain("$299 – $349 (3 sellers)");
+  expect(card.textContent).toContain("Released");
+});

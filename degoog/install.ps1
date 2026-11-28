@@ -810,6 +810,108 @@ export const qvFor = async (u, check = publicUrl) => {
   return v;
 };
 
+// ===== M6: product panel (⚑ 2026-11-28 "yamaha dbr10 release"): when the needs call rates a product panel, the
+// top results' pages are read for schema.org Product data (+ og:/product: meta tags) and merged into one panel:
+// name, picture, brand, price range across sellers, rating, key specs, release date. The maker's page leads.
+const ldNum = (x) => { const n = Number(String(x == null ? "" : x).replace(/[^\d.]/g, "")); return Number.isFinite(n) && n > 0 ? n : null; };
+const metaTag = (html, k) => { const m = new RegExp(`<meta[^>]+(?:property|name)=["']${k.replace(/[.:]/g, "\\$&")}["'][^>]*>`, "i").exec(html); const c = m && /content=["']([^"']*)["']/i.exec(m[0]); return c ? ldStrip(c[1]) : ""; };
+const ldImg = (x) => { const v = ld1(x); const u = typeof v === "string" ? v : v && (v.url || v.contentUrl || v["@id"]); return /^https?:\/\//.test(String(u || "")) ? String(u) : ""; };
+// Offers of any shape (Offer, AggregateOffer with lowPrice/highPrice, nested offers, priceSpecification)
+const ldOffers = (x, out = []) => {
+  if (!x || out.length >= 40) return out;
+  if (Array.isArray(x)) { x.forEach((o) => ldOffers(o, out)); return out; }
+  if (typeof x !== "object") return out;
+  const spec = ld1(x.priceSpecification) || {};
+  const cur = String(x.priceCurrency || spec.priceCurrency || "").toUpperCase().slice(0, 3);
+  const seller = ldTxt(x.seller, 60);
+  for (const v of [x.price, spec.price, x.lowPrice, x.highPrice]) { const n = ldNum(v); if (n && cur) out.push({ p: n, cur, seller }); }
+  if (x.offers) ldOffers(x.offers, out);
+  return out;
+};
+// One page -> its product, or null: {name, brand, img, offers: [{p, cur, seller}], rating: {v, n}, specs: [[k, v]], rel, id}
+export const productFrom = (html, url = "") => {
+  const objs = ldObjects(html);
+  const o = objs.find((x) => ldTypes(x).some((t) => /^(?:Product|ProductGroup|IndividualProduct|ProductModel|Vehicle|Car)$/.test(t)));
+  const og = { name: metaTag(html, "og:title"), img: metaTag(html, "og:image"), price: metaTag(html, "product:price:amount") || metaTag(html, "og:price:amount"), cur: (metaTag(html, "product:price:currency") || metaTag(html, "og:price:currency")).toUpperCase().slice(0, 3), brand: metaTag(html, "product:brand") };
+  const isProd = o || /product/i.test(metaTag(html, "og:type")) || (og.price && og.cur);
+  if (!isProd) return null;
+  const v = o || {};
+  const offers = ldOffers(v.offers);
+  if (!offers.length && og.price && og.cur && ldNum(og.price)) offers.push({ p: ldNum(og.price), cur: og.cur, seller: "" });
+  const specs = [];
+  for (const a of [].concat(v.additionalProperty || [])) { const k = ldTxt(a && a.name, 40), val = ldTxt(a && (a.value ?? a.description), 80); if (k && val && specs.length < 16) specs.push([k, a.unitText ? `${val} ${ldTxt(a.unitText, 12)}` : val]); }
+  for (const [k, f] of [["Color", "color"], ["Model", "model"], ["Weight", "weight"], ["Material", "material"]]) { const val = ldTxt(v[f] && (ld1(v[f]).value ?? v[f]), 60); if (val && !specs.some(([a]) => a.toLowerCase() === k.toLowerCase())) specs.push([k, val]); }
+  const name = ldTxt(v.name, 160) || og.name;
+  if (!name) return null;
+  let host = ""; try { host = new URL(url).hostname.replace(/^www\./, ""); } catch {}
+  return { name, brand: ldTxt(v.brand || v.manufacturer, 60) || og.brand, img: ldImg(v.image) || (/^https?:\/\//.test(og.img) ? og.img : ""), offers, rating: ldRating(v), specs,
+    rel: ldDay(v.releaseDate || v.productionDate), id: ldTxt(v.gtin13 || v.gtin12 || v.gtin || v.mpn || v.sku, 40), url, host };
+};
+const nameKey = (t) => String(t || "").toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+// Merge the pages' products into one panel. score[i] = the AI's fit of page i's product name to the search (or null):
+// the best-fitting product is the panel; another page joins it when it is the same product (same gtin/mpn, or every
+// word of one name is in the other). The maker's own page (host carries the brand) leads name, picture, specs.
+export const productMerge = (items, score = []) => {
+  const xs = items.map((p, i) => p && { ...p, s: typeof score[i] === "number" ? score[i] : null }).filter(Boolean);
+  if (!xs.length) return null;
+  const best = xs.reduce((a, b) => ((b.s ?? -1) > (a.s ?? -1) ? b : a));
+  // Same product: same gtin/mpn, or every word of the shorter name is in the longer one ("DBR10 Powered Speaker" in
+  // "Yamaha DBR10 10\" Powered Speaker")
+  const words = (t) => new Set(nameKey(t).split(" ").filter(Boolean)), w0 = words(best.name);
+  const sub = (a, b) => a.size > 0 && [...a].every((w) => b.has(w));
+  const same = xs.filter((p) => (best.id && p.id && p.id === best.id) || (() => { const w = words(p.name); return sub(w, w0) || sub(w0, w); })());
+  const bk = nameKey(best.brand).split(" ")[0];
+  const maker = bk && same.find((p) => p.host.replace(/[^a-z0-9]/g, "").includes(bk));
+  const lead = maker || best;
+  const offers = same.flatMap((p) => p.offers.map((o) => ({ ...o, host: p.host })));
+  const curs = {}; offers.forEach((o) => { curs[o.cur] = (curs[o.cur] || 0) + 1; });
+  const cur = Object.keys(curs).sort((a, b) => curs[b] - curs[a])[0];
+  const ps = offers.filter((o) => o.cur === cur).map((o) => o.p).sort((a, b) => a - b);
+  const sellers = new Set(offers.filter((o) => o.cur === cur).map((o) => o.seller || o.host));
+  const rated = same.filter((p) => p.rating).sort((a, b) => (b.rating.n || 0) - (a.rating.n || 0))[0];
+  const specs = [];
+  for (const p of [lead, ...same.filter((x) => x !== lead)]) for (const [k, v] of p.specs) if (specs.length < 10 && !specs.some(([a]) => a.toLowerCase() === k.toLowerCase())) specs.push([k, v]);
+  const rels = same.map((p) => p.rel).filter(Boolean).sort((a, b) => Date.parse(a) - Date.parse(b));
+  return { name: lead.name, brand: lead.brand || best.brand, img: lead.img || (same.find((p) => p.img) || {}).img || "", url: lead.url,
+    price: ps.length ? { lo: ps[0], hi: ps[ps.length - 1], cur, sellers: sellers.size } : null, rating: rated ? rated.rating : null, specs, rel: rels[0] || "", from: same.map((p) => p.host) };
+};
+const PROD_HOPS = 4;
+const pageHtml = async (u, check = publicUrl) => {
+  let at = u;
+  for (let hop = 0; hop < PROD_HOPS; hop++) {
+    if (!(await check(at))) return null;
+    const r = await net(at, { timeout: 4000, max: 3_000_000, accept: "text/html,application/xhtml+xml", headers: QV_UA, redirect: "manual", imp: true });
+    if (r.status >= 300 && r.status < 400 && r.location) { try { at = new URL(r.location, at).toString(); } catch { return null; } continue; }
+    return r.status === 200 && r.text ? { html: r.text, url: at } : null;
+  }
+  return null;
+};
+const _prod = new Map();
+export const productFor = async (q, urls, check = publicUrl) => {
+  const key = `${q.toLowerCase()}\n${urls.join("\n")}`;
+  const hit = _prod.get(key);
+  if (hit && Date.now() - hit.t < TTL) return hit.v;
+  const us = urls.filter((u) => { try { return !qvBlocked(new URL(u).hostname.replace(/^www\./, "")); } catch { return false; } }).slice(0, 6);
+  const items = await Promise.all(us.map(async (u) => {
+    const pg = await pageHtml(u, check).catch(() => null);
+    let d = ""; try { d = new URL(u).hostname.replace(/^www\./, ""); } catch {}
+    const p = pg ? productFrom(pg.html, pg.url) : null;
+    if (d) qvCount(d, !!pg);
+    return p;
+  }));
+  const got = items.filter(Boolean);
+  let v = null;
+  if (got.length) {
+    // The AI rates each product's name against the search (same reranker pass as everything else); without it, the
+    // first page's product leads
+    const j = await vis("/rank", { q, docs: got.map((p) => [p.brand, p.name].filter(Boolean).join(" ")) }, 2000);
+    v = productMerge(got, j && Array.isArray(j.s) ? j.s : got.map((_, i) => -i));
+  }
+  if (_prod.size > 300) _prod.clear();
+  _prod.set(key, { t: v ? Date.now() : Date.now() - TTL + 600000, v });
+  return v;
+};
+
 // Inline stars + time for first-screen recipe/review results (spec 11): "4.8 ★ · 45 min" from the same quick view.
 // Asked by the page after the results are drawn, kept by the page for the next visit (never inserted late).
 // Per-domain success counts (qv-domains.json: domain -> {ok, fail}) skip sites that block servers.
@@ -1595,6 +1697,7 @@ export const NEEDS = {
     question: "A direct answer to a specific question" }],
   b: [BLOCK_TASK, { forums: "Forum and discussion threads where people share their own experience", news: "Top news stories reporting recent events", papers: "Scientific papers and research studies",
     info: "A fact panel about one person, place, organization or thing", answer: "A short direct answer shown above the results",
+    product: "A product panel with one specific product's price, specs, rating and release date",
     web: "A list of ordinary web pages about it" }],
   s: [SHAPE_TASK, { steps: "Numbered steps to follow in order", compare: "A side-by-side table comparing two or more options", timeline: "A timeline of dates and events in order",
     chart: "A chart of numbers, amounts or shares", plain: "A short written summary paragraph" }],
@@ -2029,6 +2132,16 @@ export const routes = [
   },
   {
     method: "get",
+    path: "/product",
+    // Product panel (M6): ?q=search&u=top result addresses (| separated, at most 6) -> {v: merged product or null}
+    async handler(req) {
+      const sp = new URL(req.url).searchParams, q = (sp.get("q") || "").trim().slice(0, 300);
+      const us = (sp.get("u") || "").split("|").map((x) => x.trim()).filter((x) => /^https?:\/\//.test(x)).slice(0, 6);
+      return jsonOut({ v: q && us.length ? await productFor(q, us) : null });
+    },
+  },
+  {
+    method: "get",
     path: "/qv",
     async handler(req) {
       const u = (new URL(req.url).searchParams.get("u") || "").slice(0, 2000);
@@ -2247,8 +2360,8 @@ export default {
 };
 '@)
 [IO.File]::WriteAllText("$t\script.js", @'
-// clean-titles v69
-const CT_VER = "v69";
+// clean-titles v70
+const CT_VER = "v70";
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -2895,6 +3008,9 @@ const shapePick = (n) => {
 // A question-style search: a direct answer rated at least as needed as doing or knowing in general
 const questionStyle = (n) => { const x = n && n.n; return !!x && typeof x.question === "number" && x.question >= Math.max(+x.doing || 0, +x.knowing || 0); };
 
+
+// Product panel (M6): worth drawing only with something a plain result doesn't show (price, rating, release, specs)
+const prodShow = (p) => !!(p && p.name && (p.price || p.rating || p.rel || (p.specs && p.specs.length >= 2)));
 
 // ===== Answer card, local part (no network): math, units incl. cooking, tip / percent, date math, patterns =====
 // answer(q, now) -> null, or { kind, label, value | title + href, detail, copy, swatch? }. Pure: the page draws it in
@@ -3724,7 +3840,7 @@ const qaAbout = (question, text) => {
   return n >= (ws.length >= 3 ? 2 : 1);
 };
 
-return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, navName, navDist, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, copyKey, sameCopy, jaccard, varietyOrder, VARIETY_MARGIN, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, relCore, related, topicOf, tidyTitle, FLAG_CATS, flagCats, flagCtxClean, flagPrompt, fmtShares, boxWorth, boxAt, cutMedian, blockGo, blockShare, shapePick, questionStyle, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippetAI, featuredSnippet, QA_LEAD, qaAbout };
+return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, navName, navDist, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, copyKey, sameCopy, jaccard, varietyOrder, VARIETY_MARGIN, SITE_SCORE, sitesFromLists, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, relCore, related, topicOf, tidyTitle, FLAG_CATS, flagCats, flagCtxClean, flagPrompt, fmtShares, boxWorth, boxAt, cutMedian, blockGo, blockShare, shapePick, questionStyle, prodShow, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippetAI, featuredSnippet, QA_LEAD, qaAbout };
 })();
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
@@ -6139,6 +6255,74 @@ const kpPass = () => {
   if (fitRO) fitRO.observe(card);
 };
 
+// Product panel (M6): asked once the results are on the page, when the needs call says a product panel is worth more
+// than the first-screen cutoff (core blockGo, the same rule as the other blocks). The server reads the top results'
+// pages. Wide screens: the right column (under the info panel when there is one), so it moves nothing. Phones: it
+// arrives after the results are on screen, so it goes in at the first result below the screen (moves nothing seen).
+const PD = { key: "", asked: false, d: null, done: false };
+const money = (n, cur) => { try { return new Intl.NumberFormat("en-US", { style: "currency", currency: cur, maximumFractionDigits: n >= 100 ? 0 : 2 }).format(n); } catch { return `${n} ${cur}`; } };
+const prodCard = (p, wide) => {
+  const box = mk("aside", `ct-prod${wide ? " ct-prod-wide" : ""}`);
+  box.setAttribute("aria-label", `Product: ${p.name}`);
+  if (p.img) {
+    const ph = mk("div", "ct-prod-photo");
+    const im = new Image(); im.alt = ""; im.decoding = "async"; im.referrerPolicy = "no-referrer";
+    im.onload = () => im.classList.add("ct-on"); im.onerror = () => ph.remove();
+    im.src = p.img; ph.append(im); box.append(ph);
+  }
+  const head = mk("div", "ct-kp-head");
+  const name = mk("a", "ct-kp-name", p.name); if (/^https?:\/\//.test(p.url)) { name.href = p.url; name.rel = "noopener"; }
+  head.append(name);
+  if (p.brand) head.append(mk("div", "ct-kp-type", p.brand));
+  box.append(head);
+  const facts = mk("dl", "ct-kp-facts");
+  const f = (k, v) => { if (!v) return; const r = mk("div", "ct-kp-f"); r.append(mk("dt", "", k), mk("dd", "", v)); facts.append(r); };
+  if (p.price) f("Price", `${money(p.price.lo, p.price.cur)}${p.price.hi > p.price.lo ? ` – ${money(p.price.hi, p.price.cur)}` : ""}${p.price.sellers > 1 ? ` (${p.price.sellers} sellers)` : ""}`);
+  if (p.rating) f("Rating", `${p.rating.v.toFixed(1)} ★${p.rating.n ? ` (${p.rating.n.toLocaleString("en-US")})` : ""}`);
+  f("Released", p.rel);
+  for (const [k, v] of p.specs || []) f(k, v);
+  box.append(facts);
+  if (p.from && p.from.length) box.append(mk("div", "ct-kp-src", `From ${[...new Set(p.from)].slice(0, 4).join(" · ")}`));
+  return box;
+};
+const productPass = () => {
+  const key = searchId(location.href), list = document.getElementById("results-list");
+  if (PD.key !== key) { Object.assign(PD, { key, asked: false, d: null, done: false }); document.querySelectorAll(".ct-prod").forEach((x) => x.remove()); }
+  if (!webTab || SHOW.kp === false || PD.done || !list) return;
+  if (!PD.asked) {
+    const nd = ready("needs", key);
+    if (nd === undefined || !list.querySelector(".result-item")) return;
+    PD.asked = true;
+    let pg = 1; try { pg = Number(new URL(key).searchParams.get("page") || 1); } catch {}
+    const share = nd ? CT.blockShare(CT.fmtShares(nd.f), nd.b, "product") : null;
+    if (pg > 1 || !CT.blockGo(share, nd && nd.cut)) { PD.done = true; return; }
+    const rs = topRes(6);
+    bridge("product", { q: curQ(), u: rs.map((r) => r.u).join("|") }).then((j) => {
+      if (PD.key !== key) return;
+      PD.d = CT.prodShow(j && j.v) ? j.v : null;
+      if (!PD.d) PD.done = true; else safe("prod", productPass);
+    }, () => { PD.done = true; });
+    return;
+  }
+  if (!PD.d) return;
+  const wide = !!(window.matchMedia && matchMedia(KP_WIDE).matches);
+  if (wide) {
+    PD.done = true;
+    const kp = [...list.children].find((x) => x.classList.contains("ct-kp-wide"));
+    if (kp) { kp.append(prodCard(PD.d, true)); return; }
+    const col = mk("aside", "ct-kp ct-kp-wide ct-prod-col");
+    col.append(prodCard(PD.d, true));
+    list.prepend(col);
+    return;
+  }
+  const v = [...list.querySelectorAll(".result-item")].filter((el) => el.style.display !== "none" && !el.classList.contains("ct-grouped"));
+  const below = v.find((el) => el.getBoundingClientRect().top >= innerHeight);
+  if (!below) return; // wait for endless scroll to put a result below the screen
+  PD.done = true;
+  below.before(prodCard(PD.d, false));
+};
+addEventListener("scroll", () => { if (PD.d && !PD.done) safe("prod", productPass); }, { passive: true });
+
 // Tab row: degoog redraws its tabs when the page comes back into view (and when extensions are saved) and can leave a
 // copy of a tab, no active tab or the wrong one. One tab per kind, exactly one underlined (the one you're on), and
 // Tools then ⚑ last, after every redraw.
@@ -6207,7 +6391,7 @@ const init = () => {
   safe("scan", () => scan(document.body));
   safe("skeleton", () => skel(document.body));
   safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("flag", flagBtn); safe("tabkeep", tabKeep);
-  safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass); safe("sides", sidesPass);
+  safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass); safe("sides", sidesPass); safe("prod", productPass);
   safe("drawn", markDrawn);
   // Runs right after degoog inserts results and before the screen updates; only looks inside what was added
   new MutationObserver((muts) => {
@@ -6219,7 +6403,7 @@ const init = () => {
     safe("rel", relPass);
     for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { safe("scan", () => scan(n)); safe("skeleton", () => skel(n)); safe("usage", () => noUsage(n)); }
     safe("extras", extras); safe("groups", groups); safe("folds", foldPass); safe("ask", paa); safe("tools", tools); safe("flag", flagBtn); safe("tabkeep", tabKeep); safe("card", glance);
-    safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass); safe("preview", previewPass); safe("sides", sidesPass);
+    safe("kp", kpPass); safe("only", onlyPass); safe("mean", meanPass); safe("stars", starsPass); safe("preview", previewPass); safe("sides", sidesPass); safe("prod", productPass);
     safe("drawn", markDrawn);
     safe("ai", () => { const g = document.getElementById("at-a-glance"); if (g) aiPass(g, searchId(location.href)); });
   }).observe(document.body, { childList: true, subtree: true });
@@ -7267,6 +7451,16 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 /* CJK opening bracket first in a title or snippet: pulled back by its built-in blank half (script.js hang) */
 .ct-hang { margin-left: -0.5em; }
 
+/* Product panel (M6): the info panel's look; on wide screens in the right column (under the info panel if any) */
+.ct-prod { margin: 8px 0 20px; color: var(--text-primary); }
+.ct-kp-wide > .ct-prod { margin: 0; }
+.ct-kp-wide > .ct-prod:not(:first-child) { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border, rgba(127,127,127,.25)); }
+.ct-prod-photo { width: 100%; aspect-ratio: 4 / 3; margin-bottom: 12px; border-radius: 12px; overflow: hidden; background: rgba(127,127,127,.08); }
+.ct-prod-photo img { width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity .15s; }
+.ct-prod-photo img.ct-on { opacity: 1; }
+.ct-prod:not(.ct-prod-wide) .ct-prod-photo { float: right; width: 88px; aspect-ratio: 1; margin: 0 0 8px 12px; }
+.ct-prod .ct-kp-facts { clear: both; }
+
 '@)
 [IO.File]::WriteAllText("$t\setcss.js", @'
 const fs = require("fs");
@@ -7669,7 +7863,7 @@ docker restart $c | Out-Null
 $null = docker exec $c sh -c 'for i in $(seq 1 40); do curl -fs -o /dev/null http://127.0.0.1:${DEGOOG_PORT:-4444}/readyz && exit 0; sleep 1; done'
 
 $ss = docker exec $c cat /app/data/server-settings.json | Out-String | ConvertFrom-Json
-"plugin code inside the page (should be v69): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
+"plugin code inside the page (should be v70): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
 "page files (should be a ct and a psl file): " + (docker exec $c sh -c 'ls /app/src/public/ct/')
 "progressive results off (should be False): $($ss.settings.streamingEnabled -eq $true)"
 "typo fixer word list (should be about 82800): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/words.txt')
@@ -7747,6 +7941,15 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
     const cof = [["Coffee linked to lower heart disease risk", "A large cohort study found 2-3 cups a day was linked to lower risk of heart disease and death."], ["Coffee raises blood pressure", "Caffeine raises blood pressure for hours; researchers advise people with hypertension to limit coffee."]].map(([t, s], i) => ({ t, s, u: `https://news${i}.org/coffee` }));
     const sd = await bridge("sides", {}, JSON.stringify({ q: "is coffee bad for your heart", r: cof })), d = sd.j && sd.j.d;
     row("Contested check (ai-summary's model)", !sd.j ? false : !d ? "SKIP" : typeof d.split === "boolean", d ? `split: ${d.split}, ${sd.ms} ms` : "no answer (ai-summary's model off or busy)");
+    // Product panel (M6): the needs call's product fit for a product search, then the panel from its live top results
+    try {
+      const pq = "yamaha dbr10";
+      const nd = await bridge("needs", { q: pq }), nb = nd.j && nd.j.n && nd.j.n.b;
+      const sr = await (await fetch(`http://127.0.0.1:${PORT}/api/search?q=${encodeURIComponent(pq)}`, { signal: AbortSignal.timeout(20000) })).json();
+      const us = (sr.results || []).slice(0, 6).map((r) => r.url).filter(Boolean);
+      const pr = await bridge("product", { q: pq, u: us.join("|") }), pv = pr.j && pr.j.v;
+      row("Product panel", pv ? true : "INFO", `${nb ? `fit ${Number(nb.product).toFixed(2)} vs web ${Number(nb.web).toFixed(2)}; ` : ""}${pv ? `${pv.name}${pv.price ? `, ${pv.price.lo}-${pv.price.hi} ${pv.price.cur}` : ""}${pv.rel ? `, released ${pv.rel}` : ""}, from ${pv.from.join(" ")}, ${pr.ms} ms` : `no product data on the top ${us.length} pages (${pr.ms} ms)`}`);
+    } catch (e) { row("Product panel", "INFO", `could not run: ${String(e && e.message || e).slice(0, 60)}`); }
     const sp = await bridge("speed", {}), v = sp.j || {};
     row("Search time added by clean-titles", !!sp.j, v.n ? `median ${v.hook} ms over ${v.n} searches; reranker ${v.rank ?? "-"} ms (GPU ${v.gpu ?? "-"}, queued ${v.queue ?? "-"}), wait ${v.wait} ms` : "no searches yet");
     const se = await bridge("seen", { q: "", k: "web" });

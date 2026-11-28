@@ -889,3 +889,13 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 
 /* CJK opening bracket first in a title or snippet: pulled back by its built-in blank half (script.js hang) */
 .ct-hang { margin-left: -0.5em; }
+
+/* Product panel (M6): the info panel's look; on wide screens in the right column (under the info panel if any) */
+.ct-prod { margin: 8px 0 20px; color: var(--text-primary); }
+.ct-kp-wide > .ct-prod { margin: 0; }
+.ct-kp-wide > .ct-prod:not(:first-child) { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border, rgba(127,127,127,.25)); }
+.ct-prod-photo { width: 100%; aspect-ratio: 4 / 3; margin-bottom: 12px; border-radius: 12px; overflow: hidden; background: rgba(127,127,127,.08); }
+.ct-prod-photo img { width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity .15s; }
+.ct-prod-photo img.ct-on { opacity: 1; }
+.ct-prod:not(.ct-prod-wide) .ct-prod-photo { float: right; width: 88px; aspect-ratio: 1; margin: 0 0 8px 12px; }
+.ct-prod .ct-kp-facts { clear: both; }

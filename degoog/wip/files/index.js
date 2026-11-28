@@ -807,6 +807,108 @@ export const qvFor = async (u, check = publicUrl) => {
   return v;
 };
 
+// ===== M6: product panel (⚑ 2026-11-28 "yamaha dbr10 release"): when the needs call rates a product panel, the
+// top results' pages are read for schema.org Product data (+ og:/product: meta tags) and merged into one panel:
+// name, picture, brand, price range across sellers, rating, key specs, release date. The maker's page leads.
+const ldNum = (x) => { const n = Number(String(x == null ? "" : x).replace(/[^\d.]/g, "")); return Number.isFinite(n) && n > 0 ? n : null; };
+const metaTag = (html, k) => { const m = new RegExp(`<meta[^>]+(?:property|name)=["']${k.replace(/[.:]/g, "\\$&")}["'][^>]*>`, "i").exec(html); const c = m && /content=["']([^"']*)["']/i.exec(m[0]); return c ? ldStrip(c[1]) : ""; };
+const ldImg = (x) => { const v = ld1(x); const u = typeof v === "string" ? v : v && (v.url || v.contentUrl || v["@id"]); return /^https?:\/\//.test(String(u || "")) ? String(u) : ""; };
+// Offers of any shape (Offer, AggregateOffer with lowPrice/highPrice, nested offers, priceSpecification)
+const ldOffers = (x, out = []) => {
+  if (!x || out.length >= 40) return out;
+  if (Array.isArray(x)) { x.forEach((o) => ldOffers(o, out)); return out; }
+  if (typeof x !== "object") return out;
+  const spec = ld1(x.priceSpecification) || {};
+  const cur = String(x.priceCurrency || spec.priceCurrency || "").toUpperCase().slice(0, 3);
+  const seller = ldTxt(x.seller, 60);
+  for (const v of [x.price, spec.price, x.lowPrice, x.highPrice]) { const n = ldNum(v); if (n && cur) out.push({ p: n, cur, seller }); }
+  if (x.offers) ldOffers(x.offers, out);
+  return out;
+};
+// One page -> its product, or null: {name, brand, img, offers: [{p, cur, seller}], rating: {v, n}, specs: [[k, v]], rel, id}
+export const productFrom = (html, url = "") => {
+  const objs = ldObjects(html);
+  const o = objs.find((x) => ldTypes(x).some((t) => /^(?:Product|ProductGroup|IndividualProduct|ProductModel|Vehicle|Car)$/.test(t)));
+  const og = { name: metaTag(html, "og:title"), img: metaTag(html, "og:image"), price: metaTag(html, "product:price:amount") || metaTag(html, "og:price:amount"), cur: (metaTag(html, "product:price:currency") || metaTag(html, "og:price:currency")).toUpperCase().slice(0, 3), brand: metaTag(html, "product:brand") };
+  const isProd = o || /product/i.test(metaTag(html, "og:type")) || (og.price && og.cur);
+  if (!isProd) return null;
+  const v = o || {};
+  const offers = ldOffers(v.offers);
+  if (!offers.length && og.price && og.cur && ldNum(og.price)) offers.push({ p: ldNum(og.price), cur: og.cur, seller: "" });
+  const specs = [];
+  for (const a of [].concat(v.additionalProperty || [])) { const k = ldTxt(a && a.name, 40), val = ldTxt(a && (a.value ?? a.description), 80); if (k && val && specs.length < 16) specs.push([k, a.unitText ? `${val} ${ldTxt(a.unitText, 12)}` : val]); }
+  for (const [k, f] of [["Color", "color"], ["Model", "model"], ["Weight", "weight"], ["Material", "material"]]) { const val = ldTxt(v[f] && (ld1(v[f]).value ?? v[f]), 60); if (val && !specs.some(([a]) => a.toLowerCase() === k.toLowerCase())) specs.push([k, val]); }
+  const name = ldTxt(v.name, 160) || og.name;
+  if (!name) return null;
+  let host = ""; try { host = new URL(url).hostname.replace(/^www\./, ""); } catch {}
+  return { name, brand: ldTxt(v.brand || v.manufacturer, 60) || og.brand, img: ldImg(v.image) || (/^https?:\/\//.test(og.img) ? og.img : ""), offers, rating: ldRating(v), specs,
+    rel: ldDay(v.releaseDate || v.productionDate), id: ldTxt(v.gtin13 || v.gtin12 || v.gtin || v.mpn || v.sku, 40), url, host };
+};
+const nameKey = (t) => String(t || "").toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+// Merge the pages' products into one panel. score[i] = the AI's fit of page i's product name to the search (or null):
+// the best-fitting product is the panel; another page joins it when it is the same product (same gtin/mpn, or every
+// word of one name is in the other). The maker's own page (host carries the brand) leads name, picture, specs.
+export const productMerge = (items, score = []) => {
+  const xs = items.map((p, i) => p && { ...p, s: typeof score[i] === "number" ? score[i] : null }).filter(Boolean);
+  if (!xs.length) return null;
+  const best = xs.reduce((a, b) => ((b.s ?? -1) > (a.s ?? -1) ? b : a));
+  // Same product: same gtin/mpn, or every word of the shorter name is in the longer one ("DBR10 Powered Speaker" in
+  // "Yamaha DBR10 10\" Powered Speaker")
+  const words = (t) => new Set(nameKey(t).split(" ").filter(Boolean)), w0 = words(best.name);
+  const sub = (a, b) => a.size > 0 && [...a].every((w) => b.has(w));
+  const same = xs.filter((p) => (best.id && p.id && p.id === best.id) || (() => { const w = words(p.name); return sub(w, w0) || sub(w0, w); })());
+  const bk = nameKey(best.brand).split(" ")[0];
+  const maker = bk && same.find((p) => p.host.replace(/[^a-z0-9]/g, "").includes(bk));
+  const lead = maker || best;
+  const offers = same.flatMap((p) => p.offers.map((o) => ({ ...o, host: p.host })));
+  const curs = {}; offers.forEach((o) => { curs[o.cur] = (curs[o.cur] || 0) + 1; });
+  const cur = Object.keys(curs).sort((a, b) => curs[b] - curs[a])[0];
+  const ps = offers.filter((o) => o.cur === cur).map((o) => o.p).sort((a, b) => a - b);
+  const sellers = new Set(offers.filter((o) => o.cur === cur).map((o) => o.seller || o.host));
+  const rated = same.filter((p) => p.rating).sort((a, b) => (b.rating.n || 0) - (a.rating.n || 0))[0];
+  const specs = [];
+  for (const p of [lead, ...same.filter((x) => x !== lead)]) for (const [k, v] of p.specs) if (specs.length < 10 && !specs.some(([a]) => a.toLowerCase() === k.toLowerCase())) specs.push([k, v]);
+  const rels = same.map((p) => p.rel).filter(Boolean).sort((a, b) => Date.parse(a) - Date.parse(b));
+  return { name: lead.name, brand: lead.brand || best.brand, img: lead.img || (same.find((p) => p.img) || {}).img || "", url: lead.url,
+    price: ps.length ? { lo: ps[0], hi: ps[ps.length - 1], cur, sellers: sellers.size } : null, rating: rated ? rated.rating : null, specs, rel: rels[0] || "", from: same.map((p) => p.host) };
+};
+const PROD_HOPS = 4;
+const pageHtml = async (u, check = publicUrl) => {
+  let at = u;
+  for (let hop = 0; hop < PROD_HOPS; hop++) {
+    if (!(await check(at))) return null;
+    const r = await net(at, { timeout: 4000, max: 3_000_000, accept: "text/html,application/xhtml+xml", headers: QV_UA, redirect: "manual", imp: true });
+    if (r.status >= 300 && r.status < 400 && r.location) { try { at = new URL(r.location, at).toString(); } catch { return null; } continue; }
+    return r.status === 200 && r.text ? { html: r.text, url: at } : null;
+  }
+  return null;
+};
+const _prod = new Map();
+export const productFor = async (q, urls, check = publicUrl) => {
+  const key = `${q.toLowerCase()}\n${urls.join("\n")}`;
+  const hit = _prod.get(key);
+  if (hit && Date.now() - hit.t < TTL) return hit.v;
+  const us = urls.filter((u) => { try { return !qvBlocked(new URL(u).hostname.replace(/^www\./, "")); } catch { return false; } }).slice(0, 6);
+  const items = await Promise.all(us.map(async (u) => {
+    const pg = await pageHtml(u, check).catch(() => null);
+    let d = ""; try { d = new URL(u).hostname.replace(/^www\./, ""); } catch {}
+    const p = pg ? productFrom(pg.html, pg.url) : null;
+    if (d) qvCount(d, !!pg);
+    return p;
+  }));
+  const got = items.filter(Boolean);
+  let v = null;
+  if (got.length) {
+    // The AI rates each product's name against the search (same reranker pass as everything else); without it, the
+    // first page's product leads
+    const j = await vis("/rank", { q, docs: got.map((p) => [p.brand, p.name].filter(Boolean).join(" ")) }, 2000);
+    v = productMerge(got, j && Array.isArray(j.s) ? j.s : got.map((_, i) => -i));
+  }
+  if (_prod.size > 300) _prod.clear();
+  _prod.set(key, { t: v ? Date.now() : Date.now() - TTL + 600000, v });
+  return v;
+};
+
 // Inline stars + time for first-screen recipe/review results (spec 11): "4.8 ★ · 45 min" from the same quick view.
 // Asked by the page after the results are drawn, kept by the page for the next visit (never inserted late).
 // Per-domain success counts (qv-domains.json: domain -> {ok, fail}) skip sites that block servers.
@@ -1592,6 +1694,7 @@ export const NEEDS = {
     question: "A direct answer to a specific question" }],
   b: [BLOCK_TASK, { forums: "Forum and discussion threads where people share their own experience", news: "Top news stories reporting recent events", papers: "Scientific papers and research studies",
     info: "A fact panel about one person, place, organization or thing", answer: "A short direct answer shown above the results",
+    product: "A product panel with one specific product's price, specs, rating and release date",
     web: "A list of ordinary web pages about it" }],
   s: [SHAPE_TASK, { steps: "Numbered steps to follow in order", compare: "A side-by-side table comparing two or more options", timeline: "A timeline of dates and events in order",
     chart: "A chart of numbers, amounts or shares", plain: "A short written summary paragraph" }],
@@ -2022,6 +2125,16 @@ export const routes = [
       const u = new URL(req.url).searchParams;
       const d = await wdFor(u.get("f") || "", u.get("s") || "", u.get("s2") || "");
       return new Response(JSON.stringify({ d }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+    },
+  },
+  {
+    method: "get",
+    path: "/product",
+    // Product panel (M6): ?q=search&u=top result addresses (| separated, at most 6) -> {v: merged product or null}
+    async handler(req) {
+      const sp = new URL(req.url).searchParams, q = (sp.get("q") || "").trim().slice(0, 300);
+      const us = (sp.get("u") || "").split("|").map((x) => x.trim()).filter((x) => /^https?:\/\//.test(x)).slice(0, 6);
+      return jsonOut({ v: q && us.length ? await productFor(q, us) : null });
     },
   },
   {
