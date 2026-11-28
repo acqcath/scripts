@@ -246,7 +246,7 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - route `/yt` :2256
   - route `/hd` :2266
 
-## script.js (2657 lines)
+## script.js (2661 lines)
   - `bridge` :2
   - `aiKey` :21
   - `fadeIn` :72
@@ -325,66 +325,66 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - `flagPlace` :1500
   - `flagBtn` :1507
   - `topGap` :1524
-  - `skel` :1544
-  - `noUsage` :1555
-- **Sitelinks, Discussions and forums, Videos, Top stories** :1564
-  - `ytId` :1569
-  - `VIDEO_URL` :1576
-  - `forumName` :1580
-  - `when` :1593
-  - `ago` :1601
-  - `fresh` :1612
-  - `hot` :1616
-  - `qHash` :1620
-  - `hashStore` :1621
-  - `info` :1639
-  - `mk` :1662
-  - `favImg` :1663
-  - `moreBtn` :1670
-  - `scroller` :1679
-  - `section` :1691
-  - `forumRow` :1694
-  - `siteName` :1707
-  - `videoCard` :1708
-  - `storyCard` :1730
-  - `used` :1747
-  - `shown` :1748
-  - `groups` :1749
-- **Answer card, local answers (core answers.js: math, units, cooking, tip/percent, dates, patterns)** :1915
-  - `cmuQ` :1921
-  - `aiWanted` :1926
-  - `aiBox` :1942
-  - `aiPass` :1955
-  - `topRes` :1982
-  - `shapeAsk` :1985
-  - `shapeBody` :1999
-  - `sidesPass` :2023
-  - `ansCard` :2065
-  - `livePoll` :2128
-  - `fitLine` :2147
-  - `byWorth` :2158
-  - `ansPass` :2167
-  - `ansCopy` :2216
-  - `onlyPass` :2230
-- **Quick view (spec 11): your tap opens it under the result (it grows: your action), tap again to close** :2253
-  - `qvBox` :2255
-  - `qvs` :2321
-  - `starsWanted` :2322
-  - `starsPass` :2324
-  - `meanPass` :2356
-- **Knowledge panel (spec 3)** :2375
-  - `kpWanted` :2383
-  - `kpCard` :2389
-  - `kpPass` :2432
-  - `money` :2463
-  - `prodCard` :2464
-  - `productPass` :2488
-  - `tabKind` :2530
-  - `tabKeep` :2531
-  - `safe` :2555
-  - `tabRescue` :2560
-  - `init` :2575
-- **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :2613
+  - `skel` :1548
+  - `noUsage` :1559
+- **Sitelinks, Discussions and forums, Videos, Top stories** :1568
+  - `ytId` :1573
+  - `VIDEO_URL` :1580
+  - `forumName` :1584
+  - `when` :1597
+  - `ago` :1605
+  - `fresh` :1616
+  - `hot` :1620
+  - `qHash` :1624
+  - `hashStore` :1625
+  - `info` :1643
+  - `mk` :1666
+  - `favImg` :1667
+  - `moreBtn` :1674
+  - `scroller` :1683
+  - `section` :1695
+  - `forumRow` :1698
+  - `siteName` :1711
+  - `videoCard` :1712
+  - `storyCard` :1734
+  - `used` :1751
+  - `shown` :1752
+  - `groups` :1753
+- **Answer card, local answers (core answers.js: math, units, cooking, tip/percent, dates, patterns)** :1919
+  - `cmuQ` :1925
+  - `aiWanted` :1930
+  - `aiBox` :1946
+  - `aiPass` :1959
+  - `topRes` :1986
+  - `shapeAsk` :1989
+  - `shapeBody` :2003
+  - `sidesPass` :2027
+  - `ansCard` :2069
+  - `livePoll` :2132
+  - `fitLine` :2151
+  - `byWorth` :2162
+  - `ansPass` :2171
+  - `ansCopy` :2220
+  - `onlyPass` :2234
+- **Quick view (spec 11): your tap opens it under the result (it grows: your action), tap again to close** :2257
+  - `qvBox` :2259
+  - `qvs` :2325
+  - `starsWanted` :2326
+  - `starsPass` :2328
+  - `meanPass` :2360
+- **Knowledge panel (spec 3)** :2379
+  - `kpWanted` :2387
+  - `kpCard` :2393
+  - `kpPass` :2436
+  - `money` :2467
+  - `prodCard` :2468
+  - `productPass` :2492
+  - `tabKind` :2534
+  - `tabKeep` :2535
+  - `safe` :2559
+  - `tabRescue` :2564
+  - `init` :2579
+- **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :2617
 
 ## core.js (649 lines)
 - **Sites: registrable domain via the public suffix list** :4
