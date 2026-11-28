@@ -1800,7 +1800,7 @@ const groups = () => {
       s = G[kind] = section(`ct-${kind}`, title);
       if (isRow) { const [wrap, row] = scroller(); s.append(wrap); s.row = row; s.wrap = wrap; } else { s.row = mk("div", "ct-list"); s.append(s.row); }
       const first = c.find((r) => r.el && r.el.style.display !== "none") || c.find((r) => r.el);
-      if (at && at.before) at.before.before(s); else if (at && at.after) at.after.after(s); else if (first) first.el.before(s); else top.el.after(s);
+      if (at && at.before) at.before.before(s); else if (at && at.after) endOf(at.after).after(s); else if (first) first.el.before(s); else top.el.after(s);
       const m = moreBtn(label, tab); if (m) s.append(m);
     }
     const n = s.row.children.length;
@@ -1875,7 +1875,7 @@ const groups = () => {
       }
       s.append(wrap);
       const m = moreBtn("More images", "images"); if (m) s.append(m);
-      if (at && at.before) at.before.before(s); else if (at) at.after.after(s); else t.after(s);
+      if (at && at.before) at.before.before(s); else if (at) endOf(at.after).after(s); else t.after(s);
       wrap.upd();
     }
   }
@@ -1911,7 +1911,7 @@ const groups = () => {
     s.append(wrap);
     const m = moreBtn("More news", "news"); if (m) s.append(m);
     const at = place(worthOf(ns, items.map((r) => r.ai)));
-    if (at && at.before) at.before.before(s); else if (at) at.after.after(s); else t.after(s);
+    if (at && at.before) at.before.before(s); else if (at) endOf(at.after).after(s); else t.after(s);
     wrap.upd();
   }
 };
@@ -2159,6 +2159,13 @@ const fitLine = (line) => {
 const fitRO = typeof ResizeObserver === "function" ? new ResizeObserver((es) => es.forEach((e) => e.target.querySelectorAll(".ct-fit").forEach(fitLine))) : null;
 // Where a card goes on the one scale (answer card, info panel): before the first shown result worth less, or null =
 // on top (also without the AI, or before the results are on the page)
+// A result's whole group: the result plus what hangs under it (its "N more from…" fold rows and the folded or hidden
+// results behind them). Boxes placed "after a result" go after the group, never inside it.
+const endOf = (el) => {
+  let n = el;
+  for (let x = n.nextElementSibling; x && (x.classList.contains("ct-fold") || x.classList.contains("ct-grouped") || x.classList.contains("result-item") && (x.hidden || x.style.display === "none")); x = x.nextElementSibling) n = x;
+  return n;
+};
 const byWorth = (kind, fit) => {
   const list = document.getElementById("results-list"), key = searchId(location.href);
   const needs = ready("needs", key), fmt = CT.fmtShares(needs?.f), share = CT.blockShare(fmt, needs?.b, kind);
@@ -2211,7 +2218,7 @@ const ansPass = () => {
   // Its place by worth (M2), when the results are already here (else on top, as before): the answer share x its fit
   // (the AI's score for a snippet's sentence; an exact answer fits fully). A live score stays on top (its updates find it there).
   const at = !ansVal.live && byWorth("answer", typeof ansVal.p === "number" ? ansVal.p : 1);
-  if (at) { if (at.before) at.before.before(card); else at.after.after(card); }
+  if (at) { if (at.before) at.before.before(card); else endOf(at.after).after(card); }
   else { g.style.display = ""; g.prepend(card); }
   card.querySelectorAll(".ct-fit").forEach(fitLine);
   if (fitRO) fitRO.observe(card);
@@ -2453,7 +2460,7 @@ const kpPass = () => {
   // Phones: its place by worth (M2): the info share x the AI's score for the page it replaces. PC: the side column.
   const fit = Math.max(...m.wiki.map((i) => info(rows[i])?.ai).filter((x) => typeof x === "number"));
   const at = !wide && !late && isFinite(fit) && byWorth("info", fit);
-  if (at) { if (at.before) at.before.before(card); else at.after.after(card); } else list.prepend(card);
+  if (at) { if (at.before) at.before.before(card); else endOf(at.after).after(card); } else list.prepend(card);
   if (!wide && aiVal) { aiVal = false; document.querySelectorAll("#at-a-glance > .ct-ai").forEach((x) => x.remove()); const g = document.getElementById("at-a-glance"); if (g) aiPass(g, key); } // the panel is what's on top now
   card.querySelectorAll(".ct-fit").forEach(fitLine);
   if (fitRO) fitRO.observe(card);
