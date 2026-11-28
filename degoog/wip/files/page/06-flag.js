@@ -1,7 +1,7 @@
 // ----- page/06-flag.js: ⚑ Report box -----
 // ⚑ at the right end of the tab row (phone and PC): "What's wrong? (optional)" + Save keeps the search, your note and
-// its top 10 results on your server. Nothing else shows (no count, no send link): the local model decides when they're
-// worth a Claude session and the PC's hourly job sends them by itself. Anything about the box itself goes in the same box.
+// its top 10 results on your server. Nothing else shows (no count, no send link): the PC's watcher sends it to the
+// Report session as soon as it's saved. Anything about the box itself goes in the same box.
 const flagTop = () => {
   const out = [];
   for (const el of document.querySelectorAll("#results-list .result-item, #results-list .image-card, #results-list .video-card")) {
