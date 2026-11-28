@@ -246,7 +246,7 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - route `/yt` :2256
   - route `/hd` :2266
 
-## script.js (2661 lines)
+## script.js (2668 lines)
   - `bridge` :2
   - `aiKey` :21
   - `fadeIn` :72
@@ -362,29 +362,30 @@ Every section, function and route in degoog/wip/files with its line. Read the li
   - `ansCard` :2069
   - `livePoll` :2132
   - `fitLine` :2151
-  - `byWorth` :2162
-  - `ansPass` :2171
-  - `ansCopy` :2220
-  - `onlyPass` :2234
-- **Quick view (spec 11): your tap opens it under the result (it grows: your action), tap again to close** :2257
-  - `qvBox` :2259
-  - `qvs` :2325
-  - `starsWanted` :2326
-  - `starsPass` :2328
-  - `meanPass` :2360
-- **Knowledge panel (spec 3)** :2379
-  - `kpWanted` :2387
-  - `kpCard` :2393
-  - `kpPass` :2436
-  - `money` :2467
-  - `prodCard` :2468
-  - `productPass` :2492
-  - `tabKind` :2534
-  - `tabKeep` :2535
-  - `safe` :2559
-  - `tabRescue` :2564
-  - `init` :2579
-- **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :2617
+  - `endOf` :2164
+  - `byWorth` :2169
+  - `ansPass` :2178
+  - `ansCopy` :2227
+  - `onlyPass` :2241
+- **Quick view (spec 11): your tap opens it under the result (it grows: your action), tap again to close** :2264
+  - `qvBox` :2266
+  - `qvs` :2332
+  - `starsWanted` :2333
+  - `starsPass` :2335
+  - `meanPass` :2367
+- **Knowledge panel (spec 3)** :2386
+  - `kpWanted` :2394
+  - `kpCard` :2400
+  - `kpPass` :2443
+  - `money` :2474
+  - `prodCard` :2475
+  - `productPass` :2499
+  - `tabKind` :2541
+  - `tabKeep` :2542
+  - `safe` :2566
+  - `tabRescue` :2571
+  - `init` :2586
+- **Load timing (for the self-check; no searches, no addresses, only milliseconds)** :2624
 
 ## core.js (649 lines)
 - **Sites: registrable domain via the public suffix list** :4
