@@ -80,8 +80,10 @@ Code is split by job into modules that build.py concatenates in NN order into ON
   1 h, "AI pending" 10 -> 20 -> ... 360 min). Installs and retries wait until 15 s after degoog was last used (a search or a page call; pc.json
   `last`) and while Windows reports a full-screen app (SHQueryUserNotificationState 2/3/4; the user saw ~20 s lag
   spikes from installs mid-game). Each job run is its own process, stopped after 30 min. Log: watcher.txt.
-  The old every-minute scheduled task is removed by the job (or, if made from an admin terminal, emptied and the user
-  is notified once to rerun ../setup-autoupdate.ps1 as admin).
+  There is no scheduled task any more: the old every-minute task's last run empties its launcher (update.ps1) and starts
+  the watcher; the watcher's first job run removes the task (if it was made from an admin terminal it can't: the user
+  is notified once to rerun ../setup-autoupdate.ps1 as admin). Never add a timer, poll or fallback check: the user
+  wants only this sleeping watcher (2026-11-28).
 - The shell can't reach crossref/wikimedia/espn (403 CONNECT); WebFetch can reach some. No pwsh, no degoog container: live checks = the installer's self-check on the user's server.
 - Installer docker calls (v87): all embedded files go in with ONE `docker cp $t\. :/tmp/ct-inst`, then one root exec (plugin
   files, inline.js) and one default-user exec (setcss, aittl, safeoff); add new embedded files to those, not new calls.

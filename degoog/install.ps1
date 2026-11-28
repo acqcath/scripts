@@ -2416,8 +2416,8 @@ export default {
 };
 '@)
 [IO.File]::WriteAllText("$t\script.js", @'
-// clean-titles v93
-const CT_VER = "v93";
+// clean-titles v94
+const CT_VER = "v94";
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -5261,8 +5261,8 @@ const tools = () => {
 
 // ----- page/06-flag.js: ⚑ Report box -----
 // ⚑ at the right end of the tab row (phone and PC): "What's wrong? (optional)" + Save keeps the search, your note and
-// its top 10 results on your server. Nothing else shows (no count, no send link): the local model decides when they're
-// worth a Claude session and the PC's hourly job sends them by itself. Anything about the box itself goes in the same box.
+// its top 10 results on your server. Nothing else shows (no count, no send link): the PC's watcher sends it to the
+// Report session as soon as it's saved. Anything about the box itself goes in the same box.
 const flagTop = () => {
   const out = [];
   for (const el of document.querySelectorAll("#results-list .result-item, #results-list .image-card, #results-list .video-card")) {
@@ -8199,7 +8199,7 @@ $null = docker exec $c sh -c 'for i in $(seq 1 200); do curl -fs -o /dev/null ht
 $ctT['ready'] = $ctSw.Elapsed.TotalSeconds
 
 $ss = docker exec $c cat /app/data/server-settings.json | Out-String | ConvertFrom-Json
-"plugin code inside the page (should be v93): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
+"plugin code inside the page (should be v94): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
 "page files (should be a ct and a psl file): " + (docker exec $c sh -c 'ls /app/src/public/ct/')
 "progressive results off (should be False): $($ss.settings.streamingEnabled -eq $true)"
 "typo fixer word list (should be about 82800): " + (docker exec $c sh -c 'wc -l < /app/data/plugins/clean-titles/words.txt')

@@ -92,8 +92,8 @@ guess: a page date isn't a release date). Switch: the Knowledge panel setting. S
 - Headless check (stub): `lost` 0, cls 0 with page 2, `ahead` 2120 px at 900 px tall.
 
 ### M7: notes match the code; clean, readable code; smoother page (user, 2026-11-28) [done: 1-3 v85-v86; 4 v87 install batching, v88 pass timing in ⚑ ctx + headless stub, v89 list/flag/gap passes cut (list ~19 -> ~4 ms, flag -> 0, gap 0 on endless-scroll pages); 5 v91 MAP (+ vision/app.py, tests) and QUICKSTART (speed rules, endless scroll, headless check)]
-User's words: every note must match the code (a stale note made Claude say updates install hourly; they install
-~1 min after a merge); optimize and smooth everything; no spaghetti: code Claude can read, change and understand.
+User's words: every note must match the code (a stale note made Claude say updates install hourly; since v93 they
+install as soon as degoog has been unused for 15 s after a merge: QUICKSTART "PC watcher"); optimize and smooth everything; no spaghetti: code Claude can read, change and understand.
 Each step is its own version; tests (`bun test`) stay green; behavior unchanged unless a step says so.
 1. Notes audit: QUICKSTART, HANDOFF, PLAN, SPEC, PREVIEW, BUDGET, MAP, code comments and the user's degoog memory
    file, each claim checked against the code (grep the file:line), stale ones fixed or deleted. HANDOFF becomes
