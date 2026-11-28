@@ -1523,9 +1523,13 @@ const flagBtn = () => {
 // measured, so empty or hidden blocks above the results can't add to it; the same on every tab and screen size
 const topGap = () => {
   const tabs = document.getElementById("results-tabs"), lay = document.getElementById("results-layout");
-  if (!tabs || !lay || lay.classList.contains("media-mode")) { lay?.style.removeProperty("--ct-top"); return; }
+  if (!tabs || !lay) return;
+  // The answer area counts as empty when nothing in it is showing (hidden leftovers otherwise kept degoog's
+  // "not empty" margin, an extra 24 px gap above the results)
+  const g = document.getElementById("at-a-glance");
+  if (g) g.classList.toggle("ct-blank", ![...g.children].some((e) => e.getClientRects().length));
   let top = Infinity;
-  for (const e of lay.querySelectorAll("#ct-fix, #at-a-glance > *, #sidebar-col > *, .result-item .result-url-row, .skeleton-card, .command-result")) {
+  for (const e of lay.querySelectorAll("#ct-fix, #at-a-glance > *, #sidebar-col > *, .result-item .result-url-row, .skeleton-card, .command-result, .image-card, .video-card")) {
     const r = e.getBoundingClientRect();
     if (r.height > 0 && r.top < top) top = r.top;
   }

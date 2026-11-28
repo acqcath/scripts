@@ -43,7 +43,7 @@ html:root { --ct-desc-pc: 15px; --ct-desc-phone: 13.5px; }
 .ct-alts a:visited { color: var(--text-link-visited); }
 .ct-alts a:hover { text-decoration: underline; }
 /* Typo fix line above results (Google's "Showing results for") */
-#ct-fix { margin: 0 0 4px; padding-left: var(--ct-x, 0px); font-size: 14px; line-height: 21px; color: var(--text-secondary); }
+#ct-fix { margin: 0 0 18px; padding-left: var(--ct-x, 0px); font-size: 14px; line-height: 21px; color: var(--text-secondary); }
 /* Everything the plugin adds enters with degoog's own result fade-in */
 .ct-in { animation: resultFadeIn .3s ease-out both; }
 /* Sharp thumbnail laid over the small one: same box, opacity only (resultFadeIn also slides, which a picture
@@ -88,7 +88,8 @@ html:root { --ct-desc-pc: 15px; --ct-desc-phone: 13.5px; }
 /* Images tab: no side panel, full width */
 #results-layout.media-mode #sidebar-col,
 #results-layout.media-mode #image-filters-bar { display: none !important; }
-#results-layout:not(.media-mode) { margin-top: var(--ct-top, 0px) !important; }
+#results-layout { margin-top: var(--ct-top, 0px) !important; }
+html #at-a-glance.ct-blank { margin: 0 !important; padding: 0 !important; }
 #results-layout.media-mode #results-main { max-width: none !important; }
 
 /* Cleaner web results */
@@ -191,7 +192,7 @@ html:root { --ct-desc-pc: 15px; --ct-desc-phone: 13.5px; }
   #results-layout:not(.media-mode) #results-main > * { grid-column: 1; order: 2; max-width: 44rem !important; }
   #results-layout:not(.media-mode) #at-a-glance { order: 1; }
   /* "Showing results for" first, above the answer card too (as on phones and Google) */
-  #results-layout:not(.media-mode) #results-main > #ct-fix { order: 1; margin-bottom: 0; }
+  #results-layout:not(.media-mode) #results-main > #ct-fix { order: 1; }
   #results-layout:not(.media-mode) #sidebar-col {
     grid-column: 1; order: 0; width: auto !important;
     margin: 16px 0 0 -16px !important; max-width: calc(44rem + 16px) !important;
