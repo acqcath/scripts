@@ -38,7 +38,14 @@ Code is split by job into modules that build.py concatenates in NN order into ON
   02 `row()` and the list/tab/relevance passes, 03 image AI + cards, 04 early answers + typo/related line, 05 site
   menu, PAA, Tools, 06 ⚑ (`flagBtn`/`flagBox`; chips from core `FLAG_CATS`), 07 top gap + skeletons, 08 blocks
   (forums, videos, top stories), 09 answer card, 10 quick view + panels, 11 tab repair + `init` (one observer pass
-  runs listPass/tabPass/relPass/ansPass before paint).
+  runs listPass/tabPass/relPass/ansPass before paint; every pass goes through `safe(name, fn)`, which adds its ms up
+  per search for the ⚑ context and the headless check).
+- Page speed rules (v89): no layout reads in a pass unless it must measure before paint (topGap); a placement that can
+  wait goes in the next frame (⚑ on phones); one-time parsing (public suffix list `PSL()`) at idle before results;
+  `gapSkip` skips topGap when a batch only changed things after what it measured (endless-scroll pages, folds).
+- Endless scroll (v90): the next page starts loading two screens early (custom.css `.degoog-infinite`); nothing
+  already on screen changes when a page goes in (page/08 `painted`: sitelinks and boxes never grow from later pages);
+  its history rewrite (`loaded`) is never a new search (page/01).
 - Blocks are placed by core `fmtShares`/`boxWorth`/`boxAt`, each block's share by core `blockShare` x fit; fetch gate
   `blockGo` vs `/cut` median (cut.json). Plan + milestones: PLAN.md.
 - Search identity (page/01): `searchId()` = address + a counter bumped by each degoog search start (its history
@@ -56,14 +63,12 @@ Code is split by job into modules that build.py concatenates in NN order into ON
 
 ## Sandbox limits (save the time)
 - Push 403 = the session lacks write access: call add_repo(acqcath, scripts, access="push") first, then push. The merge call can be refused by the auto-mode safety check: push + open the PR, then ask the user to approve the merge in chat.
-- test/headless/run.cjs needs private rec/ (not in this repo): for a quick layout check write a stub page instead (below). Push needs add_repo(push) at the start of every session: do it before the first push.
-- Render check for page/CSS changes: playwright (python) + /usr/bin/google-chrome work; load custom.css + built ct-page.js into a stub page, screenshot 1584 and 390 wide.
+- Headless check: `npm i playwright-core` in the scratchpad, then `CT_CHROME=/usr/bin/google-chrome CT_PW=<scratch>/node_modules/playwright-core node test/headless/run.cjs <outdir>` (~90 s). Without the private rec/ it runs on a stub page (degoog's ids, header and tabs, 30 made-up results on 9 sites, 20 with the search and 10 as endless scroll's page 2; no degoog base CSS, so layout shift is indicative, pass ms are real). Columns: cls (0), slow (5 slowest passes, ms per search), lost (0: nothing above endless scroll's page 2 went away), ahead (px before the end where the next page starts loading), page2 (its slowest passes). Exit 1 if cls, lost or errors aren't 0.
+- Render check for page/CSS changes: the headless check's screenshots (390 and 1280 wide, one per search) in <outdir>.
 - Fastest clone (~1 s, 3 MB, only degoog/): `git clone --depth 1 --filter=blob:none --sparse https://github.com/acqcath/scripts && git -C scripts sparse-checkout set degoog`. A full `git clone --depth 1` needs a ~10 min timeout. degoog's source: `GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 https://github.com/degoog-org/degoog` (client: src/client; tabs modules/tabs/tabs.ts; search utils/search/actions/search-actions-perform.tsx).
 - PC load: the update launcher runs below normal priority and skips the heavy part (install, self-check, report
   judging) while Windows reports a full-screen app (SHQueryUserNotificationState 2/3/4: games, also borderless); the
   "AI pending" self-check backs off 10 -> 20 -> ... 360 min (v84; the user saw ~20 s lag spikes).
-- Render check stub for page changes: see /home/claude/rc pattern: http.server + a page with custom.css + ct-page.js,
-  results rendered from test/fixtures with test/render.js (degoog's base CSS is absent, so compare placeholder vs real).
 - The shell can't reach crossref/wikimedia/espn (403 CONNECT); WebFetch can reach some. No pwsh, no degoog container: live checks = the installer's self-check on the user's server.
 - Installer docker calls (v87): all embedded files go in with ONE `docker cp $t\. :/tmp/ct-inst`, then one root exec (plugin
   files, inline.js) and one default-user exec (setcss, aittl, safeoff); add new embedded files to those, not new calls.
