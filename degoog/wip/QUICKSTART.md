@@ -42,6 +42,7 @@ only those lines (`sed -n A,Bp files/x.js`).
 
 ## Sandbox limits (save the time)
 - Push 403 = the session lacks write access: call add_repo(acqcath, scripts, access="push") first, then push. The merge call can be refused by the auto-mode safety check: push + open the PR, then ask the user to approve the merge in chat.
+- test/headless/run.cjs needs private rec/ (not in this repo): for a quick layout check write a stub page instead (below). Push needs add_repo(push) at the start of every session: do it before the first push.
 - Render check for page/CSS changes: playwright (python) + /usr/bin/google-chrome work; load custom.css + built ct-page.js into a stub page, screenshot 1584 and 390 wide.
 - Fastest clone (~1 s, 3 MB, only degoog/): `git clone --depth 1 --filter=blob:none --sparse https://github.com/acqcath/scripts && git -C scripts sparse-checkout set degoog`. A full `git clone --depth 1` needs a ~10 min timeout. degoog's source: `GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 https://github.com/degoog-org/degoog` (client: src/client; tabs modules/tabs/tabs.ts; search utils/search/actions/search-actions-perform.tsx).
 - The shell can't reach crossref/wikimedia/espn (403 CONNECT); WebFetch can reach some. No pwsh, no degoog container: live checks = the installer's self-check on the user's server.
