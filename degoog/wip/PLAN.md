@@ -86,7 +86,7 @@ guess: a page date isn't a release date). Switch: the Knowledge panel setting. S
   (page/01 `sgKey`, `loaded`), which would clear every box, card and fold above.
 - Headless check (stub): `lost` 0, cls 0 with page 2, `ahead` 2120 px at 900 px tall.
 
-### M7: notes match the code; clean, readable code; smoother page (user, 2026-11-28) [1-3 done (v85, v86); 4: v87 install batching, v88 pass timing in ⚑ ctx + headless stub (worst: list ~25 ms, gap ~15 ms, flag up to 24 ms per search), v89 cut them (list: public suffix list parsed at idle before the results, ~13 ms of it, and a faster parser; flag: phone placement in the next frame, no forced layout in the pass; gap: measures only the first showing result/picture/video, and skips batches that only change things below what it measured, so endless-scroll pages cost no gap pass; headless stub: realistic titles/sites + an endless-scroll page 2 with page2 ms and lost); next: 5]
+### M7: notes match the code; clean, readable code; smoother page (user, 2026-11-28) [done: 1-3 v85-v86; 4 v87 install batching, v88 pass timing in ⚑ ctx + headless stub, v89 list/flag/gap passes cut (list ~19 -> ~4 ms, flag -> 0, gap 0 on endless-scroll pages); 5 v91 MAP (+ vision/app.py, tests) and QUICKSTART (speed rules, endless scroll, headless check)]
 User's words: every note must match the code (a stale note made Claude say updates install hourly; they install
 ~1 min after a merge); optimize and smooth everything; no spaghetti: code Claude can read, change and understand.
 Each step is its own version; tests (`bun test`) stay green; behavior unchanged unless a step says so.
