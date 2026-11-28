@@ -65,7 +65,9 @@ Code is split by job into modules that build.py concatenates in NN order into ON
 - Render check stub for page changes: see /home/claude/rc pattern: http.server + a page with custom.css + ct-page.js,
   results rendered from test/fixtures with test/render.js (degoog's base CSS is absent, so compare placeholder vs real).
 - The shell can't reach crossref/wikimedia/espn (403 CONNECT); WebFetch can reach some. No pwsh, no degoog container: live checks = the installer's self-check on the user's server.
-- Never read installer.ps1 or HANDOFF.md whole (540 KB / 72 KB): grep, or read the sources in files/.
+- Installer docker calls (v87): all embedded files go in with ONE `docker cp $t\. :/tmp/ct-inst`, then one root exec (plugin
+  files, inline.js) and one default-user exec (setcss, aittl, safeoff); add new embedded files to those, not new calls.
+- Never read install.ps1 or HANDOFF.md whole (540 KB / 72 KB): grep, or read the sources in files/.
 - A clone with `-b <branch>` is single-branch: fetch main as `git fetch --depth=10 origin main:refs/remotes/origin/main`; cherry-picking WIP onto main needs depth past the shared parent (else every file conflicts as "both added").
 - Name a release from main's newest version (`git log -3 origin/main`), not from the plan: a side PR can take the next number.
 - Python/torch: `pip install --break-system-packages torch transformers` works from PyPI (download.pytorch.org and huggingface.co are blocked), so vision/app.py logic can be checked on a tiny random-config model: test/rerank_equiv.py.
