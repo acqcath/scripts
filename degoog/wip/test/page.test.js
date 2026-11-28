@@ -857,3 +857,23 @@ test("page M5: opening a result sends only its block kind (no address) for the l
   expect(c.params.get("q")).toBe("rust ownership");
   expect([...c.params.keys()].some((k) => /url|href|u$/.test(k))).toBe(false);
 });
+
+test("page: News -> Web -> News again shows News's results (switching tabs fast left the list empty)", async () => {
+  const res = [1, 2, 3, 4].map((i) => ({ title: `Kalimba story ${i}`, url: `https://news${i}.example.com/kalimba-${i}`, snippet: `Kalimba news number ${i}.`, sources: ["bing"] }));
+  const { win, document, fire, errors } = await run("kalimba", { type: "news", res });
+  const list = document.getElementById("results-list");
+  const draw = (rows) => { list.innerHTML = rows.map((r, i) => render(TPL, ctx(r, i))).join(""); fire([...list.children]); };
+  const shown = () => [...list.querySelectorAll(".result-item")].filter((el) => el.style.display !== "none").length;
+  expect(shown()).toBe(4);
+  win.history.pushState({ degoog: true, query: "kalimba", type: "web", page: 1 }, "", "/search?q=kalimba");
+  draw(res.map((r) => ({ ...r, url: r.url.replace("news", "web") })));
+  win.history.pushState({ degoog: true, query: "kalimba", type: "tab:engine:news", page: 1 }, "", "/search?q=kalimba&type=news");
+  draw(res);
+  expect(shown()).toBe(4);
+  // endless scroll rewrites the entry: same search, so a copy of a shown result still folds
+  win.history.replaceState({ degoog: true, query: "kalimba", type: "tab:engine:news", page: 1, loaded: 2 }, "", "/search?q=kalimba&type=news&loaded=2");
+  list.insertAdjacentHTML("beforeend", render(TPL, ctx(res[0], 9)));
+  fire([list.lastElementChild]);
+  expect(shown()).toBe(4);
+  expect(errors).toEqual([]);
+});

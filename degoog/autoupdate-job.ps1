@@ -196,6 +196,8 @@ $launcher = @'
 # Asks GitHub which commit main is on (git ls-remote: instant, not cached, not the API's 60-an-hour limit), so a
 # release is seen within a minute; files are then fetched at that exact commit, which no cache can serve stale.
 $d = Join-Path $env:LOCALAPPDATA 'clean-titles'; $j = Join-Path $d 'job.ps1'
+# Below normal priority, for this run and everything it starts (git, docker), so a game keeps the CPU first
+try { (Get-Process -Id $PID).PriorityClass = 'BelowNormal' } catch {}
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072
 $git = (Get-Command git -ErrorAction SilentlyContinue).Source
 if (-not $git -and (Test-Path "$env:ProgramFiles\Git\cmd\git.exe")) { $git = "$env:ProgramFiles\Git\cmd\git.exe" }
@@ -220,6 +222,14 @@ while ($true) {
   if (-not $fast -or (Get-Date).AddSeconds(10) -gt $stop) { exit }
   Start-Sleep -Seconds 10
 }
+# The heavy part (an install with its degoog restart, the self-check's GPU and live-source tests, the local model
+# judging reports) waits while a full-screen app runs (a game, also borderless; a full-screen video or presentation):
+# it landed in the middle of games as ~20 s lag spikes. Windows itself says when (the same signal that holds back
+# notifications); the check runs only here, about once an hour or after a release, and the next minute retries.
+try {
+  Add-Type -Namespace Ct -Name Quns -MemberDefinition '[DllImport("shell32.dll")] public static extern int SHQueryUserNotificationState(out int s);' -ErrorAction Stop
+  $qs = 0; if ([Ct.Quns]::SHQueryUserNotificationState([ref]$qs) -eq 0 -and $qs -in 2, 3, 4) { exit }
+} catch {}
 $have = if (Test-Path "$j.sha") { (Get-Content "$j.sha" -Raw).Trim() } else { '' }
 if (-not $env:CT_MAIN -or $have -ne $env:CT_MAIN -or -not (Test-Path $j)) {
   try {
@@ -263,7 +273,12 @@ function Judge($sha, $out) {
   elseif ($out -match '(\d+) FAIL \(clean-titles self-check\)') { $ok = $true; Issue "self-check after updating to ${sha}: $($Matches[1]) FAIL`n$(Tail $out)" }
   else { $ok = $false; Issue "the update to $sha didn't finish`n$(Tail $out)" }
   if (-not $ok) { Set-Content -Path $tried -Value "$sha fail $(Get-Date -Format o)" }
-  elseif ($aiPending) { Set-Content -Path $tried -Value "$sha pending $(Get-Date -Format o)" }
+  elseif ($aiPending) {
+    # n-th check in a row that found the AI not up yet: the next one waits twice as long (10 min, 20, 40... up to 6 h)
+    $n = 1; if (Test-Path $tried) { $p = (Get-Content $tried -Raw).Trim() -split ' '; if ($p.Count -ge 4 -and $p[0] -eq $sha -and $p[1] -eq 'pending') { $n = [int]$p[3] + 1 } }
+    Set-Content -Path $tried -Value "$sha pending $(Get-Date -Format o) $n"
+    if ($n -eq 6) { Notify 'degoog: the AI part still is not up after 5 checks; the next checks back off (up to every 6 h).'; Issue "the AI part (ct-vision) is still not up after 5 self-checks for ${sha}`n$(Tail $out)" }
+  }
   else { Set-Content -Path $mark -Value $sha; Remove-Item $tried, (Join-Path $dir 'watch-until.txt') -ErrorAction SilentlyContinue }
 }
 try {
@@ -282,7 +297,8 @@ try {
   $age = if ($t.Count -ge 3) { ((Get-Date) - [datetime]$t[2]).TotalMinutes } else { 1e9 }
   if ($t.Count -ge 3 -and $t[0] -eq $sha -and $t[1] -eq 'fail' -and $age -lt 60) { SendReports; return }
   if ($t.Count -ge 3 -and $t[0] -eq $sha -and $t[1] -eq 'pending') {
-    if ($age -lt 10) { SendReports; return }
+    $wait = [math]::Min(10 * [math]::Pow(2, [math]::Max(0, [int]$(if ($t.Count -ge 4) { $t[3] } else { 1 }) - 1)), 360)
+    if ($age -lt $wait) { SendReports; return }
     # self-check only, from the installer already downloaded (no reinstall, no degoog restart)
     $m = [regex]::Match($code, "WriteAllText\(`"\`$env:TEMP\\ct-check\.js`", @'\r?\n([\s\S]*?)\r?\n'@\)")
     $c = docker ps -q | Where-Object { (docker inspect $_ --format '{{range .Mounts}}{{.Destination}} {{end}}') -match '/app/data' } | Select-Object -First 1

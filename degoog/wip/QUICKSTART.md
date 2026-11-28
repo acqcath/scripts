@@ -32,6 +32,12 @@ only those lines (`sed -n A,Bp files/x.js`).
 - script.js: page code. ⚑ Report: `flagBtn`/`flagBox` (link to claude.ai/code/new built before the tap); prompt text: core.js `flagPrompt`.
 - index.js ⚑ routes: `/flag` (store + hand over), `/flags` (what's waiting); files flags.json, update-issue.txt (written by ../autoupdate-job.ps1 `Issue`).
 - script.js (rest): `row()` cleans one result (title, source line, date), `listPass`/`tabPass`/`relPass`/`ansPass` run in one observer pass before paint, `tabRescue`, `init`.
+- script.js search identity: `searchId()` = address + a counter bumped by each degoog search start (its history entries
+  {degoog:true,...}: every push, or a rewrite with a new query/page; popstate). Never key per-search state by the
+  address alone: Web -> News -> Web -> News then saw News's results as "already seen" and hid them all (fixed v84).
+- script.js loading placeholders: `skel` redraws degoog's skeletons from shapes `skelLearn` measured on the last real
+  results (localStorage ct-skel, per tab/device/50 px width); Images uses the real grid CSS + measured picture shapes;
+  `picLoad`: shimmer until loaded, first 18 pictures eager.
 - core.js + answers.js: pure logic (dedupe, caps, answers); built into ct-page.js by build.py.
 - custom.css, vision/app.py (reranker + image AI on the GPU), ctcheck.js (installer self-check table).
 
@@ -45,6 +51,11 @@ only those lines (`sed -n A,Bp files/x.js`).
 - test/headless/run.cjs needs private rec/ (not in this repo): for a quick layout check write a stub page instead (below). Push needs add_repo(push) at the start of every session: do it before the first push.
 - Render check for page/CSS changes: playwright (python) + /usr/bin/google-chrome work; load custom.css + built ct-page.js into a stub page, screenshot 1584 and 390 wide.
 - Fastest clone (~1 s, 3 MB, only degoog/): `git clone --depth 1 --filter=blob:none --sparse https://github.com/acqcath/scripts && git -C scripts sparse-checkout set degoog`. A full `git clone --depth 1` needs a ~10 min timeout. degoog's source: `GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 https://github.com/degoog-org/degoog` (client: src/client; tabs modules/tabs/tabs.ts; search utils/search/actions/search-actions-perform.tsx).
+- PC load: the update launcher runs below normal priority and skips the heavy part (install, self-check, report
+  judging) while Windows reports a full-screen app (SHQueryUserNotificationState 2/3/4: games, also borderless); the
+  "AI pending" self-check backs off 10 -> 20 -> ... 360 min (v84; the user saw ~20 s lag spikes).
+- Render check stub for page changes: see /home/claude/rc pattern: http.server + a page with custom.css + ct-page.js,
+  results rendered from test/fixtures with test/render.js (degoog's base CSS is absent, so compare placeholder vs real).
 - The shell can't reach crossref/wikimedia/espn (403 CONNECT); WebFetch can reach some. No pwsh, no degoog container: live checks = the installer's self-check on the user's server.
 - Never read installer.ps1 or HANDOFF.md whole (540 KB / 72 KB): grep, or read the sources in files/.
 - A clone with `-b <branch>` is single-branch: fetch main as `git fetch --depth=10 origin main:refs/remotes/origin/main`; cherry-picking WIP onto main needs depth past the shared parent (else every file conflicts as "both added").

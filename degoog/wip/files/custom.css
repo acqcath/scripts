@@ -64,9 +64,9 @@ html:root { --ct-desc-pc: 15px; --ct-desc-phone: 13.5px; }
 @media (max-width: 767px) { #ct-related .ct-rel-grid { grid-template-columns: minmax(0, 1fr); } }
 
 /* Google-style images */
-.image-grid { gap: 12px !important; }
+:is(.image-grid, .skeleton-image-grid) { gap: 12px !important; }
 .image-column { gap: 16px !important; }
-.image-card { overflow: visible !important; border-radius: 0 !important; }
+:is(.image-card, .ct-skimg) { overflow: visible !important; border-radius: 0 !important; }
 .image-card:hover { opacity: 1 !important; }
 .image-thumb-wrap { border-radius: 14px; background: var(--bg-light); }
 /* Broken or still-loading pictures: plain tile, no alt text spilling over it */
@@ -213,10 +213,10 @@ html #at-a-glance.ct-blank { margin: 0 !important; padding: 0 !important; }
 @media (max-width: 767px) {
   /* Same 8px margin on both sides of the screen (the right column ran into the edge) */
   #results-layout.media-mode, #results-layout.media-mode #results-main { padding-inline: 0 !important; margin-inline: 0 !important; max-width: none !important; width: 100% !important; box-sizing: border-box !important; }
-  .image-grid { gap: 4px !important; padding: 8px 8px 24px !important; margin: 0 !important; width: 100% !important; box-sizing: border-box !important; }
+  :is(.image-grid, .skeleton-image-grid) { gap: 4px !important; padding: 8px 8px 24px !important; margin: 0 !important; width: 100% !important; box-sizing: border-box !important; }
   .image-column { gap: 10px !important; }
   .image-thumb-wrap { background: var(--bg-light) !important; }
-  .image-card { border-radius: 0 !important; overflow: visible !important; }
+  :is(.image-card, .ct-skimg) { border-radius: 0 !important; overflow: visible !important; }
   .image-thumb-wrap { border-radius: 8px !important; overflow: hidden !important; }
   .image-thumb { height: auto !important; object-fit: contain !important; }
   .image-info { padding: 4px 2px 0 !important; gap: 2px !important; }
@@ -895,3 +895,18 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .ct-prod-photo img.ct-on { opacity: 1; }
 .ct-prod:not(.ct-prod-wide) .ct-prod-photo { float: right; width: 88px; aspect-ratio: 1; margin: 0 0 8px 12px; }
 .ct-prod .ct-kp-facts { clear: both; }
+
+/* Loading placeholders in the shape of what comes (script.js skel): measured rows for list tabs, the real grid for
+   Images; pictures keep the same shimmer until they've loaded and the image AI answered, then fade in */
+.skeleton-results.ct-skel-m { display: block !important; gap: 0 !important; }
+.ct-skc { position: relative; }
+.ct-skb { position: absolute; }
+.ct-skt { display: inline-block; height: .72em; vertical-align: middle; border-radius: 4px; }
+.ct-skimg .image-thumb-wrap { width: 100%; }
+:is(.ct-skb, .ct-skb-in, .ct-skt),
+:is(.image-card, .video-card).ct-vpend :is(.image-thumb-wrap, .video-thumb-wrap),
+:is(.image-thumb-wrap, .video-thumb-wrap):has(> img.ct-ld) {
+  background: linear-gradient(90deg, var(--bg-light) 25%, var(--bg-hover) 50%, var(--bg-light) 75%) !important;
+  background-size: 200% 100% !important; animation: skeleton-shimmer 1.6s ease-in-out infinite;
+}
+img.ct-ld { opacity: 0 !important; }
