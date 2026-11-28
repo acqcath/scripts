@@ -10,7 +10,7 @@ on stdin; `claude --cloud "<task>"` fails from a background job: "requires an in
 notification. Archived/not-found session = a new one. An update breakage (`updateIssue`) goes at once, the rest when
 the local model says they're worth it; the server marks them sent. The job installs Git and the Claude CLI itself. No separate flags repo (the user won't
 create one; add_repo for a new repo is refused): a Report session gets every flag in its prompt.
-1. Fix each flag at the code level (core.js / script.js / index.js: ranking, relevance, junk rules, or the ⚑ box itself),
+1. Fix each flag at the code level (core.js / files/page / files/server modules, see below: ranking, relevance, junk rules, or the ⚑ box itself),
    add a test from the flag where possible (no searches from flags in this public repo), release, merge.
 2. `updateIssue` = the installer's self-check output after the auto-update: fix the FAIL rows like any other bug.
 3. Live look at the server (degoog.tigon-cat.ts.net, built-in browser): the pane treats it as high-risk, so EVERY
@@ -27,22 +27,30 @@ Where code lives: **[MAP.md](MAP.md)** (every section, function and route with f
 only those lines (`sed -n A,Bp files/x.js`).
 
 ## Where things are (degoog/wip/files)
-- index.js `/needs` (`NEEDS`, `needsFor`): one batched reranker pass per search rating format shares, needs and block fits (vision `/rank` takes per-doc `tasks`); page places blocks by core `fmtShares`/`boxWorth`/`boxAt`. Plan + milestones: PLAN.md. Blocks (forums/news/papers/info/answer) placed by core `blockShare` x fit; fetch gate `blockGo` vs `/cut` median (cut.json).
-- index.js: server plugin. Rank hook `__ctResults` (reranker scores + featured snippet, DOI names, 1.6 s wait), typo fixer (`check`, `TREND`, `NAMES`), routes (`routes`), `net()` fetch helper.
-- script.js: page code. ⚑ Report: `flagBtn`/`flagBox` (link to claude.ai/code/new built before the tap); prompt text: index.js `flagPrompt`.
-- index.js ⚑ routes: `/flag` (store + hand over), `/flags` (what's waiting); files flags.json, update-issue.txt (written by ../autoupdate-job.ps1 `Issue`).
-- script.js (rest): `row()` cleans one result (title, source line, date), `listPass`/`tabPass`/`relPass`/`ansPass` run in one observer pass before paint, `tabRescue`, `init`.
-- script.js search identity: `searchId()` = address + a counter bumped by each degoog search start (its history entries
-  {degoog:true,...}: every push, or a rewrite with a new query/page; popstate). Never key per-search state by the
-  address alone: Web -> News -> Web -> News then saw News's results as "already seen" and hid them all (fixed v84).
-- script.js loading placeholders: `skel` redraws degoog's skeletons from shapes `skelLearn` measured on the last real
-  results (localStorage ct-skel, per tab/device/50 px width); Images uses the real grid CSS + measured picture shapes;
-  `picLoad`: shimmer until loaded, first 18 pictures eager.
-- core.js + answers.js: pure logic (dedupe, caps, answers); built into ct-page.js by build.py.
+Code is split by job into modules that build.py concatenates in NN order into ONE scope (no imports between them):
+- server/NN-*.js -> index.js (the server plugin; generated, never edit it). 01 setup + Sites, 02 `net()` (every
+  outside fetch), 03 card data (fx, eol, Wikidata, CMU, KP), 04 tap-fetched pages (archive, quick view, product),
+  05 sports, 06 anti-SEO, 07 typo fixer (`check`, `TREND`, `NAMES`), 08 ct-vision calls, 09 ⚑ flags (`flagPrompt`,
+  flags.json, update-issue.txt written by ../autoupdate-job.ps1 `Issue`), 10 `/needs` (`NEEDS`, `needsFor`: one
+  batched reranker pass per search; vision `/rank` takes per-doc `tasks`) + cutoffs + learning, 11 shape/sides +
+  the rank hook `__ctResults` (reranker scores, featured snippet, DOI names, 1.6 s wait), 12 `routes` (the one table).
+- page/NN-*.js -> ct-page.js after core.js + answers.js (pure logic, exported as CT.*). 01 bridge + search identity,
+  02 `row()` and the list/tab/relevance passes, 03 image AI + cards, 04 early answers + typo/related line, 05 site
+  menu, PAA, Tools, 06 ⚑ (`flagBtn`/`flagBox`; chips from core `FLAG_CATS`), 07 top gap + skeletons, 08 blocks
+  (forums, videos, top stories), 09 answer card, 10 quick view + panels, 11 tab repair + `init` (one observer pass
+  runs listPass/tabPass/relPass/ansPass before paint).
+- Blocks are placed by core `fmtShares`/`boxWorth`/`boxAt`, each block's share by core `blockShare` x fit; fetch gate
+  `blockGo` vs `/cut` median (cut.json). Plan + milestones: PLAN.md.
+- Search identity (page/01): `searchId()` = address + a counter bumped by each degoog search start (its history
+  entries {degoog:true,...}: every push, or a rewrite with a new query/page; popstate). Never key per-search state
+  by the address alone (Web -> News -> Web -> News once hid all of News's results; fixed v84).
+- Loading placeholders (page/07): `skel` redraws degoog's skeletons from shapes `skelLearn` measured on the last real
+  results (localStorage ct-skel, per tab/device/50 px width); Images uses the real grid CSS + measured picture
+  shapes; `picLoad`: shimmer until loaded, first 18 pictures eager.
 - custom.css, vision/app.py (reranker + image AI on the GPU), ctcheck.js (installer self-check table).
 
 ## Build, test, release
-1. `cd degoog/wip && bun install && CT_VERSION=vNN python3 build.py && bun test` (page tests load the BUILT files/ct-page.js: rebuild after any script.js/core.js edit or the test runs old code; happy-dom has no `:scope`, use `[...g.children].find`) (46 tests skip: they need private recordings in rec/).
+1. `cd degoog/wip && bun install && CT_VERSION=vNN python3 build.py && bun test` (tests load the BUILT files/ct-page.js and files/index.js: rebuild after any module/core.js edit or the test runs old code; happy-dom has no `:scope`, use `[...g.children].find`) (46 tests skip: they need private recordings in rec/).
 2. `CT_VERSION=vNN python3 build.py && python3 patch_installer.py vNN` writes ../install.ps1 and checks every embedded file round-trips.
 3. Branch, push (`git -c push.negotiate=true push -u origin vNN`), open the PR with `gh api repos/acqcath/scripts/pulls -f title=... -f head=vNN -f base=main -f body=...` (`gh pr create` fails: GraphQL blocked). Each version branches from a fresh `git fetch --depth=5 origin main && git checkout -B vNN origin/main` (main is squash-merged, so a branch off the last version branch conflicts). Right after a push, merge can say "conflicts" while GitHub recomputes: wait ~10 s and retry once. Then merge it yourself as its own command: `gh api -X PUT repos/acqcath/scripts/pulls/N/merge -f merge_method=squash` (if the safety check blocks it, leave it open, build the next version on top, merge both with the next PR, and tell the user). The PC's auto-update installs main within about a minute of the merge (the job runs every minute and `git ls-remote` spots the new main; hourly only while Git is missing). The task's shape (every minute, conhost --headless) is set only by ../setup-autoupdate.ps1: the job can't change it (task made from an admin terminal = "Access is denied"), it only checks it (`Check-Task`) and notifies.
 

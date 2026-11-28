@@ -1,5 +1,5 @@
-// clean-titles v85
-const CT_VER = "v85";
+// clean-titles v86
+const CT_VER = "v86";
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -1443,6 +1443,7 @@ const qaAbout = (question, text) => {
 
 return { pslParse, regDomain, shortTarget, arxivId, docKey, titleKey, deduper, dedupe, namedSites, capSites, listCtx, navName, navDist, shapeOf, filterSite, onlyLine, onlyQuery, docsFor, planPage, copyKey, sameCopy, jaccard, varietyOrder, VARIETY_MARGIN, SITE_SCORE, unblockText, CHEAT_SITES, seoSigns, SEO_MIN, seoVerdict, PAYWALL_SITES, paywalled, cleanSnippet, doiPublisher, tidyText, dateLabel, relDate, upsValid, isbnValid, cmuCourse, tabLow, relWords, relIdent, matchShare, relJudgeable, relCore, related, topicOf, tidyTitle, FLAG_CATS, fmtShares, boxWorth, boxAt, cutMedian, blockGo, blockShare, shapePick, questionStyle, prodShow, fmtNum, calc, convert, percent, dateMath, pattern, currency, eolQuery, eolAnswer, WD_PROP, wdQuery, wdAnswer, cmuAgg, cmuAnswer, sportsAnswer, kpQuery, kpMatch, kpLine, meaningLine, visualQ, deeplUrl, answer, snipQuery, snipSentences, featuredSnippetAI, featuredSnippet, QA_LEAD, qaAbout };
 })();
+// ----- page/01-base.js: bridge to the server, search identity, title cleaning helpers -----
 // Every plugin request goes through degoog's command address: iPhone content blockers reject /api/plugin/ addresses
 const bridge = (route, params = {}, body) => {
   const qs = new URLSearchParams(params);
@@ -1646,6 +1647,7 @@ const junk = (el) => {
   return !wantsDict && (DICT.test(h.replace(/^www\./, "")) || DICT_TITLE.test(a.textContent || ""));
 };
 
+// ----- page/02-list.js: list pass (Web): dedupe, site prefs, folds; tab/relevance passes; HD images; row() cleans one result -----
 // ===== List pass (Web tab): dedupe -> site prefs -> 2 per site with folds, planned by core.js before paint =====
 // Public suffix list: /public/ct/psl.<hash>.js, loaded with defer before this module, sets window.CT_PSL.
 // If it failed to load, sites are whole host names (never a guessed suffix).
@@ -2006,6 +2008,7 @@ if (/[?&]type=images\b/.test(location.search)) bridge("aiimg", { v: AIV }).then(
   if (Array.isArray(j.list)) { AIIMG = new Set(j.list); try { localStorage.setItem("ct-aiimg", JSON.stringify({ v: j.v, list: j.list })); } catch {} }
 }).catch(() => {});
 const aiImg = (host) => { if (!AIIMG || !host) return false; for (let h = host; h.includes("."); h = h.slice(h.indexOf(".") + 1)) if (AIIMG.has(h)) return true; return false; };
+// ----- page/03-images.js: image AI, media folds, image preview + related strip, result cards -----
 // Relevance on the Images and Videos tabs too (same one rule as Web, on the title and site): an image or video with
 // none of the search's words and not on the topic the related ones share goes behind "N unrelated images ⌄" /
 // "N unrelated videos ⌄" at the end ("graphic" in a search doesn't bring porn in). Decided before paint, a batch at a time.
@@ -2249,6 +2252,7 @@ fetch("/api/commands", { cache: "no-store" })
     glance();
   })
   .catch(() => {});
+// ----- page/04-early.js: weather/bang glance, early answers fetched before results, typo line + related searches -----
 // Weather words anywhere ("weather in nyc tomorrow"): the leftover words are the place; no place = no card
 const WX = /\b(weather|wether|forecast|temperature|temp)\b/i;
 const WX_DROP = /\b(weather|wether|forecast|temperature|temp|today|tonight|tomorrow|tommorow|tmrw|now|current|currently|this|next|week|weekend|hourly|daily|10|day|radar|what'?s|whats|what|is|the|teh|how'?s|in|for|at|of|like|will|it|be)\b/gi;
@@ -2511,6 +2515,7 @@ const extras = () => {
     })(ready("fix", key));
 };
 
+// ----- page/05-sites-tools.js: site choices menu, People also ask, Tools (advanced search) -----
 // ===== Site choices, People also ask, and search Tools =====
 const goTo = (text) => {
   const u = new URL(location.href);
@@ -2833,6 +2838,7 @@ const tools = () => {
 };
 
 
+// ----- page/06-flag.js: ⚑ Report box -----
 // ⚑ at the right end of the tab row (phone and PC): "What's wrong? (optional)" + Save keeps the search, your note and
 // its top 10 results on your server. Nothing else shows (no count, no send link): the local model decides when they're
 // worth a Claude session and the PC's hourly job sends them by itself. Anything about the box itself goes in the same box.
@@ -2976,6 +2982,7 @@ const flagBtn = () => {
   flagPlace();
   if (!flagPlace.on) { flagPlace.on = 1; PHONE.addEventListener("change", flagPlace); addEventListener("resize", flagPlace); }
 };
+// ----- page/07-layout.js: top gap, loading skeletons in the real shape, picture loading -----
 // Gap from the tab row to the first thing under it (answer card, info panel or the first result's source line):
 // measured, so empty or hidden blocks above the results can't add to it; the same on every tab and screen size
 const topGap = () => {
@@ -3158,6 +3165,7 @@ const noUsage = (root) => {
   }
 };
 
+// ----- page/08-blocks.js: sitelinks, forums, videos, top stories -----
 // Each step runs on its own: one error can't stop the others (errors go to the browser console)
 // ===== Sitelinks, Discussions and forums, Videos, Top stories =====
 // Built from the results already on the page (endless-scroll pages too), so they cost nothing: nothing is shown twice,
@@ -3510,6 +3518,7 @@ const groups = () => {
   }
 };
 
+// ----- page/09-answers.js: answer card, AI summary spot, contested check, only-site line -----
 // ===== Answer card, local answers (core answers.js: math, units, cooking, tip/percent, dates, patterns) =====
 // Worked out from the search words alone, so it's drawn in the same pass that clears the panel area for a new
 // search: in place before the results, nothing reserved, nothing late. While it's there, every other panel in the
@@ -3855,6 +3864,7 @@ const onlyPass = () => {
   if (kpEl) kpEl.after(a); else list.prepend(a);
 };
 
+// ----- page/10-panels.js: quick view, inline stars, meaning line, knowledge panel, product panel -----
 // ===== Quick view (spec 11): your tap opens it under the result (it grows: your action), tap again to close =====
 const QV_SHOW = { ingredients: 8, steps: 3, questions: 3 };
 const qvBox = (v) => {
@@ -4132,6 +4142,7 @@ addEventListener("scroll", () => { if (PD.d && !PD.done) safe("prod", productPas
 // copy of a tab, no active tab or the wrong one. One tab per kind, exactly one underlined (the one you're on), and
 // Tools then ⚑ last, after every redraw.
 let tabNow = "";
+// ----- page/11-init.js: tab row repair, init (the one observer pass), load timing, DuckDuckGo once -----
 const tabKind = (t) => { const d = t.dataset.type || ""; return d.startsWith("tab:engine:") ? d.slice(11) : d.startsWith("tab:") ? d.slice(4) : d; };
 const tabKeep = () => {
   const row = document.getElementById("results-tabs");
