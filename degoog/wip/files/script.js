@@ -82,10 +82,6 @@ const tabsEdge = () => {
   const pr = Math.round(tabs.getBoundingClientRect().right - bar.getBoundingClientRect().right);
   if (pr >= 0 && bar.getBoundingClientRect().width > 200) tabs.style.setProperty("--ct-tabs-pr", `${pr}px`);
   else tabs.style.removeProperty("--ct-tabs-pr");
-  // Tools sits at the bar's right edge whenever the tabs leave room (any width); only when the row has to scroll does
-  // it follow the last tab, behind a thin divider (measured, not a screen-size rule)
-  const t = document.getElementById("ct-tools");
-  if (t) { tabs.classList.remove("ct-tight"); if (t.offsetLeft - (t.previousElementSibling ? t.previousElementSibling.offsetLeft + t.previousElementSibling.offsetWidth : 0) < 8 || tabs.scrollWidth > tabs.clientWidth + 1) tabs.classList.add("ct-tight"); }
   if (!tabsEdge.ro && window.ResizeObserver) { tabsEdge.ro = new ResizeObserver(() => requestAnimationFrame(tabsEdge)); tabsEdge.ro.observe(bar); tabsEdge.ro.observe(tabs); }
 };
 const lineUp = () => {
@@ -1341,7 +1337,7 @@ const tools = () => {
   tabsEdge();
   t.addEventListener("click", () => {
     let f = document.getElementById("ct-adv");
-    if (f) { f.remove(); t.setAttribute("aria-expanded", "false"); return; }
+    if (f) { f.remove(); t.setAttribute("aria-expanded", "false"); topGap(); return; }
     t.setAttribute("aria-expanded", "true");
     let q = "";
     try { q = new URL(location.href).searchParams.get("q") || ""; } catch {}
@@ -1378,6 +1374,7 @@ const tools = () => {
       if (nq) location.href = goTo(nq);
     });
     tabs.after(f);
+    topGap();
     if (!TOUCH.matches) f.elements.all.focus();
   });
 };
@@ -1547,7 +1544,10 @@ const topGap = () => {
   if (top === Infinity) return;
   const cur = parseFloat(lay.style.getPropertyValue("--ct-top")) || 0;
   const want = TOUCH.matches ? 12 : 16;
-  const next = Math.round(cur + want - (top - tabs.getBoundingClientRect().bottom));
+  // measured from whatever sits right above the results: the tab row, or the open Tools fields under it (measuring from
+  // the tabs alone pulled the results up under the open fields)
+  const adv = document.getElementById("ct-adv"), above = Math.max(tabs.getBoundingClientRect().bottom, adv ? adv.getBoundingClientRect().bottom : 0);
+  const next = Math.round(cur + want - (top - above));
   if (Math.abs(next - cur) >= 1) lay.style.setProperty("--ct-top", `${next}px`);
 };
 
