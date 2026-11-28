@@ -1,4 +1,5 @@
 & {
+$ctSw = [Diagnostics.Stopwatch]::StartNew(); $ctT = [ordered]@{}
 $t = "$env:TEMP\ct-new"; New-Item -ItemType Directory -Force $t | Out-Null
 [IO.File]::WriteAllText("$t\index.js", @'
 import * as fs from "node:fs";
@@ -7861,8 +7862,11 @@ docker create --name ct-vision-setup -v /var/run/docker.sock:/var/run/docker.soc
 docker cp "$vd\." ct-vision-setup:/src | Out-Null; docker start ct-vision-setup | Out-Null
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $vd
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $t
+$ctT['files'] = $ctSw.Elapsed.TotalSeconds
 docker restart $c | Out-Null
+$ctT['restart'] = $ctSw.Elapsed.TotalSeconds
 $null = docker exec $c sh -c 'for i in $(seq 1 40); do curl -fs -o /dev/null http://127.0.0.1:${DEGOOG_PORT:-4444}/readyz && exit 0; sleep 1; done'
+$ctT['ready'] = $ctSw.Elapsed.TotalSeconds
 
 $ss = docker exec $c cat /app/data/server-settings.json | Out-String | ConvertFrom-Json
 "plugin code inside the page (should be v71): " + (docker exec $c sh -c 'grep -h -o -m1 clean-titles.v[0-9a-z-]* /app/src/public/ct/ct.*.js' | Select-Object -First 1)
@@ -8125,4 +8129,6 @@ const sleep = (n) => new Promise((r) => setTimeout(r, n));
 
 '@)
 docker cp "$env:TEMP\ct-check.js" "${c}:/tmp/ct-check.js"; docker exec $c bun /tmp/ct-check.js; docker exec $c rm -f /tmp/ct-check.js; Remove-Item -Force "$env:TEMP\ct-check.js"
+$ctT['check'] = $ctSw.Elapsed.TotalSeconds; $p0 = 0
+"install timing (s): " + (($ctT.Keys | ForEach-Object { $v = $ctT[$_]; "$_ {0:N1}" -f ($v - $p0); $p0 = $v }) -join ", ") + ", total {0:N1}" -f $ctSw.Elapsed.TotalSeconds
 } | Tee-Object -Variable o; $o | Out-String | Set-Clipboard
