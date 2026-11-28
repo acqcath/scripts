@@ -1,5 +1,5 @@
-// clean-titles v77
-const CT_VER = "v77";
+// clean-titles v78
+const CT_VER = "v78";
 const CT = (() => {
 // clean-titles core: pure functions (no DOM), shared by the page script and the tests.
 // Everything here runs synchronously before first paint, so it only uses data already in the page.
@@ -3013,11 +3013,15 @@ const topGap = () => {
   let top = Infinity;
   for (const e of lay.querySelectorAll("#ct-fix, #at-a-glance > *, #sidebar-col > *, .result-item .result-url-row, .skeleton-card, .command-result, .image-card, .video-card")) {
     const r = e.getBoundingClientRect();
-    if (r.height > 0 && r.top < top) top = r.top;
+    if (!(r.height > 0)) continue;
+    // a line of text starts where its letters start, not where its line spacing starts
+    const cs = getComputedStyle(e), lh = parseFloat(cs.lineHeight), fs = parseFloat(cs.fontSize);
+    const t = r.top + parseFloat(cs.paddingTop || 0) + (lh > fs && e.childElementCount === 0 || e.id === "ct-fix" ? (lh - fs) / 2 : 0);
+    if (t < top) top = t;
   }
   if (top === Infinity) return;
   const cur = parseFloat(lay.style.getPropertyValue("--ct-top")) || 0;
-  const want = TOUCH.matches ? 16 : 20;
+  const want = TOUCH.matches ? 12 : 16;
   const next = Math.round(cur + want - (top - tabs.getBoundingClientRect().bottom));
   if (Math.abs(next - cur) >= 1) lay.style.setProperty("--ct-top", `${next}px`);
 };
