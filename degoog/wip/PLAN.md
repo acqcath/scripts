@@ -63,3 +63,10 @@ each group's total kept (index.js nudgeNeeds). Settings switch "Learn the layout
 ## Test budget
 Unit tests + jsdom replay every milestone; headless layout-shift + screenshots at 390/1280 only at M1 and M5; the
 self-check row is the live GPU check (the sandbox can't run the model).
+### M6 = next: product panel (from ⚑ 2026-11-28, "yamaha dbr10 release")
+User: a product info section whenever the search names a product, with all the needed info.
+Plan: needs call gains a "product" fit; when it wins, read schema.org Product JSON-LD (+ og: tags) from the
+top results already fetched for Quick view (maker page first, then retailers): name, picture, brand, price range
+across sellers, rating, key specs (additionalProperty), release date (releaseDate / earliest dated result).
+Placed by worth like the info panel; zero layout shift (reserved spot like the answer card).
+Self-check row "Product panel" on a fixed product search.

@@ -1860,7 +1860,7 @@ export const routes = [
     path: "/status",
     async handler() {
       let ver = "";
-      try { const h = fs.readFileSync(PAGE_FILE, "utf8"); const m = /\/public\/ct\/(ct\.[0-9a-f]+\.js)/.exec(h); if (m) ver = (/^\/\/ clean-titles (\S+)/.exec(fs.readFileSync(`/app/src/public/ct/${m[1]}`, "utf8").slice(0, 80)) || [])[1] || ""; } catch {}
+      try { const h = fs.readFileSync(PAGE_FILE, "utf8"); const m = /\/public\/ct\/(ct\.[0-9a-f]+\.js)/.exec(h); ver = (/\/\/ clean-titles (v[\w.-]+)/.exec(m ? fs.readFileSync(`/app/src/public/ct/${m[1]}`, "utf8").slice(0, 80) : h) || [])[1] || ""; } catch {}
       const t0 = Date.now();
       let ai = false;
       try { const r = await fetch(VIS + "/health", { signal: AbortSignal.timeout(1500) }); ai = r.ok; } catch {}
